@@ -107,7 +107,7 @@ describe('useUIStore context panel tabs', () => {
     const persisted = {
       contextPanelByDirectory: {
         [directory]: {
-          isOpen: true,
+          openZones: ['right'],
           expanded: false,
           widthByMode: {},
           touchedAt: 1,
@@ -168,7 +168,7 @@ describe('useUIStore context panel tabs', () => {
     const persisted = {
       contextPanelByDirectory: {
         [directory]: {
-          isOpen: true,
+          openZones: ['right'],
           expanded: false,
           widthByMode: {},
           touchedAt: 1,
@@ -210,7 +210,7 @@ describe('useUIStore context panel tabs', () => {
         state: {
           contextPanelByDirectory: {
             [directory]: {
-              isOpen: true,
+              openZones: ['right'],
               expanded: false,
               widthByMode: { walkthrough: 800 },
               widthFractionByMode: {
@@ -249,7 +249,7 @@ describe('useUIStore context panel tabs', () => {
     const persisted = {
       contextPanelByDirectory: {
         [directory]: {
-          isOpen: true,
+          openZones: ['right'],
           expanded: false,
           widthByMode: {},
           touchedAt: 1,
@@ -336,7 +336,7 @@ describe('useUIStore context panel tabs', () => {
     useUIStore.setState({
       contextPanelByDirectory: {
         '/repo-worktree': {
-          isOpen: true,
+          openZones: ['right'],
           expanded: false,
           widthByMode: {},
           touchedAt: 1,
@@ -371,7 +371,7 @@ describe('useUIStore context panel tabs', () => {
     useUIStore.setState({
       contextPanelByDirectory: {
         '/repo-worktree': {
-          isOpen: true,
+          openZones: ['right'],
           expanded: false,
           widthByMode: {},
           touchedAt: 1,
@@ -415,7 +415,7 @@ describe('useUIStore context panel tabs', () => {
     useUIStore.setState({
       contextPanelByDirectory: {
         '/repo-worktree': {
-          isOpen: true,
+          openZones: ['right'],
           expanded: false,
           widthByMode: {},
           touchedAt: 1,
@@ -453,7 +453,7 @@ describe('useUIStore openContextSurface', () => {
     useUIStore.getState().openContextSurface(directory, 'diff');
 
     const state = useUIStore.getState().contextPanelByDirectory[directory];
-    expect(state?.isOpen).toBe(true);
+    expect(state?.openZones).toContain('right');
     expect(state?.tabs.map((tab) => tab.mode)).toEqual(['diff']);
   });
 
@@ -466,7 +466,7 @@ describe('useUIStore openContextSurface', () => {
     const state = useUIStore.getState().contextPanelByDirectory[directory];
     expect(state?.tabs.filter((tab) => tab.mode === 'diff')).toHaveLength(1);
     expect(state?.activeTabId).toBe('diff');
-    expect(state?.isOpen).toBe(true);
+    expect(state?.openZones).toContain('right');
   });
 
   test('toggles the panel closed when the requested mode is already active and open', () => {
@@ -474,7 +474,7 @@ describe('useUIStore openContextSurface', () => {
     useUIStore.getState().openContextSurface(directory, 'diff');
 
     const state = useUIStore.getState().contextPanelByDirectory[directory];
-    expect(state?.isOpen).toBe(false);
+    expect(state?.openZones).not.toContain('right');
     expect(state?.tabs.map((tab) => tab.mode)).toEqual(['diff']);
   });
 
@@ -488,7 +488,7 @@ describe('useUIStore openContextSurface', () => {
     useUIStore.getState().openContextSurface(directory, 'file');
 
     let state = useUIStore.getState().contextPanelByDirectory[directory];
-    expect(state?.isOpen).toBe(true);
+    expect(state?.openZones).toContain('right');
     expect(state?.tabs.map((tab) => tab.mode)).toEqual(['file']);
     expect(state?.tabs[0]?.targetPath).toBe(null);
 
@@ -555,7 +555,7 @@ describe('useUIStore openContextSurface', () => {
     const state = useUIStore.getState().contextPanelByDirectory[directory];
     const terminalTab = getTerminalTab(directory);
     expect(state?.activeTabId).toBe('terminal');
-    expect(state?.isOpen).toBe(true);
+    expect(state?.openZones).toContain('right');
     expect(terminalTab?.targetDirectory).toBe('/repo-target');
   });
 
@@ -695,10 +695,14 @@ describe('useUIStore closeContextPanelTab surface stability', () => {
     const activeTab = state?.tabs.find((tab) => tab.id === state.activeTabId);
     expect(activeTab?.mode).toBe('file');
     expect(activeTab?.targetPath).toBe('/repo/a.ts');
-    expect(state?.isOpen).toBe(true);
+    expect(state?.openZones).toContain('right');
   });
 
-  test('closing the last tab of the active surface closes the panel', () => {
+  // Before the workspace zones this closed the panel, because the surfaces
+  // sharing it were invisible — the strip only listed the active one. They are
+  // tabs beside it now, so closing one moves to its neighbour, and only an
+  // empty zone collapses.
+  test('closing the last tab of the active surface falls back to another tab in the zone', () => {
     useUIStore.getState().openContextPanelTab(directory, { mode: 'terminal' });
     useUIStore.getState().openContextPanelTab(directory, { mode: 'diff' });
 
@@ -708,8 +712,22 @@ describe('useUIStore closeContextPanelTab surface stability', () => {
     useUIStore.getState().closeContextPanelTab(directory, activeTabId);
 
     const state = useUIStore.getState().contextPanelByDirectory[directory];
-    expect(state?.isOpen).toBe(false);
+    expect(state?.openZones).toContain('right');
     expect(state?.tabs.map((tab) => tab.mode)).toEqual(['terminal']);
+    expect(state?.tabs.find((tab) => tab.id === state.activeTabId)?.mode).toBe('terminal');
+  });
+
+  test('closing the last tab in a zone collapses that zone', () => {
+    useUIStore.getState().openContextPanelTab(directory, { mode: 'diff' });
+
+    const stateBefore = useUIStore.getState().contextPanelByDirectory[directory];
+    const activeTabId = stateBefore?.activeTabId;
+    if (!activeTabId) throw new Error('expected an active tab');
+    useUIStore.getState().closeContextPanelTab(directory, activeTabId);
+
+    const state = useUIStore.getState().contextPanelByDirectory[directory];
+    expect(state?.openZones).not.toContain('right');
+    expect(state?.tabs).toEqual([]);
   });
 
   test('closing the last file tab keeps the file surface on its empty editor tab', () => {
@@ -724,7 +742,7 @@ describe('useUIStore closeContextPanelTab surface stability', () => {
 
     const state = useUIStore.getState().contextPanelByDirectory[directory];
     const activeTab = state?.tabs.find((tab) => tab.id === state.activeTabId);
-    expect(state?.isOpen).toBe(true);
+    expect(state?.openZones).toContain('right');
     expect(activeTab?.mode).toBe('file');
     expect(activeTab?.targetPath).toBe(null);
     expect(state?.tabs.map((tab) => tab.mode)).toEqual(['terminal', 'file']);
@@ -742,7 +760,7 @@ describe('useUIStore closeContextPanelTab surface stability', () => {
     useUIStore.getState().closeContextPanelTab(directory, fileTabId);
 
     const state = useUIStore.getState().contextPanelByDirectory[directory];
-    expect(state?.isOpen).toBe(false);
+    expect(state?.openZones).not.toContain('right');
     expect(state?.tabs).toHaveLength(0);
   });
 
@@ -756,7 +774,7 @@ describe('useUIStore closeContextPanelTab surface stability', () => {
 
     const state = useUIStore.getState().contextPanelByDirectory[directory];
     expect(state?.activeTabId).toBe('terminal');
-    expect(state?.isOpen).toBe(true);
+    expect(state?.openZones).toContain('right');
   });
 });
 
@@ -774,7 +792,7 @@ describe('useUIStore closeContextPanelTabs bulk', () => {
 
     const state = useUIStore.getState().contextPanelByDirectory[directory];
     expect(state?.tabs).toHaveLength(0);
-    expect(state?.isOpen).toBe(false);
+    expect(state?.openZones).not.toContain('right');
   });
 
   test('closing all tabs of the active file surface keeps the surface on its empty editor tab', () => {
@@ -789,7 +807,7 @@ describe('useUIStore closeContextPanelTabs bulk', () => {
 
     const state = useUIStore.getState().contextPanelByDirectory[directory];
     const activeTab = state?.tabs.find((tab) => tab.id === state.activeTabId);
-    expect(state?.isOpen).toBe(true);
+    expect(state?.openZones).toContain('right');
     expect(activeTab?.mode).toBe('file');
     expect(activeTab?.targetPath).toBe(null);
     expect(state?.tabs.some((tab) => tab.mode === 'terminal')).toBe(true);
@@ -808,7 +826,7 @@ describe('useUIStore closeContextPanelTabs bulk', () => {
 
     const state = useUIStore.getState().contextPanelByDirectory[directory];
     expect(state?.activeTabId).toBe('terminal');
-    expect(state?.isOpen).toBe(true);
+    expect(state?.openZones).toContain('right');
   });
 
   test('closing a subset of the active surface including the active tab keeps a remaining same-mode tab', () => {
@@ -829,7 +847,7 @@ describe('useUIStore closeContextPanelTabs bulk', () => {
     const activeTab = state?.tabs.find((tab) => tab.id === state.activeTabId);
     expect(activeTab?.mode).toBe('file');
     expect(activeTab?.targetPath).toBe('/repo/a.ts');
-    expect(state?.isOpen).toBe(true);
+    expect(state?.openZones).toContain('right');
     expect(state?.tabs.some((tab) => tab.mode === 'terminal')).toBe(true);
   });
 });
@@ -897,7 +915,7 @@ describe('useUIStore per-surface panel widths', () => {
             contextEditorTreeWidth: 260,
             contextPanelByDirectory: {
               [directory]: {
-                isOpen: true,
+                openZones: ['right'],
                 expanded: false,
                 widthByMode: { 'file-tree': 400, file: 800 },
                 widthFractionByMode: { 'file-tree': 0.4, file: 0.8 },

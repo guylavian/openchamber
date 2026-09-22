@@ -115,6 +115,37 @@ Examples:
 
 These stores coordinate visible app state, navigation, selected context-panel tabs, dialogs, and lightweight feature flags. `useUIStore.activeSurface` selects the primary mobile view and the few desktop views that are promoted out of the context panel. It is not a desktop tab selection. Linear panel list filters (status, assignee, team, priority) live here too: the Linear rail surface remounts on switch, so those filters restore from this store rather than component state. `resetLinearIssueListFilters` restores those four defaults together; search stays local to the rail. The team filter is the one that is not a plain preference: a Linear team belongs to one workspace, and each OpenChamber instance has its own Linear login, so it is persisted per instance in `linearIssueListTeamIdByRuntime` and the flat `linearIssueListTeamId` is derived from it by `applyLinearIssueListFiltersForRuntime` — on an instance switch and when the rail mounts, since rehydration can run before the runtime endpoint is known. Carried across, a team id filters the new instance's list down to nothing. `linearIssueFocus` is a one-shot identifier so work-status can open a specific issue in that panel; it is not persisted.
 
+### Workspace zones
+
+`useUIStore.workspaceLayout` says which of the four zones — `left`, `center`,
+`right`, `bottom` — each context surface is docked in, and in what order inside
+it. It is global, not per-directory: the zones are a way of working, like the
+sidebar width beside them, and a layout that rearranged itself on a project
+switch would be a surprise rather than a feature. `workspaceZoneSizes` holds the
+left width, right width and bottom height. The right zone additionally keeps its
+older per-surface widths (`widthFractionByMode`), which take precedence there so
+a resize made before the zones existed is still honoured.
+
+What is open stays per directory, in `contextPanelByDirectory[dir].openZones`.
+Before the zones this was a single `isOpen` flag describing the one right panel;
+the v21 → v22 migration reads that flag as `['right']`, which is where every
+panel surface starts, so an existing install sees no rearrangement. A malformed
+or missing layout is rebuilt from the registry by `parseStoredWorkspaceLayout`,
+which always yields a layout holding every registered surface exactly once — a
+surface can never become unreachable because of stored data.
+
+Each zone keeps its own selection in `activeTabIdByZone`, so working in one
+zone never changes what another shows. `activeTabId` stays the last tab
+activated anywhere and is always a real tab. A missing or stale zone entry
+(state saved before this, a closed tab) falls back through
+`activeContextTabForZone`. The reserved id `MAIN_CHAT_TAB_ID` appears only in
+`activeTabIdByZone`, for the conversation's zone, and means the conversation is
+in front there; the conversation has no tab record of its own.
+
+`detachedSurfaces` lists `{ directory, surfaceId }` pairs shown in their own
+window. It is per project and never persisted: the windows re-announce
+themselves when a main window loads.
+
 Context-panel session chats mount only the active chat iframe. After installing
 its message listener, the iframe requests its authoritative visibility from the
 parent. The parent accepts requests only from a currently mounted chat frame and

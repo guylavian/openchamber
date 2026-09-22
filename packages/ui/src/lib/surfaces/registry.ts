@@ -4,6 +4,9 @@ import {
   isPluginContextPanelMode,
   type ContextPanelMode,
 } from '@/lib/surfaces/modes';
+// Type-only, so this erases at build time: `lib/workspace/layout` reads this
+// registry at runtime and nothing flows back the other way.
+import type { WorkspaceZone } from '@/lib/workspace/layout';
 
 export type BuiltInContextSurfaceId =
   | 'editor'
@@ -45,6 +48,18 @@ export type ContextSurfaceDescriptor = {
    * until the user manually resizes this surface.
    */
   defaultWidthFraction: number;
+  /**
+   * Workspace zones this surface may be docked in. Omitted means every zone.
+   * The constraint exists to keep a surface out of a zone it cannot be read
+   * in — a file tree in a 160px-tall bottom strip — not to limit choice.
+   */
+  allowedZones?: readonly WorkspaceZone[];
+  /**
+   * Zone this surface occupies in a fresh install, after Reset Layout, and
+   * when a stored layout never mentioned it. Omitted means `right`, which is
+   * where every panel surface lived before the workspace zones existed.
+   */
+  defaultZone?: WorkspaceZone;
 };
 
 export const CONTEXT_SURFACES: readonly ContextSurfaceDescriptor[] = [
@@ -56,6 +71,7 @@ export const CONTEXT_SURFACES: readonly ContextSurfaceDescriptor[] = [
     icon: 'donut-chart-fill',
     labelKey: 'contextPanel.mode.context',
     availability: 'always',
+    allowedZones: ['left', 'right', 'bottom'],
   },
   {
     id: 'git',
@@ -65,6 +81,7 @@ export const CONTEXT_SURFACES: readonly ContextSurfaceDescriptor[] = [
     icon: 'git-branch',
     labelKey: 'layout.rightSidebar.git',
     availability: 'always',
+    allowedZones: ['left', 'right', 'bottom'],
   },
   {
     id: 'pr',
@@ -74,6 +91,7 @@ export const CONTEXT_SURFACES: readonly ContextSurfaceDescriptor[] = [
     icon: 'github',
     labelKey: 'contextPanel.mode.pr',
     availability: 'always',
+    allowedZones: ['left', 'right', 'bottom'],
   },
   {
     id: 'diff',
@@ -92,6 +110,9 @@ export const CONTEXT_SURFACES: readonly ContextSurfaceDescriptor[] = [
     icon: 'route',
     labelKey: 'contextPanel.mode.walkthrough',
     availability: 'always',
+    // The surface exists to show a stop beside real code; it is already hidden
+    // below WALKTHROUGH_MIN_WIDTH, so the narrow zones are not offered either.
+    allowedZones: ['center', 'right'],
   },
   {
     id: 'linear',
@@ -101,6 +122,7 @@ export const CONTEXT_SURFACES: readonly ContextSurfaceDescriptor[] = [
     icon: 'linear',
     labelKey: 'contextPanel.mode.linear',
     availability: 'always',
+    allowedZones: ['left', 'right', 'bottom'],
   },
   {
     id: 'editor',
@@ -110,6 +132,9 @@ export const CONTEXT_SURFACES: readonly ContextSurfaceDescriptor[] = [
     icon: 'file-edit',
     labelKey: 'contextPanel.mode.files',
     availability: 'always',
+    // Tree plus editor: the bottom strip cannot show both, and the editor is
+    // the one surface people expect to fill the center.
+    allowedZones: ['left', 'center', 'right'],
   },
   {
     id: 'terminal',
@@ -119,6 +144,7 @@ export const CONTEXT_SURFACES: readonly ContextSurfaceDescriptor[] = [
     icon: 'terminal-box',
     labelKey: 'layout.mainTab.terminal',
     availability: 'always',
+    allowedZones: ['right', 'bottom'],
   },
   {
     id: 'notes',
@@ -131,6 +157,7 @@ export const CONTEXT_SURFACES: readonly ContextSurfaceDescriptor[] = [
     icon: 'book-marked',
     labelKey: 'contextRail.surface.notes',
     availability: 'always',
+    allowedZones: ['left', 'center', 'right'],
   },
   {
     id: 'plan',
@@ -140,6 +167,7 @@ export const CONTEXT_SURFACES: readonly ContextSurfaceDescriptor[] = [
     icon: 'file-text',
     labelKey: 'contextPanel.mode.plan',
     availability: 'always',
+    allowedZones: ['left', 'right', 'bottom'],
   },
   {
     id: 'browser',
@@ -149,6 +177,7 @@ export const CONTEXT_SURFACES: readonly ContextSurfaceDescriptor[] = [
     icon: 'global',
     labelKey: 'contextPanel.mode.browser',
     availability: 'always',
+    allowedZones: ['left', 'center', 'right'],
   },
   {
     id: 'chat',
@@ -158,6 +187,11 @@ export const CONTEXT_SURFACES: readonly ContextSurfaceDescriptor[] = [
     icon: 'chat-4',
     labelKey: 'contextPanel.mode.chat',
     availability: 'has-content',
+    // The session conversation. It owned the main area before the workspace
+    // zones existed, which is why `center` is its default placement; split
+    // session chats open as further tabs in whichever zone it sits in.
+    allowedZones: ['center', 'right'],
+    defaultZone: 'center',
   },
 ];
 

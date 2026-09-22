@@ -3,7 +3,7 @@ import React from 'react';
 import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
 import { DiffViewIcon } from '@/components/icons/DiffIcon';
 import { Button } from '@/components/ui/button';
-import { ContextMenuItem, ContextMenuSeparator } from '@/components/ui/context-menu';
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu';
 import { SortableTabsStrip } from '@/components/ui/sortable-tabs-strip';
 import { PullRequestView } from '@/components/views/PullRequestView';
 import { TerminalView } from '@/components/views/TerminalView';
@@ -29,14 +29,12 @@ import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
 import { useBrowserFaviconStore } from '@/stores/useBrowserFaviconStore';
 import { useFilesViewTabsStore } from '@/stores/useFilesViewTabsStore';
-import { clampContextEditorTreeWidth, useUIStore, type ContextPanelMode, type PendingDiffScope } from '@/stores/useUIStore';
+import { activeContextTabForZone, clampContextEditorTreeWidth, useUIStore, type ContextPanelMode, type PendingDiffScope } from '@/stores/useUIStore';
 import { markSessionViewed } from '@/sync/notification-store';
 import { setExternallyViewedSession, useDirectoryStore } from '@/sync/sync-context';
 import { ContextPanelContent } from './ContextSidebarTab';
 import { BrowserPane } from '@/components/browser/BrowserPane';
 import { browserUrlLabel } from '@/lib/browser/url';
-import { registerBrowserOpener } from '@/lib/browser/controlClient';
-import { subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
 import { getRuntimeBearerTokenSync, getRuntimeExtraHeadersSync } from '@/lib/runtime-auth';
 import { getRuntimeApiBaseUrl, getRuntimeKey } from '@/lib/runtime-switch';
 import { getActiveRelayDescriptor } from '@/lib/relay/runtime-tunnel';
@@ -68,9 +66,20 @@ import { useGuestsStore } from '@/lib/guests/store';
 import { guestHasSharedSurface, guestSurfaceDocking, type GuestSurfaceDocking } from '@/lib/guests/surfaces';
 import { FALLBACK_GUEST_ICON } from '@/lib/guests/icon';
 import { isPluginContextPanelMode, pluginIdFromMode } from '@/lib/surfaces/modes';
-import { getContextSurfaceWidthFraction } from '@/lib/surfaces/registry';
+import { CONTEXT_SURFACES, getContextSurfaceWidthFraction } from '@/lib/surfaces/registry';
+import { detachedSurfaceIdsFor, MAIN_CHAT_TAB_ID, mainChatZone, zoneOfMode, type WorkspaceZone } from '@/lib/workspace/layout';
+import { modeForSurface } from '@/lib/workspace/surfaceWindow';
+import { WorkspaceMoveMenuItems } from './workspace/WorkspaceMoveMenuItems';
+import { closableTabRanges } from './workspace/closableTabRanges';
 import { isVimEditorEventTarget } from '@/lib/editorFocus';
 import { isTerminalEventTarget } from '@/lib/terminalFocus';
+
+/** Registry id owning a panel mode, for the tab menu's "Move to ..." rows. */
+const surfaceIdForMode = (mode: ContextPanelMode | null): string | null => {
+  if (mode === null) return null;
+  if (isPluginContextPanelMode(mode)) return mode;
+  return CONTEXT_SURFACES.find((surface) => surface.mode === mode)?.id ?? null;
+};
 
 const CONTEXT_PANEL_MIN_WIDTH = 320;
 const CONTEXT_PANEL_DEFAULT_WIDTH = 600;
@@ -489,40 +498,43 @@ const truncateTabLabel = (value: string, maxChars: number): string => {
 };
 
 
-export const ContextPanel: React.FC = () => {
+type ContextPanelProps = {
+  /**
+   * Which workspace zone this panel draws. One instance is mounted per zone
+   * that holds surfaces, and each one renders only the tabs docked in it, so
+   * a terminal at the bottom and a diff on the right are on screen together.
+   */
+  zone: WorkspaceZone;
+  /**
+   * Renders the session conversation as this zone's first, unclosable tab.
+   * The chat is not a panel tab — it has no entry in `contextPanelByDirectory`
+   * — so the zone holding the `chat` surface is told about it instead.
+   */
+  mainChat?: React.ReactNode;
+  /**
+   * Draw exactly this surface, ignoring zone placement. Used by a detached
+   * surface window, which shows one surface and nothing else.
+   */
+  standaloneSurfaceId?: string;
+};
+
+export const ContextPanel: React.FC<ContextPanelProps> = ({ zone, mainChat, standaloneSurfaceId }) => {
   const { t } = useI18n();
   const effectiveDirectory = useEffectiveDirectory() ?? '';
   const directoryKey = React.useMemo(() => normalizeDirectoryKey(effectiveDirectory), [effectiveDirectory]);
 
   const panelState = useUIStore((state) => (directoryKey ? state.contextPanelByDirectory[directoryKey] : undefined));
-  const closeContextPanel = useUIStore((state) => state.closeContextPanel);
+  const workspaceLayout = useUIStore((state) => state.workspaceLayout);
+  const closeContextZone = useUIStore((state) => state.closeContextZone);
   const closeContextPanelTab = useUIStore((state) => state.closeContextPanelTab);
   const openContextPanelTab = useUIStore((state) => state.openContextPanelTab);
   const toggleContextPanelExpanded = useUIStore((state) => state.toggleContextPanelExpanded);
   const setContextPanelWidth = useUIStore((state) => state.setContextPanelWidth);
   const setActiveContextPanelTab = useUIStore((state) => state.setActiveContextPanelTab);
-  const openContextBrowser = useUIStore((state) => state.openContextBrowser);
-
-  // Lets an agent's browser.open create the tab it needs when none is open yet.
-  // Registered from the panel because opening a tab is panel state, not
-  // something the browser view itself can do before it exists. Background on
-  // purpose: an agent working a page must not pop the panel open or steal the
-  // active tab while the user reads something else. The tab appears in the
-  // strip; browser.capture shows it only for the moment of the screenshot.
-  React.useEffect(() => {
-    if (!effectiveDirectory) return;
-    return registerBrowserOpener((url) => openContextBrowser(effectiveDirectory, url, { reveal: false }));
-  }, [effectiveDirectory, openContextBrowser]);
-  // The agent asked for a file to be shown. It opens in front of whatever tab
-  // the user had, on purpose: the agent is pointing at a result, and the prior
-  // tab is one click away.
-  const openContextFile = useUIStore((state) => state.openContextFile);
-  React.useEffect(() => subscribeOpenchamberEvents((event) => {
-    if (event.type !== 'file-open-request') return;
-    const directory = event.directory ?? effectiveDirectory;
-    if (!directory) return;
-    openContextFile(directory, event.path);
-  }), [effectiveDirectory, openContextFile]);
+  const focusMainChat = useUIStore((state) => state.focusMainChat);
+  // The agent's browser opener and file-open requests are window-wide, so
+  // they are registered once by the workspace (useWorkspaceOpeners), not by
+  // every zone's panel.
   const reorderContextPanelTabs = useUIStore((state) => state.reorderContextPanelTabs);
   const setSelectedFilePath = useFilesViewTabsStore((state) => state.setSelectedPath);
   const contextEditorTreeVisible = useUIStore((state) => state.contextEditorTreeVisible);
@@ -536,9 +548,52 @@ export const ContextPanel: React.FC = () => {
   const allowPromptingSubagentSessions = useUIStore((state) => state.allowPromptingSubagentSessions);
   const { themeMode, setThemeMode, lightThemeId, darkThemeId, currentTheme } = useThemeSystem();
 
-  const tabs = React.useMemo(() => panelState?.tabs ?? [], [panelState?.tabs]);
-  const activeTab = tabs.find((tab) => tab.id === panelState?.activeTabId) ?? tabs[tabs.length - 1] ?? null;
-  const isOpen = Boolean(panelState?.isOpen && activeTab);
+  // Every derivation below — browser tabs, diff tabs, the terminal, plugin
+  // panes, the editor — reads from this one list, so scoping it to the zone is
+  // what makes a second zone render a different surface rather than the same
+  // one twice.
+  const zoneOf = React.useCallback(
+    (mode: ContextPanelMode) => zoneOfMode(workspaceLayout, mode),
+    [workspaceLayout],
+  );
+  const detachedSurfaces = useUIStore((state) => state.detachedSurfaces);
+  const standaloneMode = standaloneSurfaceId ? modeForSurface(standaloneSurfaceId) : null;
+  // The tabs this window may draw at all: one surface in a detached window,
+  // and in a main window everything except surfaces living in their own
+  // window right now.
+  const drawableTabs = React.useMemo(() => {
+    const all = panelState?.tabs ?? [];
+    if (standaloneMode) return all.filter((tab) => tab.mode === standaloneMode);
+    const detachedIds = detachedSurfaceIdsFor(detachedSurfaces, directoryKey);
+    if (detachedIds.length === 0) return all;
+    const detachedModes = new Set(detachedIds.map(modeForSurface));
+    return all.filter((tab) => !detachedModes.has(tab.mode));
+  }, [detachedSurfaces, directoryKey, panelState?.tabs, standaloneMode]);
+  const tabs = React.useMemo(
+    () => (standaloneMode ? drawableTabs : drawableTabs.filter((tab) => zoneOf(tab.mode) === zone)),
+    [drawableTabs, standaloneMode, zone, zoneOf],
+  );
+  const activeTab = React.useMemo(() => {
+    if (standaloneMode) {
+      // `>=` so same-millisecond opens resolve to the later tab.
+      return tabs.find((tab) => tab.id === panelState?.activeTabId)
+        ?? (tabs.length > 0 ? tabs.reduce((best, tab) => (tab.touchedAt >= best.touchedAt ? tab : best)) : null);
+    }
+    return activeContextTabForZone(
+      { tabs: drawableTabs, activeTabId: panelState?.activeTabId ?? null, activeTabIdByZone: panelState?.activeTabIdByZone },
+      zone,
+      zoneOf,
+      mainChatZone(workspaceLayout),
+    );
+  }, [drawableTabs, panelState?.activeTabId, panelState?.activeTabIdByZone, standaloneMode, tabs, workspaceLayout, zone, zoneOf]);
+  // The chat has no tab record, so `activeContextTabForZone` returning null in
+  // the chat's own zone is exactly what "the conversation is showing" means.
+  const showsMainChat = Boolean(mainChat) && activeTab === null;
+  // The center, and wherever the conversation is docked, are always drawn:
+  // neither can be collapsed, so neither appears in `openZones`.
+  const isPermanentZone = zone === 'center' || Boolean(mainChat) || Boolean(standaloneMode);
+  const isOpen = (isPermanentZone || Boolean(panelState?.openZones.includes(zone)))
+    && (Boolean(activeTab) || showsMainChat);
   const [availablePanelAreaWidth, setAvailablePanelAreaWidth] = React.useState<number | null>(null);
   const hasOpenEditorFile = React.useMemo(
     () => tabs.some((tab) => tab.mode === 'file' && tab.targetPath),
@@ -547,9 +602,13 @@ export const ContextPanel: React.FC = () => {
   // The editor column is shown for an open file unless the user hid it; the
   // tree never hides alongside it, so a hidden tree forces the editor back.
   const showsEditor = hasOpenEditorFile && (contextEditorVisible || !contextEditorTreeVisible);
-  const activeModeForWidth = activeTab?.mode ?? null;
+  // The conversation has no tab, so a zone showing it keeps its width under
+  // the chat surface's own key; without one the resize could not be saved.
+  const activeModeForWidth: ContextPanelMode | null = activeTab?.mode ?? (showsMainChat ? 'chat' : null);
   const isTreeOnly = activeModeForWidth === 'file' && !showsEditor;
-  const isExpanded = Boolean(isOpen && panelState?.expanded && !isTreeOnly);
+  // Expanding grows leftwards over the center, which only the right panel can do.
+  const canExpand = zone === 'right';
+  const isExpanded = Boolean(canExpand && isOpen && panelState?.expanded && !isTreeOnly);
   const manualWidth = activeModeForWidth ? panelState?.widthByMode?.[activeModeForWidth] : undefined;
   const manualWidthFraction = activeModeForWidth ? panelState?.widthFractionByMode?.[activeModeForWidth] : undefined;
   const widthFraction = activeModeForWidth ? getContextSurfaceWidthFraction(activeModeForWidth) : 0.5;
@@ -565,9 +624,9 @@ export const ContextPanel: React.FC = () => {
   // Convert legacy pixel-only preferences to a ratio the first time the
   // available area is known, so existing users also get responsive sizing.
   React.useEffect(() => {
-    if (!directoryKey || !activeModeForWidth || isTreeOnly || manualWidthFraction != null || manualWidth == null || availablePanelAreaWidth == null) return;
+    if (zone !== 'right' || !directoryKey || !activeModeForWidth || isTreeOnly || manualWidthFraction != null || manualWidth == null || availablePanelAreaWidth == null) return;
     setContextPanelWidth(directoryKey, activeModeForWidth, manualWidth, availablePanelAreaWidth);
-  }, [activeModeForWidth, availablePanelAreaWidth, directoryKey, isTreeOnly, manualWidth, manualWidthFraction, setContextPanelWidth]);
+  }, [activeModeForWidth, availablePanelAreaWidth, directoryKey, isTreeOnly, manualWidth, manualWidthFraction, setContextPanelWidth, zone]);
   const chatSessionIDs = React.useMemo(() => {
     const ids: string[] = [];
     for (const tab of tabs) {
@@ -746,8 +805,8 @@ export const ContextPanel: React.FC = () => {
     if (!directoryKey) {
       return;
     }
-    closeContextPanel(directoryKey);
-  }, [closeContextPanel, directoryKey]);
+    closeContextZone(directoryKey, zone);
+  }, [closeContextZone, directoryKey, zone]);
 
   const handleToggleExpanded = React.useCallback(() => {
     if (!directoryKey) {
@@ -758,6 +817,13 @@ export const ContextPanel: React.FC = () => {
 
   const handlePanelKeyDownCapture = React.useCallback((event: React.KeyboardEvent<HTMLElement>) => {
     if (event.key !== 'Escape') {
+      return;
+    }
+
+    // Escape closes a zone. The center and the conversation's zone cannot
+    // close, so they leave the key alone: the chat uses it to dismiss its own
+    // popups, leave shell mode and collapse the composer.
+    if (isPermanentZone) {
       return;
     }
 
@@ -782,7 +848,7 @@ export const ContextPanel: React.FC = () => {
     event.preventDefault();
     event.stopPropagation();
     handleClose();
-  }, [handleClose]);
+  }, [handleClose, isPermanentZone]);
 
   React.useEffect(() => {
     if (!directoryKey || !activeTab) {
@@ -1013,27 +1079,48 @@ export const ContextPanel: React.FC = () => {
     postEmbeddedVisibilityToChats();
   }, [darkThemeId, lightThemeId, postChatSettingsSyncToEmbeddedChat, postEmbeddedVisibilityToChats, postThemeSyncToEmbeddedChat, tabs, themeMode]);
 
-  // The rail switches between surfaces (modes); the in-panel strip only lists
-  // instances of the active multi-instance surface (open files, split chats,
-  // browser targets).
-  const isMultiInstanceMode = activeTab?.mode === 'file' || activeTab?.mode === 'chat' || activeTab?.mode === 'browser';
-  const activeModeTabs = React.useMemo(
-    () => (activeTab ? tabs.filter((tab) => tab.mode === activeTab.mode) : []),
-    [activeTab, tabs],
-  );
+  // Everything docked in this zone is a tab here: the surfaces sharing the
+  // zone as well as the several instances a surface can have (open files,
+  // split chats, browser targets). The rail still opens a surface; this strip
+  // is how the user moves between what the zone already holds.
+  const tabItems = React.useMemo(() => {
+    const items = tabs.map((tab) => {
+      const rawLabel = getTabLabel(tab, sessionTitleById, t);
+      const label = truncateTabLabel(rawLabel, CONTEXT_TAB_LABEL_MAX_CHARS);
+      const tabPathLabel = getRelativePathLabel(tab.targetPath, effectiveDirectory);
+      return {
+        id: tab.id,
+        label,
+        icon: getTabIcon(tab, faviconByOrigin),
+        title: tabPathLabel ? `${rawLabel}: ${tabPathLabel}` : rawLabel,
+        closeLabel: t('contextPanel.tab.closeTabAria', { label }),
+      };
+    });
 
-  const tabItems = React.useMemo(() => activeModeTabs.map((tab) => {
-    const rawLabel = getTabLabel(tab, sessionTitleById, t);
-    const label = truncateTabLabel(rawLabel, CONTEXT_TAB_LABEL_MAX_CHARS);
-    const tabPathLabel = getRelativePathLabel(tab.targetPath, effectiveDirectory);
-    return {
-      id: tab.id,
-      label,
-      icon: getTabIcon(tab, faviconByOrigin),
-      title: tabPathLabel ? `${rawLabel}: ${tabPathLabel}` : rawLabel,
-      closeLabel: t('contextPanel.tab.closeTabAria', { label }),
-    };
-  }), [activeModeTabs, effectiveDirectory, faviconByOrigin, sessionTitleById, t]);
+    if (!mainChat) return items;
+
+    // The conversation leads its zone and cannot be closed: closing it would
+    // leave the user with no way back to the session they are working in.
+    const chatLabel = t('layout.mainTab.chat');
+    return [{
+      id: MAIN_CHAT_TAB_ID,
+      label: chatLabel,
+      icon: <Icon name="chat-4" className="h-3.5 w-3.5" />,
+      title: chatLabel,
+      closable: false,
+    }, ...items];
+  }, [effectiveDirectory, faviconByOrigin, mainChat, sessionTitleById, t, tabs]);
+
+  // Multi-instance surfaces keep their strip even at one tab, so a single open
+  // file still has its own close control. A lone singleton surface shows its
+  // name instead, as it always did.
+  const isMultiInstanceMode = activeTab?.mode === 'file' || activeTab?.mode === 'chat' || activeTab?.mode === 'browser';
+  const showsTabStrip = tabItems.length > 1 || isMultiInstanceMode;
+  // The center zone cannot be closed and has nothing to say when it holds one
+  // surface, so it draws no chrome there — which is what keeps the default
+  // layout's chat looking exactly as it did before the workspace zones.
+  const showsHeader = !isPermanentZone || showsTabStrip;
+  const zoneLabel = t(`workspace.zone.label.${zone}`);
 
   const activeNonChatContent = activeTab?.mode === 'context'
         ? <ContextPanelContent />
@@ -1103,20 +1190,36 @@ export const ContextPanel: React.FC = () => {
       if (!directoryKey) {
         return null;
       }
-      const { id, index, allIds, close } = args;
-      const closeOthers = () => closeContextPanelTabs(directoryKey, allIds.filter((tabId) => tabId !== id));
-      const closeToLeft = () => closeContextPanelTabs(directoryKey, allIds.slice(0, index));
-      const closeToRight = () => closeContextPanelTabs(directoryKey, allIds.slice(index + 1));
-      const closeAll = () => closeContextPanelTabs(directoryKey, allIds);
-      const hasOthers = allIds.length > 1;
-      const isFirst = index === 0;
-      const isLast = index === allIds.length - 1;
+      const { id, allIds, close } = args;
+      // The chat leads its zone and owns none of these: it cannot be closed,
+      // and the surfaces around it are what "close others" would remove.
+      const { closableIds, toLeft, toRight } = closableTabRanges(allIds, id, MAIN_CHAT_TAB_ID);
+      const closeOthers = () => closeContextPanelTabs(directoryKey, closableIds.filter((tabId) => tabId !== id));
+      const closeToLeft = () => closeContextPanelTabs(directoryKey, toLeft);
+      const closeToRight = () => closeContextPanelTabs(directoryKey, toRight);
+      const closeAll = () => closeContextPanelTabs(directoryKey, closableIds);
+      const hasOthers = closableIds.filter((tabId) => tabId !== id).length > 0;
+      const isFirst = toLeft.length === 0;
+      const isLast = toRight.length === 0;
+      const surfaceId = id === MAIN_CHAT_TAB_ID
+        ? 'chat'
+        : surfaceIdForMode(tabs.find((tab) => tab.id === id)?.mode ?? null);
       return (
         <>
-          <ContextMenuItem onClick={close}>
-            <Icon name="close" className="mr-2 size-4" />
-            {t('contextPanel.tab.menu.close')}
-          </ContextMenuItem>
+          {/* A detached window shows one surface; docking it is done from
+              the main window once this one is closed. */}
+          {standaloneMode ? null : (
+            <>
+              <WorkspaceMoveMenuItems surfaceId={surfaceId} currentZone={zone} />
+              <ContextMenuSeparator />
+            </>
+          )}
+          {id === MAIN_CHAT_TAB_ID ? null : (
+            <ContextMenuItem onClick={close}>
+              <Icon name="close" className="mr-2 size-4" />
+              {t('contextPanel.tab.menu.close')}
+            </ContextMenuItem>
+          )}
           <ContextMenuSeparator />
           <ContextMenuItem onClick={closeOthers} disabled={!hasOthers}>
             <Icon name="expand-horizontal" className="mr-2 size-4" />
@@ -1138,17 +1241,23 @@ export const ContextPanel: React.FC = () => {
         </>
       );
     },
-    [closeContextPanelTabs, directoryKey, t],
+    [closeContextPanelTabs, directoryKey, standaloneMode, t, tabs, zone],
   );
 
-  const header = (
+  const labelSurfaceId = activeTab ? surfaceIdForMode(activeTab.mode) : showsMainChat ? 'chat' : null;
+
+  const header = !showsHeader ? null : (
     <header className="flex h-10 items-stretch border-b border-border">
-      {isMultiInstanceMode ? (
+      {showsTabStrip ? (
         <SortableTabsStrip
           items={tabItems}
-          activeId={activeTab?.id ?? null}
+          activeId={showsMainChat ? MAIN_CHAT_TAB_ID : activeTab?.id ?? null}
           onSelect={(tabID) => {
             if (!directoryKey) {
+              return;
+            }
+            if (tabID === MAIN_CHAT_TAB_ID) {
+              focusMainChat(directoryKey);
               return;
             }
             setActiveContextPanelTab(directoryKey, tabID);
@@ -1170,12 +1279,21 @@ export const ContextPanel: React.FC = () => {
           tabContextMenu={renderTabContextMenu}
         />
       ) : (
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 px-3">
-          {activeTab ? getTabIcon(activeTab, faviconByOrigin) : null}
-          <span className="truncate typography-ui-label text-foreground">
-            {activeTab ? getModeLabel(activeTab.mode, t) : null}
-          </span>
-        </div>
+        // A lone surface shows its name instead of a tab strip; right-clicking
+        // the name offers the same docking menu a tab would.
+        <ContextMenu>
+          <ContextMenuTrigger render={<div className="flex min-w-0 flex-1 items-center gap-1.5 px-3" />}>
+            {activeTab ? getTabIcon(activeTab, faviconByOrigin) : null}
+            <span className="truncate typography-ui-label text-foreground">
+              {activeTab ? getModeLabel(activeTab.mode, t) : showsMainChat ? t('layout.mainTab.chat') : null}
+            </span>
+          </ContextMenuTrigger>
+          {standaloneMode || !labelSurfaceId ? null : (
+            <ContextMenuContent>
+              <WorkspaceMoveMenuItems surfaceId={labelSurfaceId} currentZone={zone} />
+            </ContextMenuContent>
+          )}
+        </ContextMenu>
       )}
       <div className="flex items-center gap-1 px-1.5">
         {activeTab?.mode === 'browser' ? (
@@ -1222,7 +1340,10 @@ export const ContextPanel: React.FC = () => {
             <Icon name="layout-right" className="h-3.5 w-3.5" />
           </Button>
         ) : null}
-        {!isTreeOnly ? (
+        {/* Expand-over-the-chat belongs to the right panel: it grows leftwards
+            over the center, which a left or bottom zone cannot do, and the
+            center is already the widest thing on screen. */}
+        {canExpand && !isTreeOnly ? (
           <Button
             type="button"
             variant="ghost"
@@ -1235,20 +1356,199 @@ export const ContextPanel: React.FC = () => {
             {isExpanded ? <Icon name="fullscreen-exit" className="h-3.5 w-3.5" /> : <Icon name="fullscreen" className="h-3.5 w-3.5" />}
           </Button>
         ) : null}
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={handleClose}
-          className="h-7 w-7 p-0"
-          title={t('contextPanel.actions.closePanel')}
-          aria-label={t('contextPanel.actions.closePanel')}
-        >
-          <Icon name="close" className="h-3.5 w-3.5" />
-        </Button>
+        {/* The center holds whatever is left after the others, and the zone
+            with the conversation in it is the main content wherever it sits;
+            collapsing either would leave the user with nowhere to work. */}
+        {isPermanentZone ? null : (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={handleClose}
+            className="h-7 w-7 p-0"
+            title={t('workspace.zone.collapse')}
+            aria-label={t('workspace.zone.collapse')}
+          >
+            <Icon name="close" className="h-3.5 w-3.5" />
+          </Button>
+        )}
       </div>
     </header>
   );
+
+  // Everything the zone draws. Hoisted out of the return so the right zone
+  // can keep its animated, self-sizing shell while the other zones are a
+  // plain box their WorkspaceZone parent sizes.
+  const content = (
+    <>
+      {header}
+        <div className={cn('relative min-h-0 flex-1 overflow-hidden', isResizing && 'pointer-events-none')}>
+          {hasFileTabs ? (
+            <div className={cn('absolute inset-0 flex', isFileTabActive ? 'flex' : 'hidden')}>
+              {hasOpenEditorFile || !contextEditorTreeVisible ? (
+                // Hidden rather than unmounted so a hidden editor keeps its state.
+                <div className={cn('h-full min-w-0 flex-1', hasOpenEditorFile && !showsEditor && 'hidden')}>
+                  {hasOpenEditorFile ? (
+                    <React.Suspense fallback={null}><FilesView mode="editor-only" visible={isOpen && isFileTabActive && showsEditor} /></React.Suspense>
+                  ) : (
+                    <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+                      <Icon name="file-code" className="h-12 w-12 text-muted-foreground/50" />
+                      <div className="typography-ui-header text-foreground">{t('contextPanel.editorEmpty.title')}</div>
+                      <div className="max-w-sm typography-micro text-muted-foreground">{t('contextPanel.editorEmpty.description')}</div>
+                    </div>
+                  )}
+                </div>
+              ) : null}
+              <EditorTreeColumn visible={contextEditorTreeVisible} active={isOpen && isFileTabActive} fill={!showsEditor} />
+            </div>
+          ) : null}
+          {activeChatTab && activeChatSessionID && activeChatSrc ? (
+            <iframe
+              key={activeChatTab.id}
+              ref={(node) => {
+                if (!node) {
+                  chatFrameRefs.current.delete(activeChatTab.id);
+                  return;
+                }
+                chatFrameRefs.current.set(activeChatTab.id, node);
+              }}
+              src={activeChatSrc}
+              title={t('contextPanel.iframe.sessionChatTitle', { sessionID: activeChatSessionID })}
+              className="absolute inset-0 h-full w-full border-0 bg-background"
+              onLoad={() => {
+                postThemeSyncToEmbeddedChat();
+                postChatSettingsSyncToEmbeddedChat();
+                postEmbeddedVisibilityToChats();
+              }}
+            />
+          ) : null}
+          {browserTabs.map((tab) => (
+            <div
+              key={tab.id}
+              // Invisible rather than display:none, so a background tab the agent
+              // is working keeps its layout and its snapshots read a real page.
+              className={cn(
+                'absolute inset-0',
+                activeTab?.id !== tab.id && 'invisible pointer-events-none'
+              )}
+              aria-hidden={activeTab?.id !== tab.id || undefined}
+            >
+              <BrowserPane initialUrl={tab.targetPath ?? ''} directory={directoryKey} tabID={tab.id} />
+            </div>
+          ))}
+          {diffTabs.map((tab) => (
+            <div
+              key={tab.id}
+              className={cn(
+                'absolute inset-0',
+                activeTab?.id !== tab.id && 'hidden'
+              )}
+            >
+              <React.Suspense fallback={null}>
+                <DiffView
+                  visible={isOpen && activeTab?.id === tab.id}
+                  hideStackedFileSidebar
+                  stackedDefaultCollapsedAll
+                  pinSelectedFileHeaderToTopOnNavigate
+                  showOpenInEditorAction
+                  diffScope={tab.diffScope ?? (tab.stagedDiff ? 'staged' : 'working')}
+                  onDiffScopeChange={handleDiffScopeChange}
+                  targetFilePath={tab.targetPath}
+                  flushContent
+                />
+              </React.Suspense>
+            </div>
+          ))}
+          {terminalTab ? (
+            <div className={cn('absolute inset-0', activeTab?.mode === 'terminal' ? 'block' : 'hidden')}>
+              <TerminalView visible={isOpen && activeTab?.mode === 'terminal'} directory={terminalTab.targetDirectory} />
+            </div>
+          ) : null}
+          {hasWalkthroughTab ? (
+            <div className={cn('absolute inset-0', activeTab?.mode === 'walkthrough' ? 'block' : 'hidden')}>
+              <React.Suspense fallback={null}>
+                <WalkthroughView directory={effectiveDirectory} visible={isOpen && activeTab?.mode === 'walkthrough'} />
+              </React.Suspense>
+            </div>
+          ) : null}
+          {pluginTabs.map((tab) => {
+            if (!isPluginContextPanelMode(tab.mode)) return null;
+            // A shared-surface extension's picture is drawn by the host and
+            // mounted only while shown, so an unwatched surface holds no socket
+            // and its service can idle out. Its own page, when it has one, is
+            // docked to one edge of the picture and stays mounted like any
+            // panel iframe.
+            const guestId = pluginIdFromMode(tab.mode);
+            const sharedSurface = surfaceGuestIds.has(guestId);
+            const docking = surfaceDockings.get(guestId);
+            const shown = activeTab?.id === tab.id;
+            const surfaceMounted = shown && isOpen;
+            if (sharedSurface && !docking && !surfaceMounted) return null;
+            return (
+              <div
+                key={tab.id}
+                className={cn('absolute inset-0', shown ? 'block' : 'hidden')}
+              >
+                <React.Suspense fallback={null}>
+                  {!sharedSurface ? (
+                    <PluginPane mode={tab.mode} />
+                  ) : !docking ? (
+                    <GuestSurfacePane mode={tab.mode} />
+                  ) : (
+                    <div className={cn('flex h-full', DOCK_LAYOUT[docking.dock].container)}>
+                      <div
+                        className={cn('shrink-0', DOCK_LAYOUT[docking.dock].page)}
+                        style={DOCK_LAYOUT[docking.dock].vertical ? { height: docking.size } : { width: docking.size }}
+                      >
+                        <PluginPane mode={tab.mode} />
+                      </div>
+                      <div className="min-h-0 min-w-0 flex-1">
+                        {surfaceMounted ? <GuestSurfacePane mode={tab.mode} /> : null}
+                      </div>
+                    </div>
+                  )}
+                </React.Suspense>
+              </div>
+            );
+          })}
+          {activeTab && activeTab.mode !== 'chat' && !isFileTabActive && activeTab.mode !== 'browser' && activeTab.mode !== 'diff' && activeTab.mode !== 'terminal' && activeTab.mode !== 'walkthrough' && !isPluginContextPanelMode(activeTab.mode) ? activeNonChatContent : null}
+          {/* The session conversation. Kept mounted while another tab of this
+              zone is in front so its scroll position and composer survive a
+              switch, the same as the panes above. */}
+          {mainChat ? (
+            <div
+              className={cn('absolute inset-0', showsMainChat ? 'block' : 'hidden')}
+              // Outside the center the conversation's width is this zone's, so
+              // the work-status panel inside it measures here rather than the
+              // whole row (the center row carries the marker itself).
+              data-chat-area={zone === 'center' ? undefined : 'true'}
+            >
+              {mainChat}
+            </div>
+          ) : null}
+        </div>
+    </>
+  );
+
+  if (zone !== 'right') {
+    return (
+      <section
+        ref={panelRef}
+        data-context-panel="true"
+        data-workspace-zone={zone}
+        tabIndex={-1}
+        aria-label={zoneLabel}
+        // A collapsed zone stays mounted so its panes keep their state (a
+        // loaded page, the editor, the terminal); it just takes no input.
+        inert={!isOpen || undefined}
+        aria-hidden={!isOpen || undefined}
+        className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-background"
+        onKeyDownCapture={handlePanelKeyDownCapture}
+      >
+        {content}
+      </section>
+    );
+  }
 
   // width/min/max stay interpolable across open/close (no instant min/max
   // jumps) so the 200ms width transition matches the sidebars.
@@ -1335,138 +1635,7 @@ export const ContextPanel: React.FC = () => {
         }}
         aria-hidden={!isOpen}
       >
-      {header}
-      <div className={cn('relative min-h-0 flex-1 overflow-hidden', isResizing && 'pointer-events-none')}>
-        {hasFileTabs ? (
-          <div className={cn('absolute inset-0 flex', isFileTabActive ? 'flex' : 'hidden')}>
-            {hasOpenEditorFile || !contextEditorTreeVisible ? (
-              // Hidden rather than unmounted so a hidden editor keeps its state.
-              <div className={cn('h-full min-w-0 flex-1', hasOpenEditorFile && !showsEditor && 'hidden')}>
-                {hasOpenEditorFile ? (
-                  <React.Suspense fallback={null}><FilesView mode="editor-only" visible={isOpen && isFileTabActive && showsEditor} /></React.Suspense>
-                ) : (
-                  <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
-                    <Icon name="file-code" className="h-12 w-12 text-muted-foreground/50" />
-                    <div className="typography-ui-header text-foreground">{t('contextPanel.editorEmpty.title')}</div>
-                    <div className="max-w-sm typography-micro text-muted-foreground">{t('contextPanel.editorEmpty.description')}</div>
-                  </div>
-                )}
-              </div>
-            ) : null}
-            <EditorTreeColumn visible={contextEditorTreeVisible} active={isOpen && isFileTabActive} fill={!showsEditor} />
-          </div>
-        ) : null}
-        {activeChatTab && activeChatSessionID && activeChatSrc ? (
-          <iframe
-            key={activeChatTab.id}
-            ref={(node) => {
-              if (!node) {
-                chatFrameRefs.current.delete(activeChatTab.id);
-                return;
-              }
-              chatFrameRefs.current.set(activeChatTab.id, node);
-            }}
-            src={activeChatSrc}
-            title={t('contextPanel.iframe.sessionChatTitle', { sessionID: activeChatSessionID })}
-            className="absolute inset-0 h-full w-full border-0 bg-background"
-            onLoad={() => {
-              postThemeSyncToEmbeddedChat();
-              postChatSettingsSyncToEmbeddedChat();
-              postEmbeddedVisibilityToChats();
-            }}
-          />
-        ) : null}
-        {browserTabs.map((tab) => (
-          <div
-            key={tab.id}
-            // Invisible rather than display:none, so a background tab the agent
-            // is working keeps its layout and its snapshots read a real page.
-            className={cn(
-              'absolute inset-0',
-              activeTab?.id !== tab.id && 'invisible pointer-events-none'
-            )}
-            aria-hidden={activeTab?.id !== tab.id || undefined}
-          >
-            <BrowserPane initialUrl={tab.targetPath ?? ''} directory={directoryKey} tabID={tab.id} />
-          </div>
-        ))}
-        {diffTabs.map((tab) => (
-          <div
-            key={tab.id}
-            className={cn(
-              'absolute inset-0',
-              activeTab?.id !== tab.id && 'hidden'
-            )}
-          >
-            <React.Suspense fallback={null}>
-              <DiffView
-                visible={isOpen && activeTab?.id === tab.id}
-                hideStackedFileSidebar
-                stackedDefaultCollapsedAll
-                pinSelectedFileHeaderToTopOnNavigate
-                showOpenInEditorAction
-                diffScope={tab.diffScope ?? (tab.stagedDiff ? 'staged' : 'working')}
-                onDiffScopeChange={handleDiffScopeChange}
-                targetFilePath={tab.targetPath}
-                flushContent
-              />
-            </React.Suspense>
-          </div>
-        ))}
-        {terminalTab ? (
-          <div className={cn('absolute inset-0', activeTab?.mode === 'terminal' ? 'block' : 'hidden')}>
-            <TerminalView visible={isOpen && activeTab?.mode === 'terminal'} directory={terminalTab.targetDirectory} />
-          </div>
-        ) : null}
-        {hasWalkthroughTab ? (
-          <div className={cn('absolute inset-0', activeTab?.mode === 'walkthrough' ? 'block' : 'hidden')}>
-            <React.Suspense fallback={null}>
-              <WalkthroughView directory={effectiveDirectory} visible={isOpen && activeTab?.mode === 'walkthrough'} />
-            </React.Suspense>
-          </div>
-        ) : null}
-        {pluginTabs.map((tab) => {
-          if (!isPluginContextPanelMode(tab.mode)) return null;
-          // A shared-surface extension's picture is drawn by the host and
-          // mounted only while shown, so an unwatched surface holds no socket
-          // and its service can idle out. Its own page, when it has one, is
-          // docked to one edge of the picture and stays mounted like any
-          // panel iframe.
-          const guestId = pluginIdFromMode(tab.mode);
-          const sharedSurface = surfaceGuestIds.has(guestId);
-          const docking = surfaceDockings.get(guestId);
-          const shown = activeTab?.id === tab.id;
-          const surfaceMounted = shown && isOpen;
-          if (sharedSurface && !docking && !surfaceMounted) return null;
-          return (
-            <div
-              key={tab.id}
-              className={cn('absolute inset-0', shown ? 'block' : 'hidden')}
-            >
-              <React.Suspense fallback={null}>
-                {!sharedSurface ? (
-                  <PluginPane mode={tab.mode} />
-                ) : !docking ? (
-                  <GuestSurfacePane mode={tab.mode} />
-                ) : (
-                  <div className={cn('flex h-full', DOCK_LAYOUT[docking.dock].container)}>
-                    <div
-                      className={cn('shrink-0', DOCK_LAYOUT[docking.dock].page)}
-                      style={DOCK_LAYOUT[docking.dock].vertical ? { height: docking.size } : { width: docking.size }}
-                    >
-                      <PluginPane mode={tab.mode} />
-                    </div>
-                    <div className="min-h-0 min-w-0 flex-1">
-                      {surfaceMounted ? <GuestSurfacePane mode={tab.mode} /> : null}
-                    </div>
-                  </div>
-                )}
-              </React.Suspense>
-            </div>
-          );
-        })}
-        {activeTab?.mode !== 'chat' && !isFileTabActive && activeTab?.mode !== 'browser' && activeTab?.mode !== 'diff' && activeTab?.mode !== 'terminal' && activeTab?.mode !== 'walkthrough' && !(activeTab && isPluginContextPanelMode(activeTab.mode)) ? activeNonChatContent : null}
-      </div>
+      {content}
       </div>
     </aside>
   );

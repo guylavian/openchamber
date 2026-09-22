@@ -3,9 +3,44 @@
 ## Purpose
 
 `packages/ui/src/lib/surfaces` owns the declarative registry of context panel
-surfaces — the desktop workspaces switched by the vertical rail on the right
+surfaces — the desktop workspaces opened from the vertical rail on the right
 edge (`components/layout/ContextPanelRail.tsx`) and rendered by
 `components/layout/ContextPanel.tsx`.
+
+## Workspace zones
+
+A surface is docked in one of four zones: `left`, `center`, `right`, `bottom`.
+`components/layout/workspace/WorkspaceLayout.tsx` composes them and mounts one
+`ContextPanel` per zone that has something to draw; the panel renders only the
+tabs whose mode belongs to its zone, which is what lets a terminal at the bottom
+and a diff on the right be on screen at once. Surfaces sharing a zone are tabs
+in it. A zone with nothing docked in it renders nothing. A collapsed zone
+stays mounted at zero size and inert, so its panes (a loaded page, the editor,
+a terminal) keep their state, as the single panel always did while closed.
+
+Two descriptor fields drive placement, so no component hardcodes it:
+`allowedZones` (omitted means every zone) and `defaultZone` (omitted means
+`right`, where every panel surface lived before the zones existed). Keep a
+surface out of a zone it cannot be read in — a file tree in a 160px bottom strip
+— rather than out of one that merely looks unusual.
+
+The `chat` surface is the session conversation. It defaults to `center`, which
+is the pre-zones layout, and wherever it sits that zone cannot be collapsed:
+hiding the session with no obvious way back is never the right outcome. Split
+session chats open beside the conversation, never over it: in `right` while
+the conversation holds the center, in the center otherwise (`sessionChatZone`).
+
+A surface other than the conversation can be opened in its own window
+("Open in new window", `lib/workspace/surfaceWindow.ts`). That is per project:
+the main window stops drawing the surface for that project only, and forwards
+whatever it opens for it (a file link, a diff) to the detached window over a
+same-origin BroadcastChannel. The surface comes back when the window closes or
+stays silent past a limit long enough to survive background timer throttling.
+
+Placement is user state, not a runtime fact: see `lib/workspace/layout.ts` for
+the model and `stores/DOCUMENTATION.md` for how it is stored and migrated.
+Unknown and plugin surfaces are unconstrained and land in `right`; a
+third-party panel keeps working without knowing this system exists.
 
 ## Model
 
@@ -32,6 +67,11 @@ Full-screen extension pages are separate from this rail registry. `contributes.p
   discarded on hydration. Tree-only mode temporarily suspends panel expansion;
   reopening the editor restores its previous expanded state. The tree stays
   right-aligned at its saved width during the panel's collapse transition.
+- Clicking a rail item opens the surface in the zone it is docked in: it
+  reveals that zone if collapsed and brings the surface to the front there.
+  Clicking the surface that zone is already showing collapses that zone only.
+  Right-clicking a rail item docks the surface elsewhere — the rail reaches a
+  surface that has no tab yet, which the in-panel tab menu cannot.
 - Rail order is user-reorderable and persisted globally in
   `useUIStore.contextRailOrder`; `sortContextSurfaces` applies it on top of the
   registry's default order and appends any missing surfaces.

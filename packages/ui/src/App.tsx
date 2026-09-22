@@ -2,6 +2,8 @@ import { OpenCodeCompatibilityGate } from '@/components/update/OpenCodeCompatibi
 import React from 'react';
 import { AppStartupOverlay } from '@/components/ui/AppStartupOverlay';
 import { MainLayout } from '@/components/layout/MainLayout';
+import { SurfaceWindowLayout } from '@/components/layout/workspace/SurfaceWindowLayout';
+import { readSurfaceWindowParams } from '@/lib/workspace/surfaceWindow';
 import { ChatView } from '@/components/views/ChatView';
 import { AppLinkConfirmDialog } from '@/components/chat/AppLinkConfirmDialog';
 import { SharedTrustConfirmDialog } from '@/components/projects/SharedTrustConfirmDialog';
@@ -303,6 +305,12 @@ function App({ apis }: AppProps) {
   });
   const appReadyDispatchedRef = React.useRef(false);
   const embeddedSessionChat = React.useMemo<EmbeddedSessionChatConfig | null>(() => readEmbeddedSessionChatConfig(), []);
+  // A surface detached into its own window boots the same app and providers
+  // but draws only that surface. Fixed for the life of the page.
+  const surfaceWindow = React.useMemo(
+    () => (typeof window === 'undefined' ? null : readSurfaceWindowParams(window.location.search)),
+    [],
+  );
   const embeddedBackgroundWorkEnabled = !embeddedSessionChat || isEmbeddedVisible;
 
   React.useEffect(() => {
@@ -974,7 +982,9 @@ function App({ apis }: AppProps) {
                 <div className={isDesktopRuntime ? 'h-full text-foreground bg-transparent' : 'h-full text-foreground bg-background'}>
                   <SyncAppEffects embeddedBackgroundWorkEnabled={embeddedBackgroundWorkEnabled} />
                   <OpenCodeUpdateToast />
-                  <MainLayout />
+                  {surfaceWindow
+                    ? <SurfaceWindowLayout surfaceId={surfaceWindow.surfaceId} directory={surfaceWindow.directory} />
+                    : <MainLayout />}
                   <AppStartupOverlay ready={isInitialized && (!isDesktopRuntime || (bootOutcomeKnown && bootViewIsMain))} />
                   <Toaster />
                   <AppLinkConfirmDialog />
