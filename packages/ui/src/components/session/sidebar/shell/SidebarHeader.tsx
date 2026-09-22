@@ -31,6 +31,8 @@ type Props = {
   onOpenScheduled: () => void;
   onOpenMultiRun: () => void;
   canOpenMultiRun: boolean;
+  /** Absent where the Agent Teams page is not offered (VS Code, mobile). */
+  onOpenAgentTeams?: () => void;
   onOpenArchive: () => void;
   headerActionIconClass: string;
   headerActionButtonClass: string;
@@ -56,6 +58,7 @@ export function SidebarHeader(props: Props): React.ReactNode {
     onOpenScheduled,
     onOpenMultiRun,
     canOpenMultiRun,
+    onOpenAgentTeams,
     onOpenArchive,
     headerActionIconClass,
     headerActionButtonClass,
@@ -140,6 +143,22 @@ export function SidebarHeader(props: Props): React.ReactNode {
               </TooltipTrigger>
               <TooltipContent side="bottom" sideOffset={4}><p>{t('sessions.sidebar.header.actions.newMultiRun')}</p></TooltipContent>
             </Tooltip>
+
+            {onOpenAgentTeams ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={onOpenAgentTeams}
+                    className={cn(headerActionButtonClass, 'text-muted-foreground hover:text-foreground hover:bg-transparent')}
+                    aria-label={t('agentTeams.title')}
+                  >
+                    <Icon name="team" className={headerActionIconClass} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" sideOffset={4}><p>{t('agentTeams.title')}</p></TooltipContent>
+              </Tooltip>
+            ) : null}
 
             <Tooltip>
               <TooltipTrigger asChild>

@@ -79,6 +79,20 @@ const browserProviderResetSchema = z.object({
 });
 type BrowserProviderResetEvent = { type: 'browser-provider-reset' } & z.infer<typeof browserProviderResetSchema>;
 
+/**
+ * A team run changed (a member started or finished, the run was cancelled or
+ * retried). Carries no content: listeners re-read the run.
+ */
+const agentTeamRunUpdatedSchema = z.object({
+  runId: z.string().min(1),
+  teamId: z.string().min(1),
+  status: z.string(),
+  updatedAt: z.number(),
+});
+type AgentTeamRunUpdatedEvent = { type: 'agent-team-run-updated' } & z.infer<typeof agentTeamRunUpdatedSchema>;
+/** The team definitions changed; listeners re-read them. */
+type AgentTeamsUpdatedEvent = { type: 'agent-teams-updated' };
+
 /** Jev routing events; each carries what the routing store needs and nothing the UI must re-derive. */
 const routingUpdatedSchema = z.object({
   available: z.boolean(),
@@ -142,7 +156,9 @@ type OpenChamberEvent =
   | BrowserControlRequestEvent
   | FileOpenRequestEvent
   | BrowserProviderResetEvent
-  | AgentMemoryChangedEvent;
+  | AgentMemoryChangedEvent
+  | AgentTeamRunUpdatedEvent
+  | AgentTeamsUpdatedEvent;
 type Listener = (event: OpenChamberEvent) => void;
 
 const worktreeChangedPropertiesSchema = z.object({
@@ -284,6 +300,17 @@ const dispatchFromEnvelope = (envelope: { type: string; properties: unknown }) =
   if (envelope.type === 'openchamber:browser-provider-reset') {
     const parsed = browserProviderResetSchema.safeParse(envelope.properties);
     if (parsed.success) for (const listener of listeners) listener({ type: 'browser-provider-reset', ...parsed.data });
+    return;
+  }
+
+  if (envelope.type === 'openchamber:agent-team-run.updated') {
+    const parsed = agentTeamRunUpdatedSchema.safeParse(envelope.properties);
+    if (parsed.success) for (const listener of listeners) listener({ type: 'agent-team-run-updated', ...parsed.data });
+    return;
+  }
+
+  if (envelope.type === 'openchamber:agent-teams.updated') {
+    for (const listener of listeners) listener({ type: 'agent-teams-updated' });
     return;
   }
 

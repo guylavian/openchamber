@@ -3,6 +3,7 @@ import { linearIssuePickerI18n } from './linear-issue-picker.i18n';
 import { linearPanelI18n } from './linear-panel.i18n';
 import { routingI18n } from './routing.i18n';
 import { pluginPanelI18n } from './plugin-panel.i18n';
+import { agentTeamsI18n } from './agent-teams.i18n';
 import { surfacePanelI18n } from './surface-panel.i18n';
 import { fileArtifactsI18n } from './file-artifacts.i18n';
 
@@ -38,6 +39,7 @@ export const dict = {
   ...linearPanelI18n.tr,
   ...routingI18n.tr,
   ...pluginPanelI18n.tr,
+  ...agentTeamsI18n.tr,
   ...surfacePanelI18n.tr,
   ...fileArtifactsI18n.tr,
   'terminalView.actions.attachSelection': 'Seçili çıktıyı ekle',

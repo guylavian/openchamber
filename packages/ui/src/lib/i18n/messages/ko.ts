@@ -4,6 +4,7 @@ import { linearIssuePickerI18n } from './linear-issue-picker.i18n';
 import { linearPanelI18n } from './linear-panel.i18n';
 import { routingI18n } from './routing.i18n';
 import { pluginPanelI18n } from './plugin-panel.i18n';
+import { agentTeamsI18n } from './agent-teams.i18n';
 import { surfacePanelI18n } from './surface-panel.i18n';
 import { fileArtifactsI18n } from './file-artifacts.i18n';
 
@@ -39,6 +40,7 @@ export const dict: Record<I18nKey, string> = {
   ...linearPanelI18n.ko,
   ...routingI18n.ko,
   ...pluginPanelI18n.ko,
+  ...agentTeamsI18n.ko,
   ...surfacePanelI18n.ko,
   ...fileArtifactsI18n.ko,
   'terminalView.actions.attachSelection': '선택한 출력 첨부',

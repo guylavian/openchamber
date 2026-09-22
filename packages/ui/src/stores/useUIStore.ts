@@ -785,6 +785,8 @@ interface UIStore {
 
   theme: 'light' | 'dark' | 'system';
   isMultiRunLauncherOpen: boolean;
+  /** The Agent Teams page, one of the mutually exclusive full-page surfaces. */
+  isAgentTeamsPageOpen: boolean;
   multiRunLauncherPrefillPrompt: string;
   isSidebarOpen: boolean;
   sidebarWidth: number;
@@ -1156,6 +1158,7 @@ interface UIStore {
   resetLinearIssueListFilters: () => void;
   setLinearIssueFocus: (identifier: string | null) => void;
   setMultiRunLauncherOpen: (open: boolean) => void;
+  setAgentTeamsPageOpen: (open: boolean) => void;
   setTimelineDialogOpen: (open: boolean) => void;
   setPromptNavigatorPanelOpen: (open: boolean) => void;
   togglePromptNavigatorPanel: () => void;
@@ -1229,7 +1232,7 @@ export const useUIStore = create<UIStore>()(
       (set, get) => ({
 
         theme: 'system',
-        isMultiRunLauncherOpen: false,
+        isMultiRunLauncherOpen: false, isAgentTeamsPageOpen: false,
         multiRunLauncherPrefillPrompt: '',
         isSidebarOpen: true,
         sidebarWidth: LEFT_SIDEBAR_DEFAULT_WIDTH,
@@ -2006,37 +2009,43 @@ export const useUIStore = create<UIStore>()(
 
         setScheduledTasksDialogOpen: (open) => {
           set(open
-            ? { isScheduledTasksDialogOpen: true, isArchivePageOpen: false, worktreesPageProjectId: null, isMultiRunLauncherOpen: false, openGuestPageId: null }
+            ? { isScheduledTasksDialogOpen: true, isArchivePageOpen: false, worktreesPageProjectId: null, isMultiRunLauncherOpen: false, isAgentTeamsPageOpen: false, openGuestPageId: null }
             : { isScheduledTasksDialogOpen: false });
         },
 
         setArchivePageOpen: (open) => {
           set(open
-            ? { isArchivePageOpen: true, isScheduledTasksDialogOpen: false, worktreesPageProjectId: null, isMultiRunLauncherOpen: false, openGuestPageId: null }
+            ? { isArchivePageOpen: true, isScheduledTasksDialogOpen: false, worktreesPageProjectId: null, isMultiRunLauncherOpen: false, isAgentTeamsPageOpen: false, openGuestPageId: null }
             : { isArchivePageOpen: false });
+        },
+
+        setAgentTeamsPageOpen: (open) => {
+          set(open
+            ? { isAgentTeamsPageOpen: true, isScheduledTasksDialogOpen: false, isArchivePageOpen: false, worktreesPageProjectId: null, isMultiRunLauncherOpen: false, openGuestPageId: null }
+            : { isAgentTeamsPageOpen: false });
         },
 
         setWorktreesPageProjectId: (projectId) => {
           set(projectId
-            ? { worktreesPageProjectId: projectId, isScheduledTasksDialogOpen: false, isArchivePageOpen: false, isMultiRunLauncherOpen: false, openGuestPageId: null }
+            ? { worktreesPageProjectId: projectId, isScheduledTasksDialogOpen: false, isArchivePageOpen: false, isMultiRunLauncherOpen: false, isAgentTeamsPageOpen: false, openGuestPageId: null }
             : { worktreesPageProjectId: null });
         },
 
         setOpenGuestPage: (id) => {
-          set(id ? { openGuestPageId: id, isScheduledTasksDialogOpen: false, isArchivePageOpen: false, worktreesPageProjectId: null, isMultiRunLauncherOpen: false }
+          set(id ? { openGuestPageId: id, isScheduledTasksDialogOpen: false, isArchivePageOpen: false, worktreesPageProjectId: null, isMultiRunLauncherOpen: false, isAgentTeamsPageOpen: false }
             : { openGuestPageId: null });
         },
 
         closeMainSurfaces: () => {
           const state = get();
-          if (!state.isScheduledTasksDialogOpen && !state.isArchivePageOpen && !state.worktreesPageProjectId && !state.isMultiRunLauncherOpen && !state.openGuestPageId) {
+          if (!state.isScheduledTasksDialogOpen && !state.isArchivePageOpen && !state.worktreesPageProjectId && !state.isMultiRunLauncherOpen && !state.isAgentTeamsPageOpen && !state.openGuestPageId) {
             return;
           }
           set({
             isScheduledTasksDialogOpen: false,
             isArchivePageOpen: false,
             worktreesPageProjectId: null,
-            isMultiRunLauncherOpen: false,
+            isMultiRunLauncherOpen: false, isAgentTeamsPageOpen: false,
             multiRunLauncherPrefillPrompt: '',
             openGuestPageId: null,
           });
@@ -2583,7 +2592,7 @@ export const useUIStore = create<UIStore>()(
           set((state) => ({
             isMultiRunLauncherOpen: open,
             multiRunLauncherPrefillPrompt: open ? state.multiRunLauncherPrefillPrompt : '',
-            ...(open ? { isScheduledTasksDialogOpen: false, isArchivePageOpen: false, worktreesPageProjectId: null, openGuestPageId: null } : {}),
+            ...(open ? { isScheduledTasksDialogOpen: false, isArchivePageOpen: false, worktreesPageProjectId: null, openGuestPageId: null, isAgentTeamsPageOpen: false } : {}),
           }));
         },
 
@@ -2591,6 +2600,7 @@ export const useUIStore = create<UIStore>()(
           set({
             openGuestPageId: null,
             isMultiRunLauncherOpen: true,
+            isAgentTeamsPageOpen: false,
             multiRunLauncherPrefillPrompt: '',
             isSessionSwitcherOpen: false,
             isScheduledTasksDialogOpen: false,
@@ -2603,6 +2613,7 @@ export const useUIStore = create<UIStore>()(
           set({
             openGuestPageId: null,
             isMultiRunLauncherOpen: true,
+            isAgentTeamsPageOpen: false,
             multiRunLauncherPrefillPrompt: prompt,
             isSessionSwitcherOpen: false,
             isScheduledTasksDialogOpen: false,

@@ -8,9 +8,9 @@
  */
 import { z } from 'zod';
 
-export const MAX_TEAM_AGENTS = 12;
-export const MAX_TEAM_STAGES = 12;
-export const WORKSPACE_MODES = ['isolated', 'shared'];
+const MAX_TEAM_AGENTS = 12;
+const MAX_TEAM_STAGES = 12;
+const WORKSPACE_MODES = ['isolated', 'shared'];
 
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
 
@@ -40,7 +40,7 @@ const teamStageSchema = z.object({
 }).strict();
 
 /** What a client may send when creating or replacing a team. */
-export const teamInputSchema = z.object({
+const teamInputSchema = z.object({
   name: z.string().trim().min(1).max(80),
   workspace: z.enum(WORKSPACE_MODES).default('isolated'),
   agents: z.array(teamAgentSchema).min(1).max(MAX_TEAM_AGENTS),
@@ -48,7 +48,7 @@ export const teamInputSchema = z.object({
   stages: z.array(teamStageSchema).max(MAX_TEAM_STAGES),
 }).strict();
 
-export const teamSchema = teamInputSchema.extend({
+const teamSchema = teamInputSchema.extend({
   id: z.string().regex(ID),
   createdAt: z.string().min(1),
   updatedAt: z.string().min(1),

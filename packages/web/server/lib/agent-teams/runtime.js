@@ -16,7 +16,7 @@
  * members after it see. Nothing is merged: the worktrees stay for the user.
  */
 import { getLog as getLogDefault, getRangeDiff as getRangeDiffDefault } from '../git/index.js';
-import { modelRef, parseTeamInput, TeamValidationError } from './model.js';
+import { modelRef, parseTeamInput } from './model.js';
 import { createTeamOrchestrator, TeamRunError } from './orchestrator.js';
 import { buildMemberPrompt, excerpt, HANDOFF_DIFF_LIMIT } from './prompts.js';
 import { createAgentTeamsStore } from './store.js';
@@ -31,7 +31,7 @@ const RUN_SAVE_DELAY_MS = 300;
 
 const slug = (value) => String(value).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) || 'member';
 
-export class AgentTeamsUnavailableError extends Error {
+class AgentTeamsUnavailableError extends Error {
   constructor(message) {
     super(message);
     this.name = 'AgentTeamsUnavailableError';
@@ -130,14 +130,11 @@ export const createAgentTeamsRuntime = ({
     // picked one, so "read only" is enforced by permissions, not by asking.
     const openCodeAgent = agent.agent ?? (readOnly ? 'plan' : null);
     const startedAt = now();
-    const created = await sessionService.create({
-      directory: run.directory,
-      title: `${run.teamName} · ${agent.name}`,
-      prompt,
-      ...(agent.model ? { model: modelRef(agent.model) } : {}),
-      ...(openCodeAgent ? { agent: openCodeAgent } : {}),
-      ...(isolated ? { worktree: { name: worktreeName, branchName, startRef: baseRef } } : {}),
-    });
+    const request = { directory: run.directory, title: `${run.teamName} · ${agent.name}`, prompt };
+    if (agent.model) request.model = modelRef(agent.model);
+    if (openCodeAgent) request.agent = openCodeAgent;
+    if (isolated) request.worktree = { name: worktreeName, branchName, startRef: baseRef };
+    const created = await sessionService.create(request);
 
     const worktree = created.worktree
       ? { path: created.worktree.path, branch: created.worktree.branch || branchName }
@@ -284,4 +281,3 @@ export const createAgentTeamsRuntime = ({
   };
 };
 
-export { TeamRunError, TeamValidationError };

@@ -4,6 +4,7 @@ import { linearIssuePickerI18n } from './linear-issue-picker.i18n';
 import { linearPanelI18n } from './linear-panel.i18n';
 import { routingI18n } from './routing.i18n';
 import { pluginPanelI18n } from './plugin-panel.i18n';
+import { agentTeamsI18n } from './agent-teams.i18n';
 import { surfacePanelI18n } from './surface-panel.i18n';
 import { fileArtifactsI18n } from './file-artifacts.i18n';
 
@@ -39,6 +40,7 @@ export const dict: Record<I18nKey, string> = {
   ...linearPanelI18n['zh-CN'],
   ...routingI18n['zh-CN'],
   ...pluginPanelI18n['zh-CN'],
+  ...agentTeamsI18n['zh-CN'],
   ...surfacePanelI18n['zh-CN'],
   ...fileArtifactsI18n['zh-CN'],
   'terminalView.actions.attachSelection': '附加所选输出',

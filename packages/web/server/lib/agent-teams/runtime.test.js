@@ -47,13 +47,9 @@ const createFakes = ({ answers = {}, failing = {}, hanging = new Set() } = {}) =
       recordsBySession.set(sessionId, failing[memberName]
         ? [{ type: 'idle', outcome: 'failed' }, { type: 'assistant', content: [], error: { type: 'X', message: failing[memberName] } }]
         : [{ type: 'idle', outcome: 'succeeded' }, { type: 'assistant', content: [{ type: 'text', text: answers[memberName] ?? `${memberName} done` }] }]);
-      return {
-        sessionId,
-        directory,
-        promptDispatched: true,
-        model: payload.model ?? 'anthropic/claude',
-        ...(payload.worktree ? { worktree: { path: directory, branch: payload.worktree.branchName } } : {}),
-      };
+      const result = { sessionId, directory, promptDispatched: true, model: payload.model ?? 'anthropic/claude' };
+      if (payload.worktree) result.worktree = { path: directory, branch: payload.worktree.branchName };
+      return result;
     }),
     setMetadata: vi.fn(async () => ({})),
   };

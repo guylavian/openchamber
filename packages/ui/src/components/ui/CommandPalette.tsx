@@ -95,6 +95,7 @@ export const CommandPalette: React.FC = () => {
   const openContextFile = useUIStore((s) => s.openContextFile);
   const shortcutOverrides = useUIStore((s) => s.shortcutOverrides);
   const openMultiRunLauncher = useUIStore((s) => s.openMultiRunLauncher);
+  const setAgentTeamsPageOpen = useUIStore((s) => s.setAgentTeamsPageOpen);
   const setArchivePageOpen = useUIStore((s) => s.setArchivePageOpen);
   const setProjectContextTab = useUIStore((s) => s.setProjectContextTab);
 
@@ -313,6 +314,18 @@ export const CommandPalette: React.FC = () => {
           openMultiRunLauncher();
         }),
       },
+      // The page needs the OpenChamber server (not in VS Code) and has no mobile layout.
+      ...(isVSCodeRuntime() || isMobile ? [] : [{
+        id: 'open-agent-teams',
+        secondary: true,
+        title: t('agentTeams.title'),
+        icon: <Icon name="team" className="mr-2 h-4 w-4" />,
+        searchText: t('commandPalette.item.openAgentTeams'),
+        onSelect: run(() => {
+          setSessionSwitcherOpen(false);
+          setAgentTeamsPageOpen(true);
+        }),
+      }]),
       {
         id: 'open-archive',
         secondary: true,
@@ -395,6 +408,7 @@ export const CommandPalette: React.FC = () => {
     currentSessionId,
     togglePinnedSession,
     openMultiRunLauncher,
+    setAgentTeamsPageOpen,
     setArchivePageOpen,
     setProjectContextTab,
   ]);

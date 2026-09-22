@@ -9,12 +9,12 @@
  */
 
 /** Per-member caps on what is handed forward. Both ends are kept. */
-export const HANDOFF_OUTPUT_LIMIT = 12_000;
+const HANDOFF_OUTPUT_LIMIT = 12_000;
 export const HANDOFF_DIFF_LIMIT = 20_000;
 
-/** Shortens long text to its start and end with a visible omission marker. */
+/** Shortens long text (a string, or null for none) to its start and end with a visible omission marker. */
 export const excerpt = (text, limit) => {
-  const value = typeof text === 'string' ? text.trim() : '';
+  const value = (text ?? '').trim();
   if (value.length <= limit) return value;
   const head = Math.ceil(limit * 0.6);
   const tail = limit - head;

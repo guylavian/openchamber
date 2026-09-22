@@ -925,6 +925,7 @@ export const Header: React.FC = () => {
   const isArchiveSurfaceOpen = useUIStore((state) => state.isArchivePageOpen);
   const worktreesSurfaceProjectId = useUIStore((state) => state.worktreesPageProjectId);
   const isMultiRunSurfaceOpen = useUIStore((state) => state.isMultiRunLauncherOpen);
+  const isAgentTeamsSurfaceOpen = useUIStore((state) => state.isAgentTeamsPageOpen);
   const worktreesSurfaceProjectLabel = useProjectsStore((state) => {
     if (!worktreesSurfaceProjectId) return null;
     const project = state.projects.find((entry) => entry.id === worktreesSurfaceProjectId);
@@ -944,11 +945,14 @@ export const Header: React.FC = () => {
         subtitle: null,
       };
     }
+    if (isAgentTeamsSurfaceOpen) {
+      return { title: t('agentTeams.title'), subtitle: null };
+    }
     if (isMultiRunSurfaceOpen) {
       return { title: t('sessions.sidebar.header.actions.newMultiRun'), subtitle: null };
     }
     return null;
-  }, [guestPage, isArchiveSurfaceOpen, isMultiRunSurfaceOpen, isScheduledSurfaceOpen, t, worktreesSurfaceProjectId, worktreesSurfaceProjectLabel]);
+  }, [guestPage, isAgentTeamsSurfaceOpen, isArchiveSurfaceOpen, isMultiRunSurfaceOpen, isScheduledSurfaceOpen, t, worktreesSurfaceProjectId, worktreesSurfaceProjectLabel]);
 
 
   const actionDirectory = React.useMemo(() => {

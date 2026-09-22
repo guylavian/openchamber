@@ -1,6 +1,25 @@
 import express from 'express';
+import { z } from 'zod';
+
+import { TeamValidationError } from './model.js';
 
 const json = express.json({ limit: '256kb' });
+
+const startRunSchema = z.object({
+  goal: z.string(),
+  directory: z.string().trim(),
+});
+
+const retrySchema = z.union([
+  z.object({ memberId: z.string().min(1) }),
+  z.object({ stageIndex: z.number().int().min(0) }),
+]);
+
+const parseBody = (schema, body) => {
+  const parsed = schema.safeParse(body ?? {});
+  if (!parsed.success) throw new TeamValidationError(parsed.error.issues[0]?.message ?? 'Invalid request');
+  return parsed.data;
+};
 
 /** The run list omits member output and diffs; open a run to read them. */
 const summarizeRun = (run) => ({
@@ -32,10 +51,10 @@ export const registerAgentTeamRoutes = (app, { agentTeamsRuntime }) => {
   app.get(`${base}/runs/:runId`, (req, res) => send(res, () => ({ run: agentTeamsRuntime.getRun(req.params.runId) })));
   app.post(`${base}/runs/:runId/cancel`, (req, res) => send(res, () => ({ run: agentTeamsRuntime.cancelRun(req.params.runId) })));
   app.post(`${base}/runs/:runId/retry`, json, (req, res) => send(res, () => {
-    const memberId = typeof req.body?.memberId === 'string' ? req.body.memberId : null;
-    const run = memberId
-      ? agentTeamsRuntime.retryMember(req.params.runId, memberId)
-      : agentTeamsRuntime.retryStage(req.params.runId, req.body?.stageIndex);
+    const target = parseBody(retrySchema, req.body);
+    const run = 'memberId' in target
+      ? agentTeamsRuntime.retryMember(req.params.runId, target.memberId)
+      : agentTeamsRuntime.retryStage(req.params.runId, target.stageIndex);
     return { run };
   }));
 
@@ -45,9 +64,6 @@ export const registerAgentTeamRoutes = (app, { agentTeamsRuntime }) => {
     return { ok: true };
   }));
   app.post(`${base}/:teamId/runs`, json, (req, res) => send(res, () => ({
-    run: agentTeamsRuntime.startRun(req.params.teamId, {
-      goal: typeof req.body?.goal === 'string' ? req.body.goal : '',
-      directory: typeof req.body?.directory === 'string' ? req.body.directory.trim() : '',
-    }),
+    run: agentTeamsRuntime.startRun(req.params.teamId, parseBody(startRunSchema, req.body)),
   })));
 };

@@ -232,10 +232,13 @@ export const createTeamOrchestrator = ({
     if (blocked) throw new TeamRunError('An earlier stage has not completed. Retry that stage first.');
   };
 
-  const restart = (run, stageIndex, memberIds, message) => {
+  // Timeline entries stay structured (kind, member, stage number) so each
+  // client can word them in its own language.
+  const restart = (run, stageIndex, memberIds) => {
     resetFrom(run, stageIndex, memberIds);
     Object.assign(run, { status: 'running', error: null, finishedAt: null });
-    note(run, 'retry', memberIds?.[0] ?? null, message);
+    if (memberIds) note(run, 'retry-member', memberIds[0]);
+    else note(run, 'retry-stage', null, String(stageIndex + 1));
     void save(run);
     void begin(run, stageIndex);
     return clone(run);
@@ -248,7 +251,7 @@ export const createTeamOrchestrator = ({
 
     /** Starts a run of `team` and returns its record at once; the work continues in the background. */
     startRun: ({ team, goal, directory }) => {
-      const trimmedGoal = typeof goal === 'string' ? goal.trim() : '';
+      const trimmedGoal = goal.trim();
       if (!trimmedGoal) throw new TeamRunError('A task is required', 400);
       if (!directory) throw new TeamRunError('A project directory is required', 400);
       if (team.stages.length === 0) throw new TeamRunError('The team has no members to run', 400);
@@ -295,7 +298,7 @@ export const createTeamOrchestrator = ({
       const member = run.members.find((candidate) => candidate.agentId === memberId);
       if (!member) throw new TeamRunError('Team member not found in this run', 404);
       requireEarlierStagesComplete(run, member.stageIndex);
-      return restart(run, member.stageIndex, [memberId], `Retry ${agentOf(run, member).name}`);
+      return restart(run, member.stageIndex, [memberId]);
     },
 
     /** Runs every member of a stage again, then the stages after it. */
@@ -306,7 +309,7 @@ export const createTeamOrchestrator = ({
         throw new TeamRunError('Stage not found in this run', 404);
       }
       requireEarlierStagesComplete(run, stageIndex);
-      return restart(run, stageIndex, null, `Retry stage ${stageIndex + 1}`);
+      return restart(run, stageIndex, null);
     },
 
     /** Resolves when the run stops working (tests and shutdown). */

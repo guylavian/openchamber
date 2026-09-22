@@ -65,7 +65,7 @@ const runSchema = z.object({
 });
 
 /** A stored run, or null when it does not parse or its team snapshot is damaged. */
-export const parseStoredRun = (value) => {
+const parseStoredRun = (value) => {
   const parsed = runSchema.safeParse(value);
   if (!parsed.success) return null;
   const team = parseStoredTeam({
