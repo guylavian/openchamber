@@ -611,8 +611,16 @@ export const createOpenChamberControlService = (dependencies) => {
     }
   };
 
+  // Waits for the turn a caller just dispatched to end, under the same rule
+  // as `wait` on an action: an idle reading before any observed activity is
+  // not completion. Agent teams use it for the sessions they start.
+  const waitForTurn = async ({ sessionId, directory, startedAt, timeoutMs, signal }) => {
+    const client = await getClient(directory);
+    return waitForIdle({ client, sessionID: sessionId, directory, timeoutMs, requireActivity: true, startedAt, signal });
+  };
+
   // The managed agent-tool plugin can no longer report the session's directory
   // (v2 dropped `context.directory` from a tool call), so it sends the session
   // id and the directory is resolved here, where it is authoritative.
-  return { execute, resolveSessionDirectory };
+  return { execute, resolveSessionDirectory, waitForTurn };
 };

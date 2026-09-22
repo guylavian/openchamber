@@ -126,6 +126,8 @@ import { createOpenChamberSessionService } from './lib/openchamber-sessions/rout
 import { createSessionMetadataStore, createUpstreamSessionMetadataReader } from './lib/openchamber-sessions/session-metadata-store.js';
 import { createScheduledTaskService } from './lib/scheduled-tasks/service.js';
 import { createOpenChamberControlService } from './lib/openchamber-control/service.js';
+import { createAgentTeamsRuntime } from './lib/agent-teams/runtime.js';
+import { createOpenCodeClient } from './lib/openchamber-sessions/opencode-client.js';
 import { OpenChamberControlError } from './lib/openchamber-control/error.js';
 import { createFileOpenRequester } from './lib/openchamber-control/file-open.js';
 import { applyConnectAttemptTimeout } from './lib/network-defaults.js';
@@ -1571,6 +1573,20 @@ const openChamberControlService = createOpenChamberControlService({
   }),
 });
 
+// Team runs are driven here, on the server, so they keep going while no UI
+// is open; each member is an ordinary session made by the session service.
+const agentTeamsRuntime = createAgentTeamsRuntime({
+  dataDir: OPENCHAMBER_DATA_DIR,
+  sessionService: openChamberSessionService,
+  waitForTurn: (input) => openChamberControlService.waitForTurn(input),
+  openCodeClientFor: (directory) => createOpenCodeClient({
+    baseUrl: buildOpenCodeUrl('/', '').replace(/\/$/, ''),
+    headers: getOpenCodeAuthHeaders(),
+    directory,
+  }),
+  broadcast: (event) => broadcastOpenChamberUiEvent(event),
+});
+
 const ensureGlobalWatcherStarted = async () => {
   if (globalWatcherStartPromise) {
     return globalWatcherStartPromise;
@@ -1647,6 +1663,7 @@ const gracefulShutdownRuntime = createGracefulShutdownRuntime({
   },
   tunnelAuthController,
   scheduledTasksRuntime,
+  agentTeamsRuntime,
   beginGuestServiceShutdown,
   stopAllGuestServices,
   getGuestSurfaceRuntime: () => guestSurfaceRuntime,
@@ -2127,6 +2144,7 @@ async function main(options = {}) {
     scheduledTaskService,
     openChamberSessionService,
     openChamberControlService,
+    agentTeamsRuntime,
     waitForOpenCodeReady,
     emitSessionCreatedEvent,
     getOpenChamberEventClients: () => uiOpenChamberEventClients,
@@ -2205,6 +2223,12 @@ async function main(options = {}) {
     await scheduledTasksRuntime.start();
   } catch (error) {
     console.warn('[ScheduledTasks] Failed to start runtime:', error?.message || error);
+  }
+
+  try {
+    await agentTeamsRuntime.start();
+  } catch (error) {
+    console.warn('[AgentTeams] Failed to start runtime:', error?.message || error);
   }
 
   // Only opens a relay control socket when the user opted in (config enabled).

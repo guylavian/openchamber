@@ -447,6 +447,11 @@ const handleLocalApiRequest = async (input: RequestInfo | URL, url: URL, init: R
     return unsupportedWebRouteResponse('Scheduled tasks');
   }
 
+  // Team runs are driven by the OpenChamber server, which VS Code does not run.
+  if (normalizedPathname === '/api/openchamber/agent-teams' || normalizedPathname.startsWith('/api/openchamber/agent-teams/')) {
+    return unsupportedWebRouteResponse('Agent teams');
+  }
+
   // Project setup (worktree setup commands, project actions, draft starters)
   // lives in the user's OpenChamber config dir; the extension host owns the
   // file the way the OpenChamber server does elsewhere.

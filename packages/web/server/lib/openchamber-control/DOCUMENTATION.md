@@ -30,6 +30,9 @@ other.
   APIs. Message output includes only ordered `text` parts.
 - Wait never treats an initial idle response as completion after dispatch. It
   requires observed activity or a newly completed assistant message.
+  The service also exports this wait as `waitForTurn` for server features that
+  dispatch through the session service themselves (agent teams), so the rule
+  keeps one owner.
 - Timeout and cancellation are failures, never authoritative idle results.
 - Validation that protects side effects runs before session creation or
   dispatch. An explicitly requested model, agent, or variant is checked against

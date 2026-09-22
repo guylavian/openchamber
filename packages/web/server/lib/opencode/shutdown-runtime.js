@@ -13,6 +13,7 @@ export const createGracefulShutdownRuntime = (dependencies) => {
     contextObligatoryRuntime,
     messageQueueRuntime,
     scheduledTasksRuntime,
+    agentTeamsRuntime,
     getHealthCheckInterval,
     clearHealthCheckInterval,
     getTerminalRuntime,
@@ -66,6 +67,7 @@ export const createGracefulShutdownRuntime = (dependencies) => {
       () => contextObligatoryRuntime?.stop?.(),
       () => messageQueueRuntime?.stop?.(),
       () => scheduledTasksRuntime?.stop?.(),
+      () => agentTeamsRuntime?.stop?.(),
       stopAllGuestServices,
     ];
     for (const cleanup of cleanupOperations) {
