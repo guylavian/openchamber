@@ -133,6 +133,15 @@ except that a surface a zone was showing is carried to its new zone and kept in
 front there (`carryVisibleSurfaces`). They never open a closed surface, never
 activate a background tab and never change `activeTabId`; opening stays with
 `openContextSurface`.
+
+Every window of the app on one origin shares the persisted `ui-store`, and
+each writes its whole state on any change. So that a window which was open
+while the layout changed elsewhere does not write the old layout back,
+`WorkspaceLayout` runs `followWorkspaceLayoutOfOtherWindows`: on another
+window's `ui-store` write it adopts `workspaceLayout` and `workspaceZoneSizes`
+(only when the write carries a complete layout, see `readPersistedWorkspace`),
+keeping what this window shows on screen. What each window has open is its
+own and is not adopted.
 Before the zones this was a single `isOpen` flag describing the one right panel;
 the v21 → v22 migration reads that flag as `['right']`, which is where every
 panel surface starts, so an existing install sees no rearrangement. A malformed

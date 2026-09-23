@@ -9,6 +9,7 @@ import {
   mainChatZone,
   moveSurfaceToZone,
   parseStoredWorkspaceLayout,
+  readPersistedWorkspace,
   sanitizeWorkspaceLayout,
   sessionChatZone,
   WORKSPACE_ZONES,
@@ -259,5 +260,33 @@ describe('clampWorkspaceZoneSize', () => {
 
   test('replaces a non-finite stored size with the default', () => {
     expect(Number.isFinite(clampWorkspaceZoneSize('left', Number.NaN))).toBe(true);
+  });
+});
+
+describe('readPersistedWorkspace', () => {
+  type SavedState = { workspaceLayout?: WorkspaceLayout | { left: string[] }; workspaceZoneSizes?: { left?: number; bottom?: number }; theme?: string };
+  const payload = (state: SavedState) => JSON.stringify({ state, version: 22 });
+
+  test('reads the layout and sizes another window saved', () => {
+    const layout = moveSurfaceToZone(createDefaultWorkspaceLayout(), 'git', 'bottom');
+    const read = readPersistedWorkspace(payload({ workspaceLayout: layout, workspaceZoneSizes: { left: 300, bottom: 200 } }));
+
+    expect(zoneOfSurface(read?.layout ?? createDefaultWorkspaceLayout(), 'git')).toBe('bottom');
+    expect(read?.sizes?.left).toBe(300);
+    expect(read?.sizes?.bottom).toBe(200);
+  });
+
+  test('adopts nothing when the saved state has no complete layout', () => {
+    // A window on an older build, or a write without the layout, must not
+    // reset this window's placements to the defaults.
+    expect(readPersistedWorkspace(payload({ theme: 'dark' }))).toBeNull();
+    expect(readPersistedWorkspace(payload({ workspaceLayout: { left: [] } }))).toBeNull();
+    expect(readPersistedWorkspace('{not json')).toBeNull();
+    expect(readPersistedWorkspace(null)).toBeNull();
+  });
+
+  test('leaves the sizes alone when the saved state has none', () => {
+    const read = readPersistedWorkspace(payload({ workspaceLayout: createDefaultWorkspaceLayout() }));
+    expect(read?.sizes).toBeNull();
   });
 });

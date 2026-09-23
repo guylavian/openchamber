@@ -2,7 +2,7 @@ import React from 'react';
 
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { cn } from '@/lib/utils';
-import { useUIStore } from '@/stores/useUIStore';
+import { followWorkspaceLayoutOfOtherWindows, useUIStore } from '@/stores/useUIStore';
 import {
   mainChatZone,
   WORKSPACE_CENTER_MIN_HEIGHT,
@@ -62,6 +62,8 @@ const useElementSize = (): [(node: HTMLElement | null) => void, Size | null] => 
 export const WorkspaceLayout: React.FC<Props> = ({ mainChat, overlays, isSurfacePageOpen }) => {
   const view = useWorkspaceZones();
   useWorkspaceOpeners();
+  // The layout is shared by every window; adopt changes made in the others.
+  React.useEffect(() => followWorkspaceLayoutOfOtherWindows(), []);
   const zoneSizes = useUIStore((state) => state.workspaceZoneSizes);
   const setWorkspaceZoneSize = useUIStore((state) => state.setWorkspaceZoneSize);
 

@@ -6,14 +6,15 @@
  * and `activeContextTabForZone` for which surface it shows — so a regression in
  * either decision fails here rather than only in the browser.
  */
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
 import { useUIStore } from '@/stores/useUIStore';
 import { useTerminalStore } from '@/stores/useTerminalStore';
-import { selectContextZoneTab, selectVisibleContextZoneTab } from '@/stores/useUIStore';
+import { followWorkspaceLayoutOfOtherWindows, selectContextZoneTab, selectVisibleContextZoneTab } from '@/stores/useUIStore';
 import {
   createDefaultWorkspaceLayout,
   mainChatZone,
+  moveSurfaceToZone,
   zoneOfSurface,
   type WorkspaceLayout,
   type WorkspaceZone,
@@ -377,5 +378,69 @@ describe('persistence', () => {
 
     useUIStore.getState().setWorkspaceZoneSize('left', 10);
     expect(useUIStore.getState().workspaceZoneSizes.left).toBe(240);
+  });
+});
+
+// Every window of the app shares one persisted store and writes all of it on
+// any change. A window must adopt a layout change made in another one, or its
+// next unrelated write puts the old layout back.
+describe('another window changes the layout', () => {
+  type StorageEventFields = Pick<StorageEvent, 'storageArea' | 'key' | 'newValue'>;
+  type SavedState = { workspaceLayout?: WorkspaceLayout; workspaceZoneSizes?: { left?: number; right?: number; bottom?: number }; theme?: string };
+  const localStorageStandIn: Storage = {
+    length: 0,
+    clear: () => undefined,
+    getItem: () => null,
+    key: () => null,
+    removeItem: () => undefined,
+    setItem: () => undefined,
+  };
+  let listener: ((event: StorageEventFields) => void) | null = null;
+  let stop: () => void = () => undefined;
+  const savedWindow = globalThis.window;
+
+  beforeEach(() => {
+    Object.assign(globalThis, {
+      window: {
+        localStorage: localStorageStandIn,
+        addEventListener: (_type: string, handler: (event: StorageEventFields) => void) => { listener = handler; },
+        removeEventListener: () => { listener = null; },
+      },
+    });
+    stop = followWorkspaceLayoutOfOtherWindows();
+  });
+
+  afterEach(() => {
+    stop();
+    Object.assign(globalThis, { window: savedWindow });
+  });
+
+  const otherWindowSaves = (state: SavedState) => {
+    listener?.({ storageArea: localStorageStandIn, key: 'ui-store', newValue: JSON.stringify({ state, version: 22 }) });
+  };
+
+  test('adopts the new placement and keeps what this window shows on screen', () => {
+    useUIStore.getState().openContextSurface(directory, 'git');
+    const moved = moveSurfaceToZone(useUIStore.getState().workspaceLayout, 'git', 'bottom');
+
+    otherWindowSaves({ workspaceLayout: moved, workspaceZoneSizes: { bottom: 300 } });
+
+    expect(zoneOfSurface(useUIStore.getState().workspaceLayout, 'git')).toBe('bottom');
+    expect(shownMode('bottom')).toBe('git');
+    expect(useUIStore.getState().workspaceZoneSizes.bottom).toBe(300);
+  });
+
+  test('ignores a write without a layout', () => {
+    useUIStore.getState().moveWorkspaceSurface('git', 'left');
+    otherWindowSaves({ theme: 'dark' });
+
+    expect(zoneOfSurface(useUIStore.getState().workspaceLayout, 'git')).toBe('left');
+  });
+
+  test('changes nothing when the layout is already the same', () => {
+    const before = useUIStore.getState();
+    otherWindowSaves({ workspaceLayout: before.workspaceLayout, workspaceZoneSizes: before.workspaceZoneSizes });
+
+    expect(useUIStore.getState()).toBe(before);
   });
 });

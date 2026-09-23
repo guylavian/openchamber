@@ -28,6 +28,7 @@ import {
   mainChatZone,
   MAIN_CHAT_TAB_ID,
   parseStoredActiveTabIdByZone,
+  readPersistedWorkspace,
   WORKSPACE_ZONE_DEFAULT_SIZE,
   WORKSPACE_ZONES,
   zoneOfMode,
@@ -3649,3 +3650,38 @@ export const useUIStore = create<UIStore>()(
     }
   )
 );
+
+/**
+ * Keeps this window's workspace layout in step with the other windows of the
+ * app (browser tabs, desktop windows on the same UI origin).
+ *
+ * They share one persisted `ui-store`, and each writes its whole state on any
+ * change, so without this a window that was open while the layout changed
+ * elsewhere would write its stale layout back on its next unrelated update,
+ * silently undoing the user's placement. The layout and zone sizes are
+ * preferences for every window; what each window has open is its own and is
+ * not adopted. A surface this window is showing stays on screen, the same
+ * rule as a move made here.
+ */
+export const followWorkspaceLayoutOfOtherWindows = (): (() => void) => {
+  if (!('window' in globalThis)) return () => undefined;
+  // Only the fields read here, which is all a storage event needs to carry.
+  const onStorage = (event: Pick<StorageEvent, 'storageArea' | 'key' | 'newValue'>) => {
+    if (event.storageArea !== window.localStorage || event.key !== 'ui-store') return;
+    const incoming = readPersistedWorkspace(event.newValue);
+    if (!incoming) return;
+    useUIStore.setState((state) => {
+      const next: Partial<UIStore> = {};
+      if (JSON.stringify(incoming.layout) !== JSON.stringify(state.workspaceLayout)) {
+        next.workspaceLayout = incoming.layout;
+        next.contextPanelByDirectory = carryVisibleSurfacesForAll(state.contextPanelByDirectory, state.workspaceLayout, incoming.layout);
+      }
+      if (incoming.sizes && JSON.stringify(incoming.sizes) !== JSON.stringify(state.workspaceZoneSizes)) {
+        next.workspaceZoneSizes = incoming.sizes;
+      }
+      return Object.keys(next).length > 0 ? next : state;
+    });
+  };
+  window.addEventListener('storage', onStorage);
+  return () => window.removeEventListener('storage', onStorage);
+};

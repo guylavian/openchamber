@@ -259,6 +259,46 @@ export const createDefaultWorkspaceLayout = (): WorkspaceLayout =>
 export const parseStoredWorkspaceLayout = (value: Parameters<typeof storedWorkspaceLayoutSchema.parse>[0]): WorkspaceLayout =>
   sanitizeWorkspaceLayout(storedWorkspaceLayoutSchema.parse(value));
 
+/**
+ * The workspace layout another window just saved, read from the raw
+ * `ui-store` value of a storage event. Stricter than loading at startup: the
+ * value is adopted only when it carries a complete layout, so a window running
+ * an older build, or a write that lacks the layout, can never reset this
+ * window's placements to the defaults. Null when there is nothing to adopt.
+ */
+const persistedWorkspaceSchema = z.object({
+  state: z.object({
+    workspaceLayout: z.object({
+      left: z.array(z.string()),
+      center: z.array(z.string()),
+      right: z.array(z.string()),
+      bottom: z.array(z.string()),
+    }),
+    workspaceZoneSizes: z.object({
+      left: z.number().finite().optional(),
+      right: z.number().finite().optional(),
+      bottom: z.number().finite().optional(),
+    }).optional(),
+  }),
+});
+
+export const readPersistedWorkspace = (raw: string | null): { layout: WorkspaceLayout; sizes: WorkspaceZoneSizes | null } | null => {
+  if (!raw) return null;
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  const parsed = persistedWorkspaceSchema.safeParse(value);
+  if (!parsed.success) return null;
+  const { workspaceLayout, workspaceZoneSizes } = parsed.data.state;
+  return {
+    layout: sanitizeWorkspaceLayout(workspaceLayout),
+    sizes: workspaceZoneSizes ? parseStoredWorkspaceZoneSizes(workspaceZoneSizes) : null,
+  };
+};
+
 export const zoneOfSurface = (layout: WorkspaceLayout, id: string): WorkspaceZone | null => {
   for (const zone of WORKSPACE_ZONES) {
     if (layout[zone].some((entry) => entry === id)) return zone;
