@@ -1811,17 +1811,6 @@ export const useUIStore = create<UIStore>()(
             return;
           }
 
-          // Reopening Files brings back the files it was closed with; the
-          // most recent of them comes to the front below.
-          if (mode === 'file' && get().contextPanelByDirectory[normalizedDirectory]?.hiddenFileTabs?.length) {
-            set((current) => ({
-              contextPanelByDirectory: {
-                ...current.contextPanelByDirectory,
-                [normalizedDirectory]: restoreHiddenFiles(touchContextPanelState(current.contextPanelByDirectory[normalizedDirectory])),
-              },
-            }));
-          }
-
           const state = get();
           const panelState = state.contextPanelByDirectory[normalizedDirectory];
           const tabs = panelState?.tabs ?? [];
@@ -1848,6 +1837,14 @@ export const useUIStore = create<UIStore>()(
             (tabMode) => zoneOfMode(state.workspaceLayout, tabMode),
             mainChatZone(state.workspaceLayout),
           );
+          if (zoneActiveTab?.mode === mode && zone === 'center' && mainChatZone(state.workspaceLayout) !== 'center') {
+            // The center never collapses, so toggling off what it shows closes
+            // that surface instead; Files hides, keeping its files.
+            clearTerminalTarget();
+            if (mode === 'file') state.hideFilesSurface(normalizedDirectory);
+            else state.closeContextPanelTab(normalizedDirectory, zoneActiveTab.id);
+            return;
+          }
           if (panelState?.openZones.includes(zone) && zoneActiveTab?.mode === mode) {
             clearTerminalTarget();
             state.closeContextZone(normalizedDirectory, zone);
@@ -1860,7 +1857,19 @@ export const useUIStore = create<UIStore>()(
             set({ contextEditorTreeVisible: true });
           }
 
-          const tabsOfMode = tabs.filter((tab) => tab.mode === mode);
+          // Reopening Files brings back the files it was closed with, after
+          // the toggle check above (a hidden Files is never the one shown);
+          // the most recent of them comes to the front below.
+          if (mode === 'file' && panelState?.hiddenFileTabs?.length) {
+            set((current) => ({
+              contextPanelByDirectory: {
+                ...current.contextPanelByDirectory,
+                [normalizedDirectory]: restoreHiddenFiles(touchContextPanelState(current.contextPanelByDirectory[normalizedDirectory])),
+              },
+            }));
+          }
+
+          const tabsOfMode = (get().contextPanelByDirectory[normalizedDirectory]?.tabs ?? []).filter((tab) => tab.mode === mode);
           if (tabsOfMode.length > 0) {
             clearTerminalTarget();
             // `>=` so equal timestamps (same-millisecond opens) resolve to the

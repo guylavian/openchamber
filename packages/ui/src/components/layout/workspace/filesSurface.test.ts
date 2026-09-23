@@ -10,9 +10,9 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { selectVisibleContextZoneTab, useUIStore } from '@/stores/useUIStore';
+import { selectContextZoneTab, selectVisibleContextZoneTab, useUIStore } from '@/stores/useUIStore';
 import { useTerminalStore } from '@/stores/useTerminalStore';
-import { createDefaultWorkspaceLayout, zoneOfMode, type WorkspaceZone } from '@/lib/workspace/layout';
+import { createDefaultWorkspaceLayout, moveSurfaceToZone, zoneOfMode, type WorkspaceZone } from '@/lib/workspace/layout';
 import { useFilesViewTabsStore } from '@/stores/useFilesViewTabsStore';
 import { isWorkspaceZoneVisible, occupiedZones } from './useWorkspaceZones';
 import {
@@ -565,5 +565,129 @@ describe('Files keeps its place among the other surfaces', () => {
     useUIStore.getState().closeContextPanelTab(directory, tabId('/repo/foo.ts'));
     expect(stripOf('right')).toEqual(['git', 'Files', 'terminal']);
     expect(openFiles()).toEqual(['/repo/bar.ts']);
+  });
+});
+
+describe('a surface in a center without the conversation can be closed', () => {
+  const centerShows = () => selectContextZoneTab(useUIStore.getState(), directory, 'center')?.mode ?? null;
+  const dockInCenter = (surfaceId: string) => {
+    const layout = moveSurfaceToZone(moveSurfaceToZone(createDefaultWorkspaceLayout(), 'chat', 'right'), surfaceId, 'center');
+    useUIStore.setState({ workspaceLayout: layout });
+  };
+
+  test('the rail toggles Git off in the center', () => {
+    dockInCenter('git');
+    useUIStore.getState().openContextSurface(directory, 'git');
+    expect(centerShows()).toBe('git');
+
+    useUIStore.getState().openContextSurface(directory, 'git');
+
+    expect(centerShows()).toBeNull();
+    expect(panel()?.tabs.some((tab) => tab.mode === 'git')).toBe(false);
+    useUIStore.getState().openContextSurface(directory, 'git');
+    expect(centerShows()).toBe('git');
+  });
+
+  test('the rail toggles Terminal off in the center', () => {
+    dockInCenter('terminal');
+    useUIStore.getState().openContextSurface(directory, 'terminal');
+
+    useUIStore.getState().openContextSurface(directory, 'terminal');
+
+    expect(centerShows()).toBeNull();
+  });
+
+  test('toggling Files off in the center hides it with its files, and it comes back', () => {
+    dockInCenter('editor');
+    const store = useUIStore.getState();
+    store.openContextFile(directory, '/repo/foo.ts');
+    store.openContextFile(directory, '/repo/bar.ts');
+
+    store.openContextSurface(directory, 'file');
+    expect(centerShows()).toBeNull();
+    expect((panel()?.hiddenFileTabs ?? []).map((tab) => tab.targetPath)).toEqual(['/repo/foo.ts', '/repo/bar.ts']);
+
+    store.openContextSurface(directory, 'file');
+    expect(centerShows()).toBe('file');
+    expect(openFiles()).toEqual(['/repo/foo.ts', '/repo/bar.ts']);
+  });
+
+  test('another surface in the center comes to the front when the shown one is toggled off', () => {
+    dockInCenter('git');
+    useUIStore.setState({ workspaceLayout: moveSurfaceToZone(useUIStore.getState().workspaceLayout, 'terminal', 'center') });
+    const store = useUIStore.getState();
+    store.openContextSurface(directory, 'terminal');
+    store.openContextSurface(directory, 'git');
+
+    store.openContextSurface(directory, 'git');
+
+    expect(centerShows()).toBe('terminal');
+  });
+
+  test('with the conversation in the center, the right zone still collapses and keeps its tab', () => {
+    const store = useUIStore.getState();
+    store.openContextSurface(directory, 'git');
+    store.openContextSurface(directory, 'git');
+
+    expect(panel()?.openZones).toEqual([]);
+    expect(panel()?.tabs.some((tab) => tab.mode === 'git')).toBe(true);
+  });
+});
+
+// The workspace tabs own which files are open; the editor's own list
+// (`useFilesViewTabsStore.openPaths`) follows closes. Hiding and moving Files
+// touch neither, so reopening can never bring back a file that was closed.
+describe('open files stay in step with the editor', () => {
+  const editorOpenPaths = () => useFilesViewTabsStore.getState().byRoot[directory]?.openPaths ?? [];
+  const openInBoth = (path: string) => {
+    useUIStore.getState().openContextFile(directory, path);
+    // What ContextPanel does when the file becomes active.
+    useFilesViewTabsStore.getState().setSelectedPath(directory, path);
+  };
+
+  beforeEach(() => {
+    useFilesViewTabsStore.setState({ byRoot: {} });
+  });
+
+  test('closing files, one, others or the last, closes them in the editor too', () => {
+    openInBoth('/repo/a.ts');
+    openInBoth('/repo/b.ts');
+    openInBoth('/repo/c.ts');
+
+    useUIStore.getState().closeContextPanelTab(directory, tabId('/repo/a.ts'));
+    expect(editorOpenPaths()).toEqual(['/repo/b.ts', '/repo/c.ts']);
+
+    useUIStore.getState().closeContextPanelTabs(directory, [tabId('/repo/b.ts')]);
+    expect(editorOpenPaths()).toEqual(['/repo/c.ts']);
+
+    useUIStore.getState().closeContextPanelTab(directory, tabId('/repo/c.ts'));
+    expect(editorOpenPaths()).toEqual([]);
+    expect(openFiles()).toEqual([]);
+  });
+
+  test('hiding, moving and resetting the layout keep both lists as they were', () => {
+    openInBoth('/repo/a.ts');
+    openInBoth('/repo/b.ts');
+
+    closeFromZoneStrip([FILES_SURFACE_TAB_ID]);
+    useUIStore.getState().moveWorkspaceSurface('editor', 'left');
+    useUIStore.getState().resetWorkspaceLayout();
+    expect(editorOpenPaths()).toEqual(['/repo/a.ts', '/repo/b.ts']);
+    expect(filesEditorMounted(panel())).toBe(true);
+
+    useUIStore.getState().openContextSurface(directory, 'file');
+    expect(openFiles()).toEqual(['/repo/a.ts', '/repo/b.ts']);
+    expect(editorOpenPaths()).toEqual(['/repo/a.ts', '/repo/b.ts']);
+    expect(zoneOfMode(useUIStore.getState().workspaceLayout, 'file')).toBe('right');
+  });
+
+  test('a hidden file is never listed twice when it is opened again', () => {
+    openInBoth('/repo/a.ts');
+    closeFromZoneStrip([FILES_SURFACE_TAB_ID]);
+
+    useUIStore.getState().openContextFile(directory, '/repo/a.ts');
+
+    expect(openFiles()).toEqual(['/repo/a.ts']);
+    expect(panel()?.hiddenFileTabs).toEqual([]);
   });
 });

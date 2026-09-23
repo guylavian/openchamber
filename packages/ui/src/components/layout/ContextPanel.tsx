@@ -621,6 +621,10 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({ zone, mainChat }) =>
   // The center, and wherever the conversation is docked, are always drawn:
   // neither can be collapsed, so neither appears in `openZones`.
   const isPermanentZone = zone === 'center' || Boolean(mainChat);
+  // The center never collapses. Without the conversation in it, what it shows
+  // is still an ordinary surface, so its header closes that surface instead
+  // (Files hides, keeping its files), as the rail toggle does.
+  const closesSurfaceNotZone = zone === 'center' && !mainChat;
   const isOpen = (isPermanentZone || Boolean(panelState?.openZones.includes(zone)))
     && (Boolean(activeTab) || showsMainChat);
   const [availablePanelAreaWidth, setAvailablePanelAreaWidth] = React.useState<number | null>(null);
@@ -1166,7 +1170,7 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({ zone, mainChat }) =>
   // surface, so it draws no chrome there — which is what keeps the default
   // layout's chat looking exactly as it did before the workspace zones. Files
   // is the exception: its editor and tree toggles live in this header.
-  const showsHeader = !isPermanentZone || showsTabStrip || activeTab?.mode === 'file';
+  const showsHeader = !isPermanentZone || closesSurfaceNotZone || showsTabStrip || activeTab?.mode === 'file';
   const workspaceActiveId = showsMainChat
     ? MAIN_CHAT_TAB_ID
     : activeTab?.mode === 'file' ? FILES_SURFACE_TAB_ID : activeTab?.id ?? null;
@@ -1409,7 +1413,19 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({ zone, mainChat }) =>
         {/* The center holds whatever is left after the others, and the zone
             with the conversation in it is the main content wherever it sits;
             collapsing either would leave the user with nowhere to work. */}
-        {isPermanentZone ? null : (
+        {closesSurfaceNotZone && activeTab && workspaceActiveId ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => closeWorkspaceStripTabs([workspaceActiveId])}
+            className="h-7 w-7 p-0"
+            title={t('contextPanel.tab.closeTabAria', { label: getModeLabel(activeTab.mode, t) })}
+            aria-label={t('contextPanel.tab.closeTabAria', { label: getModeLabel(activeTab.mode, t) })}
+          >
+            <Icon name="close" className="h-3.5 w-3.5" />
+          </Button>
+        ) : isPermanentZone ? null : (
           <Button
             type="button"
             variant="ghost"
