@@ -569,7 +569,9 @@ const resolveActiveContextPanelTabID = (tabs: ContextPanelTab[], activeTabId: st
 
 const touchContextPanelState = (prev?: ContextPanelDirectoryState): ContextPanelDirectoryState => {
   if (prev) {
-    const tabs = sanitizeContextPanelTabs(prev.tabs);
+    // Also regroups file tabs saved apart at the current store version, which
+    // loads without passing through `migrate`.
+    const tabs = groupFileTabs(sanitizeContextPanelTabs(prev.tabs));
     const activeTabId = resolveActiveContextPanelTabID(tabs, prev.activeTabId);
     return {
       ...prev,
@@ -775,6 +777,46 @@ export const visibleContextModes = (
   return modes;
 };
 
+const isFilesPlaceholder = (tab: ContextPanelTab): boolean => tab.mode === 'file' && !tab.targetPath;
+
+const lastFileTabIndex = (tabs: readonly ContextPanelTab[]): number => {
+  for (let index = tabs.length - 1; index >= 0; index -= 1) {
+    if (tabs[index]?.mode === 'file') return index;
+  }
+  return -1;
+};
+
+/**
+ * Files is one entry in its zone's strip, drawn where its file tabs are, so
+ * they are kept as one contiguous group: a new file opens after the others,
+ * and a first file takes the explorer placeholder's place. Opening, closing
+ * or reordering files then never moves Files among its neighbours.
+ */
+const withFileTabAdded = (tabs: readonly ContextPanelTab[], fileTab: ContextPanelTab): ContextPanelTab[] => {
+  const placeholderIndex = fileTab.targetPath ? tabs.findIndex(isFilesPlaceholder) : -1;
+  if (placeholderIndex !== -1) {
+    return tabs.map((tab, index) => (index === placeholderIndex ? fileTab : tab));
+  }
+  const lastFileIndex = lastFileTabIndex(tabs);
+  return lastFileIndex === -1
+    ? [...tabs, fileTab]
+    : [...tabs.slice(0, lastFileIndex + 1), fileTab, ...tabs.slice(lastFileIndex + 1)];
+};
+
+/**
+ * Pulls file tabs saved before the group invariant together, at the place of
+ * the first one, keeping their order.
+ */
+const groupFileTabs = (tabs: ContextPanelTab[]): ContextPanelTab[] => {
+  const firstFileIndex = tabs.findIndex((tab) => tab.mode === 'file');
+  if (firstFileIndex === -1) return tabs;
+  const fileTabs = tabs.filter((tab) => tab.mode === 'file');
+  if (lastFileTabIndex(tabs) - firstFileIndex + 1 === fileTabs.length) return tabs;
+  const others = tabs.filter((tab) => tab.mode !== 'file');
+  const before = tabs.slice(0, firstFileIndex).filter((tab) => tab.mode !== 'file').length;
+  return [...others.slice(0, before), ...fileTabs, ...others.slice(before)];
+};
+
 const upsertContextPanelTab = (
   current: ContextPanelDirectoryState,
   descriptor: ContextPanelTabDescriptor,
@@ -785,12 +827,12 @@ const upsertContextPanelTab = (
   const nextTab = createContextPanelTab(descriptor);
   // A real file tab replaces the empty editor placeholder ('file' with no
   // target) that the rail can open before any file is picked.
-  const baseTabs = nextTab.mode === 'file' && nextTab.targetPath
-    ? current.tabs.filter((tab) => !(tab.mode === 'file' && !tab.targetPath))
+  const baseTabs = nextTab.mode === 'file' && nextTab.targetPath && current.tabs.some((tab) => tab.id === nextTab.id)
+    ? current.tabs.filter((tab) => !isFilesPlaceholder(tab))
     : current.tabs;
   const existingIndex = baseTabs.findIndex((tab) => tab.id === nextTab.id);
   const tabs = existingIndex === -1
-    ? [...baseTabs, nextTab]
+    ? (nextTab.mode === 'file' ? withFileTabAdded(baseTabs, nextTab) : [...baseTabs, nextTab])
     : baseTabs.map((tab, index) => (index === existingIndex
       ? {
           ...tab,
@@ -853,7 +895,13 @@ const closeContextPanelTabs = (
   const leavesExplorer = !options?.closesFilesSurface
     && closedTabs.some((tab) => tab.mode === 'file' && tab.targetPath)
     && !remainingTabs.some((tab) => tab.mode === 'file');
-  const nextTabs = leavesExplorer ? [...remainingTabs, createContextPanelTab({ mode: 'file' })] : remainingTabs;
+  // The placeholder takes the closed files' place, so Files keeps its spot.
+  const placeholderAt = current.tabs
+    .slice(0, current.tabs.findIndex((tab) => closed.has(tab.id) && tab.mode === 'file'))
+    .filter((tab) => !closed.has(tab.id)).length;
+  const nextTabs = leavesExplorer
+    ? [...remainingTabs.slice(0, placeholderAt), createContextPanelTab({ mode: 'file' }), ...remainingTabs.slice(placeholderAt)]
+    : remainingTabs;
 
   const activeClosed = current.activeTabId ? closed.has(current.activeTabId) : false;
   if (!activeClosed) {
@@ -987,7 +1035,7 @@ const sanitizeContextPanelByDirectory = (
       label?: unknown;
     };
 
-    let tabs = sanitizeContextPanelTabs(candidate.tabs);
+    let tabs = groupFileTabs(sanitizeContextPanelTabs(candidate.tabs));
     let activeTabId = typeof candidate.activeTabId === 'string' ? candidate.activeTabId : null;
 
     // Legacy single-tab state can name a saved project plan, but it carries

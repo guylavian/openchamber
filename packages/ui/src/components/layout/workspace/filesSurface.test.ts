@@ -477,3 +477,93 @@ describe('file tabs carry no placement', () => {
     expect(surfaceMenu).toContain("id === FILES_SURFACE_TAB_ID ? 'file'");
   });
 });
+
+describe('Files keeps its place among the other surfaces', () => {
+  const setUp = () => {
+    const store = useUIStore.getState();
+    store.openContextSurface(directory, 'git');
+    store.openContextFile(directory, '/repo/foo.ts');
+    store.openContextSurface(directory, 'terminal');
+    expect(stripOf('right')).toEqual(['git', 'Files', 'terminal']);
+    return store;
+  };
+
+  test('opening and closing files leaves Git | Files | Terminal as it was', () => {
+    const store = setUp();
+    store.openContextFile(directory, '/repo/bar.ts');
+    store.closeContextPanelTab(directory, tabId('/repo/foo.ts'));
+
+    expect(stripOf('right')).toEqual(['git', 'Files', 'terminal']);
+    expect(openFiles()).toEqual(['/repo/bar.ts']);
+  });
+
+  test('reordering files inside Files leaves the zone order alone', () => {
+    const store = setUp();
+    store.openContextFile(directory, '/repo/bar.ts');
+    store.reorderContextPanelTabs(directory, tabId('/repo/bar.ts'), tabId('/repo/foo.ts'));
+
+    expect(openFiles()).toEqual(['/repo/bar.ts', '/repo/foo.ts']);
+    expect(stripOf('right')).toEqual(['git', 'Files', 'terminal']);
+  });
+
+  test('switching files leaves the zone order alone', () => {
+    const store = setUp();
+    store.openContextFile(directory, '/repo/bar.ts');
+    store.setActiveContextPanelTab(directory, tabId('/repo/foo.ts'));
+
+    expect(stripOf('right')).toEqual(['git', 'Files', 'terminal']);
+  });
+
+  test('closing the last file keeps the explorer where Files was, and a new file takes its place', () => {
+    const store = setUp();
+    store.closeContextPanelTab(directory, tabId('/repo/foo.ts'));
+    expect(stripOf('right')).toEqual(['git', 'Files', 'terminal']);
+
+    store.openContextFile(directory, '/repo/baz.ts');
+    expect(stripOf('right')).toEqual(['git', 'Files', 'terminal']);
+    expect(openFiles()).toEqual(['/repo/baz.ts']);
+  });
+
+  test('Files first or last in its zone stays first or last', () => {
+    const store = useUIStore.getState();
+    store.openContextFile(directory, '/repo/foo.ts');
+    store.openContextSurface(directory, 'git');
+    store.openContextFile(directory, '/repo/bar.ts');
+    store.closeContextPanelTab(directory, tabId('/repo/foo.ts'));
+    expect(stripOf('right')).toEqual(['Files', 'git']);
+
+    useUIStore.setState({ contextPanelByDirectory: {} });
+    store.openContextSurface(directory, 'git');
+    store.openContextFile(directory, '/repo/foo.ts');
+    store.openContextFile(directory, '/repo/bar.ts');
+    store.closeContextPanelTab(directory, tabId('/repo/bar.ts'));
+    expect(stripOf('right')).toEqual(['git', 'Files']);
+  });
+
+  test('file tabs saved apart before this come back as one group, where the first one was', async () => {
+    const saved = JSON.parse(JSON.stringify(useUIStore.getState().contextPanelByDirectory));
+    const store = setUp();
+    store.openContextFile(directory, '/repo/bar.ts');
+    // Recreate the old scattered order a previous version could save.
+    const current = panel();
+    if (!current) throw new Error('no panel');
+    const byId = new Map(current.tabs.map((tab) => [tab.id, tab]));
+    const scattered = ['git', tabId('/repo/foo.ts'), 'terminal', tabId('/repo/bar.ts')].map((id) => byId.get(id));
+    useUIStore.setState({ contextPanelByDirectory: { ...saved, [directory]: { ...current, tabs: scattered } } });
+
+    const persisted = { state: { contextPanelByDirectory: useUIStore.getState().contextPanelByDirectory }, version: initialPersistOptions.version };
+    useUIStore.persist.setOptions({ storage: {
+      getItem: () => persisted,
+      setItem: () => undefined,
+      removeItem: () => undefined,
+    } });
+    useUIStore.setState({ contextPanelByDirectory: {} });
+    await useUIStore.persist.rehydrate();
+
+    // Drawn as one entry at once; the first change stores them grouped.
+    expect(stripOf('right')).toEqual(['git', 'Files', 'terminal']);
+    useUIStore.getState().closeContextPanelTab(directory, tabId('/repo/foo.ts'));
+    expect(stripOf('right')).toEqual(['git', 'Files', 'terminal']);
+    expect(openFiles()).toEqual(['/repo/bar.ts']);
+  });
+});

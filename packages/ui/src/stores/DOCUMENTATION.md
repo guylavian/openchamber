@@ -163,25 +163,35 @@ records as before the zones, but a zone's strip folds them into one Files entry
 (`workspaceStripEntries` in `components/layout/workspace/filesSurfaceTabs.ts`)
 and the Files surface lists them in a strip of its own. A zone whose selection
 is a file tab is showing Files. Placement is stored once, for the `editor`
-surface; files carry none. Closing the last open file leaves the empty `file`
-placeholder, so Files stays in its zone showing its tree, whichever zone the
-user last worked in. Closing Files from its zone (`hideFilesSurface`) takes
-it out of the zone but keeps its file tabs in `hiddenFileTabs`, outside every
-zone and persisted; reopening Files from the rail, or opening any file, puts
-them back and shows the file used last. The editor's own open-file and tree
-state (`useFilesViewTabsStore`) is not touched by hiding, only by closing a
-file. A hidden Files also stays mounted: its zone still counts as occupied
-(`occupiedZones`), collapsed if nothing else is open there, and ContextPanel
-keeps the Files container for the hidden tabs (`mountedFileTabs`). The editor
-keeps unsaved edits only in its mounted component, so this is what carries a
-draft through hide and reopen; nothing is saved on the user's behalf.
-Moving Files keeps the draft too: each zone has its own panel, so the editor is
-not rendered inside a zone. `FilesEditorHost` (in `WorkspaceLayout`) renders
-the one editor while `filesEditorMounted` holds, and moves its DOM node into
-the `FilesEditorSlot` of whichever zone holds Files. The slot also hands over
-that zone's Escape handling, since React events from the editor bubble
-through the host rather than the zone's panel.
-Collapsing the zone also keeps every file.
+surface; files carry none.
+
+File tabs are kept as one contiguous group, and the group's place is Files'
+place in its zone: a new file opens after the others, a first file takes the
+explorer placeholder's place, and the placeholder takes the place of the last
+closed file (`withFileTabAdded`, `closeContextPanelTabs`). Opening, closing,
+switching or reordering files therefore never moves Files among its
+neighbours. Tabs saved apart by an earlier build are regrouped where the first
+one was (`groupFileTabs`, run by the sanitizer and by `touchContextPanelState`,
+because a load at the current store version skips `migrate`).
+
+Closing the last open file leaves the empty `file` placeholder, so Files stays
+in its zone showing its tree, whichever zone the user last worked in. Closing
+Files from its zone (`hideFilesSurface`) takes it out of the zone but keeps its
+file tabs in `hiddenFileTabs`, outside every zone and persisted; reopening
+Files from the rail, or opening any file, puts them back and shows the file
+used last. The editor's own open-file and tree state (`useFilesViewTabsStore`)
+is not touched by hiding, only by closing a file. A hidden Files also stays
+mounted: its zone still counts as occupied (`occupiedZones`), collapsed if
+nothing else is open there, and ContextPanel keeps the Files container for the
+hidden tabs (`mountedFileTabs`). The editor keeps unsaved edits only in its
+mounted component, so this is what carries a draft through hide and reopen;
+nothing is saved on the user's behalf. Moving Files keeps the draft too: each
+zone has its own panel, so the editor is not rendered inside a zone.
+`FilesEditorHost` (in `WorkspaceLayout`) renders the one editor while
+`filesEditorMounted` holds, and moves its DOM node into the `FilesEditorSlot`
+of whichever zone holds Files. The slot also hands over that zone's Escape
+handling, since React events from the editor bubble through the host rather
+than the zone's panel. Collapsing the zone also keeps every file.
 
 Context-panel session chats mount only the active chat iframe. After installing
 its message listener, the iframe requests its authoritative visibility from the
