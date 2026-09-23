@@ -2172,7 +2172,7 @@ export const useUIStore = create<UIStore>()(
           }
         },
 
-        /** Collapses every auxiliary zone at once. The center keeps rendering. */
+        /** Hides the Files surface and keeps its file tabs aside, so reopening Files restores them. */
         hideFilesSurface: (directory) => {
           const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
           if (!normalizedDirectory) {

@@ -244,6 +244,47 @@ describe('useUIStore context panel tabs', () => {
     }
   });
 
+  test('a v21 store with the panel open migrates to an open right zone and keeps its tabs', async () => {
+    const directory = '/repo';
+    const tabs = [
+      { id: 'git', mode: 'git', targetPath: null, dedupeKey: null, label: null, touchedAt: 1 },
+      { id: 'terminal', mode: 'terminal', targetPath: null, dedupeKey: null, label: null, touchedAt: 2 },
+    ];
+    useUIStore.persist.setOptions({ storage: {
+      getItem: () => ({
+        version: 21,
+        state: {
+          contextPanelByDirectory: {
+            [directory]: {
+              isOpen: true,
+              expanded: true,
+              widthByMode: { git: 500 },
+              touchedAt: 1,
+              activeTabId: 'terminal',
+              tabs,
+            },
+          },
+        },
+      }),
+      setItem: () => undefined,
+      removeItem: () => undefined,
+    } });
+
+    try {
+      useUIStore.setState(useUIStore.getInitialState(), true);
+      await useUIStore.persist.rehydrate();
+
+      const panel = useUIStore.getState().contextPanelByDirectory[directory];
+      expect(panel?.openZones).toEqual(['right']);
+      expect(panel?.tabs.map((tab) => [tab.id, tab.mode])).toEqual([['git', 'git'], ['terminal', 'terminal']]);
+      expect(panel?.activeTabId).toBe('terminal');
+      expect(panel?.expanded).toBe(true);
+      expect(panel?.widthByMode.git).toBe(500);
+    } finally {
+      useUIStore.persist.setOptions(originalPersistOptions);
+    }
+  });
+
   test('drops a persisted saved-plan tab carrying an owner but no plan id', () => {
     const directory = '/repo';
     const persisted = {
