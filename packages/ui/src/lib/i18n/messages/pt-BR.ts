@@ -3492,7 +3492,6 @@ export const dict: Record<I18nKey, string> = {
   'workspace.move.center': 'Mover para o centro',
   'workspace.move.right': 'Mover para a direita',
   'workspace.move.bottom': 'Mover para baixo',
-  'workspace.move.newWindow': 'Abrir em nova janela',
   'workspace.zone.collapse': 'Recolher zona',
   'workspace.zone.label.left': 'Zona esquerda',
   'workspace.zone.label.center': 'Zona central',

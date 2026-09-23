@@ -14,8 +14,7 @@ import { directoryMayHaveActiveProjectAction, useTerminalStore } from '@/stores/
 import { useFilesViewTabsStore } from './useFilesViewTabsStore';
 import { isWindowsArm64 } from '@/lib/platform';
 import { isVSCodeRuntime } from '@/lib/desktop';
-import { isContextPanelMode, isPluginContextPanelMode, type ContextPanelMode } from '@/lib/surfaces/modes';
-import { CONTEXT_SURFACES } from '@/lib/surfaces/registry';
+import { isContextPanelMode, type ContextPanelMode } from '@/lib/surfaces/modes';
 import {
   applyWorkspacePreset,
   clampWorkspaceZoneSize,
@@ -33,7 +32,6 @@ import {
   WORKSPACE_ZONES,
   zoneOfMode,
   type ActiveTabIdByZone,
-  type DetachedSurface,
   type WorkspaceLayout,
   type WorkspaceZoneSizes,
   type WorkspacePresetId,
@@ -615,20 +613,52 @@ const repairZoneSelections = (
 };
 
 /**
- * Keeps on screen what was on screen when surfaces change zones: a zone that
- * receives a tab from an open zone opens too. Without this a moved surface
- * lands in a closed zone and appears to vanish.
+ * Applies a placement change to one project's panel: what was on screen stays
+ * on screen, and nothing else changes.
+ *
+ * Placement and open state are separate. A surface its zone was showing
+ * follows its move: the new zone opens with it in front, and the zone it left
+ * collapses once nothing is left in it. A surface that was not on screen —
+ * closed, never opened or a background tab — only
+ * changes where it will appear next time: no zone opens and no tab is
+ * activated. The conversation counts as shown when its zone shows it.
  */
-const carryOpenZones = (
+const carryVisibleSurfaces = (
   panel: ContextPanelDirectoryState,
   before: WorkspaceLayout,
   after: WorkspaceLayout,
-): WorkspaceZone[] => {
-  const next = new Set(panel.openZones);
-  for (const tab of panel.tabs) {
-    if (panel.openZones.includes(zoneOfMode(before, tab.mode))) next.add(zoneOfMode(after, tab.mode));
+): ContextPanelDirectoryState => {
+  const zoneBefore: ZoneResolver = (mode) => zoneOfMode(before, mode);
+  const zoneAfter: ZoneResolver = (mode) => zoneOfMode(after, mode);
+  const chatBefore = mainChatZone(before);
+  const chatAfter = mainChatZone(after);
+  let openZones: WorkspaceZone[] = [...panel.openZones];
+  const selection: ActiveTabIdByZone = { ...panel.activeTabIdByZone };
+
+  for (const zone of WORKSPACE_ZONES) {
+    const zoneWasOpen = zone === 'center' || zone === chatBefore || panel.openZones.includes(zone);
+    if (!zoneWasOpen) continue;
+    const shown = activeContextTabForZone(panel, zone, zoneBefore, chatBefore);
+    if (shown === null) {
+      // Null in the conversation's zone means the conversation is shown.
+      if (zone === chatBefore && chatAfter !== chatBefore) {
+        selection[chatAfter] = MAIN_CHAT_TAB_ID;
+        if (selection[zone] === MAIN_CHAT_TAB_ID) delete selection[zone];
+      }
+      continue;
+    }
+    const target = zoneAfter(shown.mode);
+    if (target === zone) continue;
+    openZones = withZoneOpen(openZones, target);
+    selection[target] = shown.id;
+    if (selection[zone] === shown.id) delete selection[zone];
   }
-  return pruneEmptyZones([...next], panel.tabs, (mode) => zoneOfMode(after, mode));
+
+  return {
+    ...panel,
+    openZones: pruneEmptyZones(openZones, panel.tabs, zoneAfter),
+    activeTabIdByZone: selection,
+  };
 };
 
 /**
@@ -641,17 +671,12 @@ const pruneEmptyZones = (
   zoneOf: ZoneResolver,
 ): WorkspaceZone[] => openZones.filter((zone) => tabs.some((tab) => zoneOf(tab.mode) === zone));
 
-const carryOpenZonesForAll = (
+const carryVisibleSurfacesForAll = (
   byDirectory: Record<string, ContextPanelDirectoryState>,
   before: WorkspaceLayout,
   after: WorkspaceLayout,
-): Record<string, ContextPanelDirectoryState> => {
-  const next: Record<string, ContextPanelDirectoryState> = {};
-  for (const [directory, panel] of Object.entries(byDirectory)) {
-    next[directory] = { ...panel, openZones: carryOpenZones(panel, before, after) };
-  }
-  return next;
-};
+) => Object.fromEntries(Object.entries(byDirectory)
+  .map(([directory, panel]) => [directory, carryVisibleSurfaces(panel, before, after)]));
 
 /**
  * The tab a zone shows, or null when it shows the conversation (in the
@@ -1031,13 +1056,6 @@ interface UIStore {
    * before this feature is still honoured.
    */
   workspaceZoneSizes: WorkspaceZoneSizes;
-  /**
-   * Surfaces currently shown in their own window (see
-   * `lib/workspace/surfaceWindow`), per project: a window shows one project's
-   * surface, so only that project hides it here. Not persisted: after a
-   * restart no such window exists, so every surface is back in its zone.
-   */
-  detachedSurfaces: DetachedSurface[];
   contextRailOrder: string[];
   /** Surface ids the user hid from the context rail; stored as the hidden set
       so surfaces added later appear for everyone. */
@@ -1296,13 +1314,12 @@ interface UIStore {
   closeContextZone: (directory: string, zone: WorkspaceZone) => void;
   openContextZone: (directory: string, zone: WorkspaceZone) => void;
   /**
-   * Docks a surface in another zone. `revealIn` names the directory whose
-   * workspace should then show the surface there — the one the user is looking
-   * at when they ask for the move.
+   * Sets where a surface is docked. Only placement changes: a surface that is
+   * on screen moves there and stays on screen; one that is not stays closed
+   * until it is opened (see `carryVisibleSurfaces`).
    */
-  moveWorkspaceSurface: (surfaceId: string, zone: WorkspaceZone, options?: { index?: number; revealIn?: string }) => void;
+  moveWorkspaceSurface: (surfaceId: string, zone: WorkspaceZone, options?: { index?: number }) => void;
   setWorkspaceZoneSize: (zone: WorkspaceZone, size: number) => void;
-  setSurfaceDetached: (directory: string, surfaceId: string, detached: boolean) => void;
   applyWorkspaceLayoutPreset: (preset: WorkspacePresetId) => void;
   resetWorkspaceLayout: () => void;
   toggleContextPanelExpanded: (directory: string) => void;
@@ -1498,7 +1515,6 @@ export const useUIStore = create<UIStore>()(
         contextPanelByDirectory: {},
         workspaceLayout: createDefaultWorkspaceLayout(),
         workspaceZoneSizes: { ...WORKSPACE_ZONE_DEFAULT_SIZE },
-        detachedSurfaces: [],
         contextRailOrder: [],
         contextRailHiddenSurfaces: [],
         contextEditorTreeVisible: true,
@@ -2162,20 +2178,15 @@ export const useUIStore = create<UIStore>()(
         },
 
         /**
-         * Docks a surface in another zone. The surface keeps its open tabs and
-         * its place in the rail; only where it is drawn changes. Moving into a
-         * collapsed zone reveals that zone, otherwise the surface would appear
-         * to vanish.
+         * Changes placement only. The surface keeps its tabs and its place in
+         * the rail. Opening it stays the rail's job (`openContextSurface`), so
+         * configuring where a closed surface will appear never opens it.
          */
         moveWorkspaceSurface: (surfaceId, zone, options) => {
           const id = (surfaceId || '').trim();
           if (!id || !isWorkspaceZone(zone)) {
             return;
           }
-
-          const moved = CONTEXT_SURFACES.find((surface) => surface.id === id);
-          const movedMode: ContextPanelMode | null = moved?.mode
-            ?? (isPluginContextPanelMode(id) ? id : null);
 
           set((state) => {
             const workspaceLayout = moveSurfaceToZone(state.workspaceLayout, id, zone, options?.index);
@@ -2185,35 +2196,9 @@ export const useUIStore = create<UIStore>()(
 
             return {
               workspaceLayout,
-              contextPanelByDirectory: carryOpenZonesForAll(state.contextPanelByDirectory, state.workspaceLayout, workspaceLayout),
+              contextPanelByDirectory: carryVisibleSurfacesForAll(state.contextPanelByDirectory, state.workspaceLayout, workspaceLayout),
             };
           });
-
-          // A move the user asked for from a menu should show its result. A
-          // surface with no tab yet — a terminal never opened — would otherwise
-          // be docked in its new zone with nothing to draw, and look as if the
-          // move had done nothing until its rail icon was clicked.
-          const revealIn = normalizeDirectoryPath((options?.revealIn || '').trim());
-          if (!revealIn || movedMode === null) {
-            return;
-          }
-
-          const state = get();
-          if (movedMode === 'chat') {
-            state.focusMainChat(revealIn);
-            return;
-          }
-
-          const mostRecent = mostRecentTab((state.contextPanelByDirectory[revealIn]?.tabs ?? []).filter((tab) => tab.mode === movedMode));
-          if (mostRecent) {
-            state.setActiveContextPanelTab(revealIn, mostRecent.id);
-            return;
-          }
-
-          // No tab of this surface exists, so opening it cannot toggle anything
-          // closed; this is the rail's own entry point, with its per-surface
-          // rules (the file tree, the terminal target) intact.
-          state.openContextSurface(revealIn, movedMode);
         },
 
         setWorkspaceZoneSize: (zone, size) => {
@@ -2226,28 +2211,12 @@ export const useUIStore = create<UIStore>()(
           }));
         },
 
-        setSurfaceDetached: (directory, surfaceId, detached) => {
-          const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
-          const id = (surfaceId || '').trim();
-          if (!normalizedDirectory || !id) return;
-          set((state) => {
-            const matches = (entry: DetachedSurface) => entry.directory === normalizedDirectory && entry.surfaceId === id;
-            const isDetached = state.detachedSurfaces.some(matches);
-            if (isDetached === detached) return state;
-            return {
-              detachedSurfaces: detached
-                ? [...state.detachedSurfaces, { directory: normalizedDirectory, surfaceId: id }]
-                : state.detachedSurfaces.filter((entry) => !matches(entry)),
-            };
-          });
-        },
-
         applyWorkspaceLayoutPreset: (preset) => {
           set((state) => {
             const workspaceLayout = applyWorkspacePreset(state.workspaceLayout, preset);
             return {
               workspaceLayout,
-              contextPanelByDirectory: carryOpenZonesForAll(state.contextPanelByDirectory, state.workspaceLayout, workspaceLayout),
+              contextPanelByDirectory: carryVisibleSurfacesForAll(state.contextPanelByDirectory, state.workspaceLayout, workspaceLayout),
             };
           });
         },
@@ -2258,7 +2227,7 @@ export const useUIStore = create<UIStore>()(
             return {
               workspaceLayout,
               workspaceZoneSizes: { ...WORKSPACE_ZONE_DEFAULT_SIZE },
-              contextPanelByDirectory: carryOpenZonesForAll(state.contextPanelByDirectory, state.workspaceLayout, workspaceLayout),
+              contextPanelByDirectory: carryVisibleSurfacesForAll(state.contextPanelByDirectory, state.workspaceLayout, workspaceLayout),
             };
           });
         },

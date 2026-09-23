@@ -49,9 +49,10 @@ export type ContextSurfaceDescriptor = {
    */
   defaultWidthFraction: number;
   /**
-   * Workspace zones this surface may be docked in. Omitted means every zone.
-   * The constraint exists to keep a surface out of a zone it cannot be read
-   * in — a file tree in a 160px-tall bottom strip — not to limit choice.
+   * Workspace zones this surface may be docked in. Omitted means every zone,
+   * which is the rule: a zone that feels cramped can be resized, and a user
+   * who wants the terminal on the left should get it there. Set this only
+   * when the surface cannot work in a zone, and say why beside it.
    */
   allowedZones?: readonly WorkspaceZone[];
   /**
@@ -71,7 +72,6 @@ export const CONTEXT_SURFACES: readonly ContextSurfaceDescriptor[] = [
     icon: 'donut-chart-fill',
     labelKey: 'contextPanel.mode.context',
     availability: 'always',
-    allowedZones: ['left', 'right', 'bottom'],
   },
   {
     id: 'git',
@@ -81,7 +81,6 @@ export const CONTEXT_SURFACES: readonly ContextSurfaceDescriptor[] = [
     icon: 'git-branch',
     labelKey: 'layout.rightSidebar.git',
     availability: 'always',
-    allowedZones: ['left', 'right', 'bottom'],
   },
   {
     id: 'pr',
@@ -91,7 +90,6 @@ export const CONTEXT_SURFACES: readonly ContextSurfaceDescriptor[] = [
     icon: 'github',
     labelKey: 'contextPanel.mode.pr',
     availability: 'always',
-    allowedZones: ['left', 'right', 'bottom'],
   },
   {
     id: 'diff',
@@ -110,9 +108,6 @@ export const CONTEXT_SURFACES: readonly ContextSurfaceDescriptor[] = [
     icon: 'route',
     labelKey: 'contextPanel.mode.walkthrough',
     availability: 'always',
-    // The surface exists to show a stop beside real code; it is already hidden
-    // below WALKTHROUGH_MIN_WIDTH, so the narrow zones are not offered either.
-    allowedZones: ['center', 'right'],
   },
   {
     id: 'linear',
@@ -122,7 +117,6 @@ export const CONTEXT_SURFACES: readonly ContextSurfaceDescriptor[] = [
     icon: 'linear',
     labelKey: 'contextPanel.mode.linear',
     availability: 'always',
-    allowedZones: ['left', 'right', 'bottom'],
   },
   {
     id: 'editor',
@@ -132,9 +126,6 @@ export const CONTEXT_SURFACES: readonly ContextSurfaceDescriptor[] = [
     icon: 'file-edit',
     labelKey: 'contextPanel.mode.files',
     availability: 'always',
-    // Tree plus editor: the bottom strip cannot show both, and the editor is
-    // the one surface people expect to fill the center.
-    allowedZones: ['left', 'center', 'right'],
   },
   {
     id: 'terminal',
@@ -144,7 +135,6 @@ export const CONTEXT_SURFACES: readonly ContextSurfaceDescriptor[] = [
     icon: 'terminal-box',
     labelKey: 'layout.mainTab.terminal',
     availability: 'always',
-    allowedZones: ['right', 'bottom'],
   },
   {
     id: 'notes',
@@ -157,7 +147,6 @@ export const CONTEXT_SURFACES: readonly ContextSurfaceDescriptor[] = [
     icon: 'book-marked',
     labelKey: 'contextRail.surface.notes',
     availability: 'always',
-    allowedZones: ['left', 'center', 'right'],
   },
   {
     id: 'plan',
@@ -167,7 +156,6 @@ export const CONTEXT_SURFACES: readonly ContextSurfaceDescriptor[] = [
     icon: 'file-text',
     labelKey: 'contextPanel.mode.plan',
     availability: 'always',
-    allowedZones: ['left', 'right', 'bottom'],
   },
   {
     id: 'browser',
@@ -177,7 +165,6 @@ export const CONTEXT_SURFACES: readonly ContextSurfaceDescriptor[] = [
     icon: 'global',
     labelKey: 'contextPanel.mode.browser',
     availability: 'always',
-    allowedZones: ['left', 'center', 'right'],
   },
   {
     id: 'chat',
@@ -190,6 +177,11 @@ export const CONTEXT_SURFACES: readonly ContextSurfaceDescriptor[] = [
     // The session conversation. It owned the main area before the workspace
     // zones existed, which is why `center` is its default placement; split
     // session chats open as further tabs in whichever zone it sits in.
+    // Kept to center and right on purpose, unlike the other surfaces: those are
+    // the zones the conversation (composer, work-status panel, split-session
+    // chats opening beside it) was built and tested in. Left and bottom are not
+    // known to break, but a full conversation there is untested, and widening
+    // the conversation's placement is a separate decision.
     allowedZones: ['center', 'right'],
     defaultZone: 'center',
   },

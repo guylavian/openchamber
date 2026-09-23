@@ -3491,7 +3491,6 @@ export const dict: Record<I18nKey, string> = {
   'workspace.move.center': '中央に移動',
   'workspace.move.right': '右に移動',
   'workspace.move.bottom': '下に移動',
-  'workspace.move.newWindow': '新しいウィンドウで開く',
   'workspace.zone.collapse': '領域を折りたたむ',
   'workspace.zone.label.left': '左の領域',
   'workspace.zone.label.center': '中央の領域',

@@ -3491,7 +3491,6 @@ export const dict = {
   'workspace.move.center': 'Move to center',
   'workspace.move.right': 'Move to right',
   'workspace.move.bottom': 'Move to bottom',
-  'workspace.move.newWindow': 'Open in new window',
   'workspace.zone.collapse': 'Collapse zone',
   'workspace.zone.label.left': 'Left zone',
   'workspace.zone.label.center': 'Center zone',

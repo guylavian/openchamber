@@ -67,8 +67,7 @@ import { guestHasSharedSurface, guestSurfaceDocking, type GuestSurfaceDocking } 
 import { FALLBACK_GUEST_ICON } from '@/lib/guests/icon';
 import { isPluginContextPanelMode, pluginIdFromMode } from '@/lib/surfaces/modes';
 import { CONTEXT_SURFACES, getContextSurfaceWidthFraction } from '@/lib/surfaces/registry';
-import { detachedSurfaceIdsFor, MAIN_CHAT_TAB_ID, mainChatZone, zoneOfMode, type WorkspaceZone } from '@/lib/workspace/layout';
-import { modeForSurface } from '@/lib/workspace/surfaceWindow';
+import { MAIN_CHAT_TAB_ID, mainChatZone, zoneOfMode, type WorkspaceZone } from '@/lib/workspace/layout';
 import { WorkspaceMoveMenuItems } from './workspace/WorkspaceMoveMenuItems';
 import { closableTabRanges } from './workspace/closableTabRanges';
 import { isVimEditorEventTarget } from '@/lib/editorFocus';
@@ -511,14 +510,9 @@ type ContextPanelProps = {
    * — so the zone holding the `chat` surface is told about it instead.
    */
   mainChat?: React.ReactNode;
-  /**
-   * Draw exactly this surface, ignoring zone placement. Used by a detached
-   * surface window, which shows one surface and nothing else.
-   */
-  standaloneSurfaceId?: string;
 };
 
-export const ContextPanel: React.FC<ContextPanelProps> = ({ zone, mainChat, standaloneSurfaceId }) => {
+export const ContextPanel: React.FC<ContextPanelProps> = ({ zone, mainChat }) => {
   const { t } = useI18n();
   const effectiveDirectory = useEffectiveDirectory() ?? '';
   const directoryKey = React.useMemo(() => normalizeDirectoryKey(effectiveDirectory), [effectiveDirectory]);
@@ -556,42 +550,22 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({ zone, mainChat, stan
     (mode: ContextPanelMode) => zoneOfMode(workspaceLayout, mode),
     [workspaceLayout],
   );
-  const detachedSurfaces = useUIStore((state) => state.detachedSurfaces);
-  const standaloneMode = standaloneSurfaceId ? modeForSurface(standaloneSurfaceId) : null;
-  // The tabs this window may draw at all: one surface in a detached window,
-  // and in a main window everything except surfaces living in their own
-  // window right now.
-  const drawableTabs = React.useMemo(() => {
-    const all = panelState?.tabs ?? [];
-    if (standaloneMode) return all.filter((tab) => tab.mode === standaloneMode);
-    const detachedIds = detachedSurfaceIdsFor(detachedSurfaces, directoryKey);
-    if (detachedIds.length === 0) return all;
-    const detachedModes = new Set(detachedIds.map(modeForSurface));
-    return all.filter((tab) => !detachedModes.has(tab.mode));
-  }, [detachedSurfaces, directoryKey, panelState?.tabs, standaloneMode]);
   const tabs = React.useMemo(
-    () => (standaloneMode ? drawableTabs : drawableTabs.filter((tab) => zoneOf(tab.mode) === zone)),
-    [drawableTabs, standaloneMode, zone, zoneOf],
+    () => (panelState?.tabs ?? []).filter((tab) => zoneOf(tab.mode) === zone),
+    [panelState?.tabs, zone, zoneOf],
   );
-  const activeTab = React.useMemo(() => {
-    if (standaloneMode) {
-      // `>=` so same-millisecond opens resolve to the later tab.
-      return tabs.find((tab) => tab.id === panelState?.activeTabId)
-        ?? (tabs.length > 0 ? tabs.reduce((best, tab) => (tab.touchedAt >= best.touchedAt ? tab : best)) : null);
-    }
-    return activeContextTabForZone(
-      { tabs: drawableTabs, activeTabId: panelState?.activeTabId ?? null, activeTabIdByZone: panelState?.activeTabIdByZone },
-      zone,
-      zoneOf,
-      mainChatZone(workspaceLayout),
-    );
-  }, [drawableTabs, panelState?.activeTabId, panelState?.activeTabIdByZone, standaloneMode, tabs, workspaceLayout, zone, zoneOf]);
+  const activeTab = React.useMemo(() => activeContextTabForZone(
+    panelState,
+    zone,
+    zoneOf,
+    mainChatZone(workspaceLayout),
+  ), [panelState, workspaceLayout, zone, zoneOf]);
   // The chat has no tab record, so `activeContextTabForZone` returning null in
   // the chat's own zone is exactly what "the conversation is showing" means.
   const showsMainChat = Boolean(mainChat) && activeTab === null;
   // The center, and wherever the conversation is docked, are always drawn:
   // neither can be collapsed, so neither appears in `openZones`.
-  const isPermanentZone = zone === 'center' || Boolean(mainChat) || Boolean(standaloneMode);
+  const isPermanentZone = zone === 'center' || Boolean(mainChat);
   const isOpen = (isPermanentZone || Boolean(panelState?.openZones.includes(zone)))
     && (Boolean(activeTab) || showsMainChat);
   const [availablePanelAreaWidth, setAvailablePanelAreaWidth] = React.useState<number | null>(null);
@@ -1206,14 +1180,8 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({ zone, mainChat, stan
         : surfaceIdForMode(tabs.find((tab) => tab.id === id)?.mode ?? null);
       return (
         <>
-          {/* A detached window shows one surface; docking it is done from
-              the main window once this one is closed. */}
-          {standaloneMode ? null : (
-            <>
-              <WorkspaceMoveMenuItems surfaceId={surfaceId} currentZone={zone} />
-              <ContextMenuSeparator />
-            </>
-          )}
+          <WorkspaceMoveMenuItems surfaceId={surfaceId} currentZone={zone} />
+          <ContextMenuSeparator />
           {id === MAIN_CHAT_TAB_ID ? null : (
             <ContextMenuItem onClick={close}>
               <Icon name="close" className="mr-2 size-4" />
@@ -1241,7 +1209,7 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({ zone, mainChat, stan
         </>
       );
     },
-    [closeContextPanelTabs, directoryKey, standaloneMode, t, tabs, zone],
+    [closeContextPanelTabs, directoryKey, t, tabs, zone],
   );
 
   const labelSurfaceId = activeTab ? surfaceIdForMode(activeTab.mode) : showsMainChat ? 'chat' : null;
@@ -1288,7 +1256,7 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({ zone, mainChat, stan
               {activeTab ? getModeLabel(activeTab.mode, t) : showsMainChat ? t('layout.mainTab.chat') : null}
             </span>
           </ContextMenuTrigger>
-          {standaloneMode || !labelSurfaceId ? null : (
+          {!labelSurfaceId ? null : (
             <ContextMenuContent>
               <WorkspaceMoveMenuItems surfaceId={labelSurfaceId} currentZone={zone} />
             </ContextMenuContent>

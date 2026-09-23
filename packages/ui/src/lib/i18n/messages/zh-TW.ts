@@ -3491,7 +3491,6 @@ export const dict: Record<I18nKey, string> = {
   'workspace.move.center': '移到中間',
   'workspace.move.right': '移到右側',
   'workspace.move.bottom': '移到底部',
-  'workspace.move.newWindow': '在新視窗中開啟',
   'workspace.zone.collapse': '收合區域',
   'workspace.zone.label.left': '左側區域',
   'workspace.zone.label.center': '中間區域',

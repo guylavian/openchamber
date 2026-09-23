@@ -20,22 +20,23 @@ a terminal) keep their state, as the single panel always did while closed.
 
 Two descriptor fields drive placement, so no component hardcodes it:
 `allowedZones` (omitted means every zone) and `defaultZone` (omitted means
-`right`, where every panel surface lived before the zones existed). Keep a
-surface out of a zone it cannot be read in — a file tree in a 160px bottom strip
-— rather than out of one that merely looks unusual.
+`right`, where every panel surface lived before the zones existed). Every
+surface except the conversation may go in all four zones: a cramped zone can
+be resized, and limiting choice needs a reason the surface cannot work there,
+written beside the restriction.
+
+Placement is not opening. Choosing a surface's zone (the zone picker in Rail
+panels, "Move to" in the rail and tab menus) only changes where it appears:
+a surface that is on screen moves at once and stays on screen, and its old
+zone collapses when nothing is left in it; a closed, never-opened or
+background surface stays exactly as it was until the rail opens it
+(`carryVisibleSurfaces` in `useUIStore`).
 
 The `chat` surface is the session conversation. It defaults to `center`, which
 is the pre-zones layout, and wherever it sits that zone cannot be collapsed:
 hiding the session with no obvious way back is never the right outcome. Split
 session chats open beside the conversation, never over it: in `right` while
 the conversation holds the center, in the center otherwise (`sessionChatZone`).
-
-A surface other than the conversation can be opened in its own window
-("Open in new window", `lib/workspace/surfaceWindow.ts`). That is per project:
-the main window stops drawing the surface for that project only, and forwards
-whatever it opens for it (a file link, a diff) to the detached window over a
-same-origin BroadcastChannel. The surface comes back when the window closes or
-stays silent past a limit long enough to survive background timer throttling.
 
 Placement is user state, not a runtime fact: see `lib/workspace/layout.ts` for
 the model and `stores/DOCUMENTATION.md` for how it is stored and migrated.
@@ -71,7 +72,8 @@ Full-screen extension pages are separate from this rail registry. `contributes.p
   reveals that zone if collapsed and brings the surface to the front there.
   Clicking the surface that zone is already showing collapses that zone only.
   Right-clicking a rail item docks the surface elsewhere — the rail reaches a
-  surface that has no tab yet, which the in-panel tab menu cannot.
+  surface that has no tab yet, which the in-panel tab menu cannot. Docking a
+  closed surface this way does not open it.
 - Rail order is user-reorderable and persisted globally in
   `useUIStore.contextRailOrder`; `sortContextSurfaces` applies it on top of the
   registry's default order and appends any missing surfaces.

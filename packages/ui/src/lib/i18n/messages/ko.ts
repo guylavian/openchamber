@@ -3491,7 +3491,6 @@ export const dict: Record<I18nKey, string> = {
   'workspace.move.center': '가운데로 이동',
   'workspace.move.right': '오른쪽으로 이동',
   'workspace.move.bottom': '아래로 이동',
-  'workspace.move.newWindow': '새 창에서 열기',
   'workspace.zone.collapse': '영역 접기',
   'workspace.zone.label.left': '왼쪽 영역',
   'workspace.zone.label.center': '가운데 영역',

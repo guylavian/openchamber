@@ -12,7 +12,6 @@ import {
 import { ContextPanel } from '../ContextPanel';
 import { isWorkspaceZoneVisible, useWorkspaceZones } from './useWorkspaceZones';
 import { WorkspaceResizeHandle } from './WorkspaceResizeHandle';
-import { useSurfaceWindowSync } from './useSurfaceWindows';
 import { useWorkspaceOpeners } from './useWorkspaceOpeners';
 
 type Props = {
@@ -62,8 +61,6 @@ const useElementSize = (): [(node: HTMLElement | null) => void, Size | null] => 
  */
 export const WorkspaceLayout: React.FC<Props> = ({ mainChat, overlays, isSurfacePageOpen }) => {
   const view = useWorkspaceZones();
-  // Tracks surfaces open in their own window, so they are not drawn here too.
-  useSurfaceWindowSync();
   useWorkspaceOpeners();
   const zoneSizes = useUIStore((state) => state.workspaceZoneSizes);
   const setWorkspaceZoneSize = useUIStore((state) => state.setWorkspaceZoneSize);

@@ -266,16 +266,6 @@ export const zoneOfSurface = (layout: WorkspaceLayout, id: string): WorkspaceZon
   return null;
 };
 
-/** A surface shown in its own window, for one project (normalized directory key). */
-export type DetachedSurface = {
-  directory: string;
-  surfaceId: string;
-};
-
-/** Surfaces a given project has open in other windows. */
-export const detachedSurfaceIdsFor = (list: readonly DetachedSurface[], directoryKey: string): string[] =>
-  list.filter((entry) => entry.directory === directoryKey).map((entry) => entry.surfaceId);
-
 /** Where the session conversation (the `chat` surface) is docked. */
 export const mainChatZone = (layout: WorkspaceLayout): WorkspaceZone =>
   zoneOfSurface(layout, 'chat') ?? 'center';

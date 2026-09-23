@@ -13,8 +13,8 @@ import { useTerminalStore } from '@/stores/useTerminalStore';
 import { selectContextZoneTab, selectVisibleContextZoneTab } from '@/stores/useUIStore';
 import {
   createDefaultWorkspaceLayout,
-  detachedSurfaceIdsFor,
   mainChatZone,
+  zoneOfSurface,
   type WorkspaceLayout,
   type WorkspaceZone,
 } from '@/lib/workspace/layout';
@@ -26,7 +26,7 @@ const view = (): WorkspaceZonesView => {
   const state = useUIStore.getState();
   const layout: WorkspaceLayout = state.workspaceLayout;
   const panel = state.contextPanelByDirectory[directory];
-  const occupied = occupiedZones(layout, panel?.tabs ?? [], detachedSurfaceIdsFor(state.detachedSurfaces, directory));
+  const occupied = occupiedZones(layout, panel?.tabs ?? []);
   return { directoryKey: directory, layout, panel, occupied };
 };
 
@@ -51,7 +51,6 @@ beforeEach(() => {
     contextPanelByDirectory: {},
     contextRailOrder: [],
     workspaceLayout: createDefaultWorkspaceLayout(),
-    detachedSurfaces: [],
   });
   useTerminalStore.getState().clearAll();
 });
@@ -126,93 +125,123 @@ describe('several zones at once', () => {
   });
 });
 
-describe('moving from a menu', () => {
-  // The bug report: "Move to bottom" on a surface that had never been opened
-  // changed nothing on screen until its rail icon was clicked again.
-  test('moving a surface that was never opened shows it in its new zone', () => {
-    useUIStore.getState().moveWorkspaceSurface('terminal', 'bottom', { revealIn: directory });
+// Maintainer feedback (discussion #3844): choosing a zone for a panel in Rail
+// panels opened it. Placement and open state are separate: setting where a
+// closed panel will appear must not open, focus or activate it; a panel that
+// is on screen moves and stays on screen.
+describe('placement does not open a closed surface', () => {
+  const panel = () => useUIStore.getState().contextPanelByDirectory[directory];
 
-    expect(shownMode('bottom')).toBe('terminal');
-    expect(shownMode('center')).toBe('main-chat');
+  test('a surface that was never opened only changes placement', () => {
+    useUIStore.getState().moveWorkspaceSurface('git', 'bottom');
+
+    expect(zoneOfSurface(useUIStore.getState().workspaceLayout, 'git')).toBe('bottom');
+    expect(visibleZones()).toEqual(['center']);
+    expect(panel()?.tabs ?? []).toEqual([]);
+    expect(panel()?.openZones ?? []).toEqual([]);
   });
 
-  test('moving a surface that is already showing keeps it on screen in the new zone', () => {
+  test('a closed surface stays closed, inactive and unfocused', () => {
+    const store = useUIStore.getState();
+    store.openContextSurface(directory, 'git');
+    store.closeContextZone(directory, 'right');
+    const before = panel();
+
+    useUIStore.getState().moveWorkspaceSurface('git', 'bottom');
+
+    const after = panel();
+    expect(zoneOfSurface(useUIStore.getState().workspaceLayout, 'git')).toBe('bottom');
+    expect(after?.openZones).toEqual([]);
+    expect(isWorkspaceZoneVisible(view(), 'bottom')).toBe(false);
+    expect(after?.activeTabId).toBe(before?.activeTabId ?? null);
+    expect(after?.activeTabIdByZone.bottom).toBeUndefined();
+    expect(after?.tabs).toEqual(before?.tabs);
+  });
+
+  test('a background tab does not open its new zone or come to the front', () => {
+    const store = useUIStore.getState();
+    store.openContextSurface(directory, 'git');
+    store.openContextSurface(directory, 'terminal');
+
+    useUIStore.getState().moveWorkspaceSurface('git', 'bottom');
+
+    expect(isWorkspaceZoneVisible(view(), 'bottom')).toBe(false);
+    expect(shownMode('right')).toBe('terminal');
+  });
+
+  test('the rail still opens it later, in its configured zone', () => {
+    useUIStore.getState().moveWorkspaceSurface('git', 'bottom');
     useUIStore.getState().openContextSurface(directory, 'git');
-    useUIStore.getState().moveWorkspaceSurface('git', 'bottom', { revealIn: directory });
 
     expect(shownMode('bottom')).toBe('git');
     expect(isWorkspaceZoneVisible(view(), 'right')).toBe(false);
   });
 
-  test('moving a collapsed surface brings its zone back', () => {
-    const store = useUIStore.getState();
-    store.openContextSurface(directory, 'git');
-    store.closeContextZone(directory, 'right');
-    useUIStore.getState().moveWorkspaceSurface('git', 'left', { revealIn: directory });
+  test('the placement persists without persisting an open zone', () => {
+    useUIStore.getState().moveWorkspaceSurface('git', 'bottom');
+    useUIStore.getState().moveWorkspaceSurface('editor', 'left');
+    const persisted = JSON.parse(JSON.stringify(useUIStore.persist.getOptions().partialize?.(useUIStore.getState())));
 
-    expect(shownMode('left')).toBe('git');
-  });
-
-  test('moving the chat brings it in front of a tab already in that zone', () => {
-    const store = useUIStore.getState();
-    store.openContextSurface(directory, 'git');
-    useUIStore.getState().moveWorkspaceSurface('chat', 'right', { revealIn: directory });
-
-    expect(shownMode('right')).toBe('main-chat');
-  });
-
-  test('a layout-only move without a directory does not open anything', () => {
-    useUIStore.getState().moveWorkspaceSurface('terminal', 'bottom');
-
-    expect(isWorkspaceZoneVisible(view(), 'bottom')).toBe(false);
+    expect(persisted.workspaceLayout.bottom).toContain('git');
+    expect(persisted.workspaceLayout.left).toContain('editor');
+    expect(persisted.contextPanelByDirectory[directory]?.openZones ?? []).toEqual([]);
   });
 });
 
-describe('a surface in its own window', () => {
-  test('is not drawn here, and its zone closes if nothing else is in it', () => {
-    const store = useUIStore.getState();
-    store.openContextSurface(directory, 'terminal');
-    expect(shownMode('right')).toBe('terminal');
+describe('moving a surface that is on screen', () => {
+  const panel = () => useUIStore.getState().contextPanelByDirectory[directory];
 
-    useUIStore.getState().setSurfaceDetached(directory, 'terminal', true);
+  test('it moves at once and stays open; the emptied zone collapses', () => {
+    useUIStore.getState().openContextSurface(directory, 'git');
+    useUIStore.getState().moveWorkspaceSurface('git', 'bottom');
+
+    expect(shownMode('bottom')).toBe('git');
     expect(isWorkspaceZoneVisible(view(), 'right')).toBe(false);
-    // The tab itself is kept, so closing the window can put it back.
-    expect(useUIStore.getState().contextPanelByDirectory[directory]?.tabs.some((tab) => tab.mode === 'terminal')).toBe(true);
+    expect(panel()?.openZones).toEqual(['bottom']);
   });
 
-  test('leaves the other surfaces in its zone where they are', () => {
-    const store = useUIStore.getState();
-    store.openContextSurface(directory, 'git');
-    store.openContextSurface(directory, 'terminal');
-    useUIStore.getState().setSurfaceDetached(directory, 'terminal', true);
+  test('a terminal keeps its tab (and so its session) when it moves', () => {
+    useUIStore.getState().openContextSurface(directory, 'terminal');
+    const tabsBefore = panel()?.tabs;
 
-    expect(isWorkspaceZoneVisible(view(), 'right')).toBe(true);
+    useUIStore.getState().moveWorkspaceSurface('terminal', 'bottom');
+
+    expect(shownMode('bottom')).toBe('terminal');
+    expect(panel()?.tabs).toEqual(tabsBefore);
   });
 
-  test('comes back to its zone when its window closes', () => {
+  test('it joins a zone that already has tabs without replacing them', () => {
+    const store = useUIStore.getState();
+    store.moveWorkspaceSurface('terminal', 'bottom');
+    store.openContextSurface(directory, 'terminal');
+    useUIStore.getState().openContextSurface(directory, 'git');
+
+    useUIStore.getState().moveWorkspaceSurface('git', 'bottom');
+
+    const layout = useUIStore.getState().workspaceLayout;
+    expect(layout.bottom).toEqual(['terminal', 'git']);
+    expect(shownMode('bottom')).toBe('git');
+    expect(panel()?.tabs.map((tab) => tab.mode).sort()).toEqual(['git', 'terminal']);
+    // Its old zone had nothing else and collapses.
+    expect(isWorkspaceZoneVisible(view(), 'right')).toBe(false);
+  });
+
+  test('its old zone keeps showing what is left there', () => {
     const store = useUIStore.getState();
     store.openContextSurface(directory, 'terminal');
-    store.setSurfaceDetached(directory, 'terminal', true);
-    useUIStore.getState().setSurfaceDetached(directory, 'terminal', false);
+    useUIStore.getState().openContextSurface(directory, 'git');
 
+    useUIStore.getState().moveWorkspaceSurface('git', 'bottom');
+
+    expect(shownMode('bottom')).toBe('git');
     expect(shownMode('right')).toBe('terminal');
   });
 
-  test('is detached for its own project only', () => {
-    const other = '/other';
-    useUIStore.getState().openContextSurface(other, 'terminal');
-    useUIStore.getState().setSurfaceDetached(directory, 'terminal', true);
+  test('moving the chat brings it in front of a tab already in that zone', () => {
+    useUIStore.getState().openContextSurface(directory, 'git');
+    useUIStore.getState().moveWorkspaceSurface('chat', 'right');
 
-    const state = useUIStore.getState();
-    expect(detachedSurfaceIdsFor(state.detachedSurfaces, other)).toEqual([]);
-    expect(selectVisibleContextZoneTab(state, other, 'right')?.mode).toBe('terminal');
-  });
-
-  test('is not remembered across a restart', () => {
-    useUIStore.getState().setSurfaceDetached(directory, 'terminal', true);
-    const persisted = JSON.stringify(useUIStore.persist.getOptions().partialize?.(useUIStore.getState()));
-
-    expect(Object.keys(JSON.parse(persisted))).not.toContain('detachedSurfaces');
+    expect(shownMode('right')).toBe('main-chat');
   });
 });
 

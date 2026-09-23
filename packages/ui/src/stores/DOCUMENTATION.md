@@ -127,6 +127,12 @@ older per-surface widths (`widthFractionByMode`), which take precedence there so
 a resize made before the zones existed is still honoured.
 
 What is open stays per directory, in `contextPanelByDirectory[dir].openZones`.
+Placement and open state are separate: `moveWorkspaceSurface`,
+`applyWorkspaceLayoutPreset` and `resetWorkspaceLayout` change only the layout,
+except that a surface a zone was showing is carried to its new zone and kept in
+front there (`carryVisibleSurfaces`). They never open a closed surface, never
+activate a background tab and never change `activeTabId`; opening stays with
+`openContextSurface`.
 Before the zones this was a single `isOpen` flag describing the one right panel;
 the v21 → v22 migration reads that flag as `['right']`, which is where every
 panel surface starts, so an existing install sees no rearrangement. A malformed
@@ -141,10 +147,6 @@ activated anywhere and is always a real tab. A missing or stale zone entry
 `activeContextTabForZone`. The reserved id `MAIN_CHAT_TAB_ID` appears only in
 `activeTabIdByZone`, for the conversation's zone, and means the conversation is
 in front there; the conversation has no tab record of its own.
-
-`detachedSurfaces` lists `{ directory, surfaceId }` pairs shown in their own
-window. It is per project and never persisted: the windows re-announce
-themselves when a main window loads.
 
 Context-panel session chats mount only the active chat iframe. After installing
 its message listener, the iframe requests its authoritative visibility from the

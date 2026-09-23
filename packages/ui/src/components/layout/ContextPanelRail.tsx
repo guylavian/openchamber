@@ -39,10 +39,9 @@ import { useGitStatus } from '@/stores/useGitStore';
 import { useGitHubAuthStore } from '@/stores/useGitHubAuthStore';
 import { useLinearAuthStore } from '@/stores/useLinearAuthStore';
 import { normalizeContextPanelDirectoryKey, useUIStore, visibleContextModes, type ContextPanelMode } from '@/stores/useUIStore';
-import { detachedSurfaceIdsFor, zoneOfMode, type WorkspaceZone } from '@/lib/workspace/layout';
+import { zoneOfMode, type WorkspaceZone } from '@/lib/workspace/layout';
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@/components/ui/context-menu';
 import { WorkspaceMoveMenuItems } from './workspace/WorkspaceMoveMenuItems';
-import { focusSurfaceWindow } from './workspace/useSurfaceWindows';
 import { useGuestSurfaces } from '@/hooks/useGuestSurfaces';
 import { useGuestBadgeStore } from '@/lib/guests/badge-store';
 import { isPluginContextPanelMode, pluginIdFromMode } from '@/lib/surfaces/modes';
@@ -291,11 +290,6 @@ export const ContextPanelRail: React.FC = () => {
   const tabs = panelState?.tabs ?? EMPTY_TABS;
   // Several zones can each show a surface at once, so the rail marks a set of
   // surfaces active rather than one. A surface in a collapsed zone is not in it.
-  const detachedSurfaces = useUIStore((state) => state.detachedSurfaces);
-  const detachedIds = React.useMemo(
-    () => detachedSurfaceIdsFor(detachedSurfaces, directoryKey),
-    [detachedSurfaces, directoryKey],
-  );
   const visibleModes = React.useMemo(
     () => (panelState ? visibleContextModes(panelState, workspaceLayout) : EMPTY_MODES),
     [panelState, workspaceLayout],
@@ -381,8 +375,7 @@ export const ContextPanelRail: React.FC = () => {
               <ContextPanelRailItem
                 key={surface.id}
                 surface={surface}
-                // A surface in its own window is on screen too, just elsewhere.
-                isActive={visibleModes.includes(surface.mode) || detachedIds.includes(surface.id)}
+                isActive={visibleModes.includes(surface.mode)}
                 showActivityDot={false}
                 label={label}
                 description={t(surface.descriptionKey)}
@@ -408,12 +401,6 @@ export const ContextPanelRail: React.FC = () => {
                 zone={zoneOfMode(workspaceLayout, surface.mode)}
                 onSelect={(selected) => {
                   if (isPluginContextPanelMode(selected.mode)) clearGuestBadge(pluginIdFromMode(selected.mode));
-                  // Detached: bring its window forward rather than opening a
-                  // second copy here.
-                  if (detachedIds.includes(selected.id)) {
-                    focusSurfaceWindow(directoryKey, selected.id);
-                    return;
-                  }
                   openContextSurface(directoryKey, selected.mode);
                 }}
               />

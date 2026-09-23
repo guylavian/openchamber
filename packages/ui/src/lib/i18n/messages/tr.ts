@@ -3489,7 +3489,6 @@ export const dict = {
   'workspace.move.center': 'Ortaya taşı',
   'workspace.move.right': 'Sağa taşı',
   'workspace.move.bottom': 'Alta taşı',
-  'workspace.move.newWindow': 'Yeni pencerede aç',
   'workspace.zone.collapse': 'Bölgeyi daralt',
   'workspace.zone.label.left': 'Sol bölge',
   'workspace.zone.label.center': 'Orta bölge',

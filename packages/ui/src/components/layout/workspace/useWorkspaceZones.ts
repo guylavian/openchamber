@@ -7,10 +7,8 @@ import {
   useUIStore,
   type ContextPanelDirectoryState,
 } from '@/stores/useUIStore';
-import { modeForSurface } from '@/lib/workspace/surfaceWindow';
 import type { ContextPanelMode } from '@/lib/surfaces/modes';
 import {
-  detachedSurfaceIdsFor,
   mainChatZone,
   sanitizeWorkspaceLayout,
   zoneOfMode,
@@ -53,11 +51,9 @@ export const useWorkspaceZones = (): WorkspaceZonesView => {
     [guestSurfaces, storedLayout],
   );
 
-  const detachedSurfaces = useUIStore((state) => state.detachedSurfaces);
-
   const occupied = React.useMemo(
-    () => occupiedZones(layout, panel?.tabs ?? [], detachedSurfaceIdsFor(detachedSurfaces, directoryKey)),
-    [detachedSurfaces, directoryKey, layout, panel?.tabs],
+    () => occupiedZones(layout, panel?.tabs ?? []),
+    [layout, panel?.tabs],
   );
 
   return { directoryKey, layout, panel, occupied };
@@ -67,19 +63,14 @@ export const useWorkspaceZones = (): WorkspaceZonesView => {
  * Zones with something to draw in this window.
  *
  * The session conversation always has something to show, so its zone counts
- * as occupied even before any panel tab exists. A surface open in its own
- * window leaves nothing behind here, so its zone must not stay open around an
- * empty pane.
+ * as occupied even before any panel tab exists.
  */
 export const occupiedZones = (
   layout: WorkspaceLayout,
   tabs: readonly { mode: ContextPanelMode }[],
-  detachedSurfaceIds: readonly string[],
 ): Set<WorkspaceZone> => {
   const zones = new Set<WorkspaceZone>([mainChatZone(layout)]);
-  const detachedModes = new Set(detachedSurfaceIds.map(modeForSurface));
   for (const tab of tabs) {
-    if (detachedModes.has(tab.mode)) continue;
     zones.add(zoneOfMode(layout, tab.mode));
   }
   return zones;

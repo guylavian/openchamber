@@ -6,7 +6,6 @@ import type { IconName } from '@/components/icon/icons';
 import type { I18nKey } from '@/lib/i18n';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
-import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useUIStore } from '@/stores/useUIStore';
 import {
   allowedZonesForSurface,
@@ -33,7 +32,6 @@ export const WorkspaceZonePicker: React.FC<{ surfaceId: string }> = ({ surfaceId
   const { t } = useI18n();
   const layout = useUIStore((state) => state.workspaceLayout);
   const moveWorkspaceSurface = useUIStore((state) => state.moveWorkspaceSurface);
-  const directory = useEffectiveDirectory() ?? '';
 
   const allowed = allowedZonesForSurface(surfaceId);
   const targets = WORKSPACE_ZONES.filter((zone) => allowed.includes(zone));
@@ -59,7 +57,7 @@ export const WorkspaceZonePicker: React.FC<{ surfaceId: string }> = ({ surfaceId
                   // The row around this is itself a button that toggles rail
                   // visibility; docking is a different choice.
                   event.stopPropagation();
-                  moveWorkspaceSurface(surfaceId, zone, { revealIn: directory });
+                  moveWorkspaceSurface(surfaceId, zone);
                 }}
                 className={cn(
                   'flex h-6 w-6 items-center justify-center rounded transition-colors',

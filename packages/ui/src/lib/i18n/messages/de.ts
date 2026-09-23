@@ -3489,7 +3489,6 @@ export const dict = {
   'workspace.move.center': 'In die Mitte verschieben',
   'workspace.move.right': 'Nach rechts verschieben',
   'workspace.move.bottom': 'Nach unten verschieben',
-  'workspace.move.newWindow': 'In neuem Fenster öffnen',
   'workspace.zone.collapse': 'Bereich einklappen',
   'workspace.zone.label.left': 'Linker Bereich',
   'workspace.zone.label.center': 'Mittlerer Bereich',

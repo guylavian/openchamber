@@ -3496,7 +3496,6 @@ export const dict: Record<I18nKey, string> = {
   'workspace.move.center': 'Przenieś na środek',
   'workspace.move.right': 'Przenieś w prawo',
   'workspace.move.bottom': 'Przenieś na dół',
-  'workspace.move.newWindow': 'Otwórz w nowym oknie',
   'workspace.zone.collapse': 'Zwiń strefę',
   'workspace.zone.label.left': 'Lewa strefa',
   'workspace.zone.label.center': 'Środkowa strefa',

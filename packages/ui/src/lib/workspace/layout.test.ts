@@ -82,11 +82,19 @@ describe('parseStoredWorkspaceLayout', () => {
   });
 
   test('sends a surface stored in a zone it does not allow back to its default zone', () => {
-    // The terminal may not sit in the center; the stored value must not strand it.
-    const layout = sanitizeWorkspaceLayout({ left: [], center: ['chat', 'terminal'], right: [], bottom: [] });
+    // The conversation is kept to center and right; a stored value must not strand it.
+    const layout = sanitizeWorkspaceLayout({ left: [], center: [], right: [], bottom: ['chat'] });
 
-    expect(layout.center).toEqual(['chat']);
-    expect(layout.right).toContain('terminal');
+    expect(layout.bottom).not.toContain('chat');
+    expect(layout.center).toContain('chat');
+  });
+
+  test('keeps a normal surface wherever it was stored', () => {
+    const layout = sanitizeWorkspaceLayout({ left: ['diff'], center: ['chat', 'terminal'], right: [], bottom: ['editor'] });
+
+    expect(zoneOfSurface(layout, 'terminal')).toBe('center');
+    expect(zoneOfSurface(layout, 'diff')).toBe('left');
+    expect(zoneOfSurface(layout, 'editor')).toBe('bottom');
   });
 
   test('appends surfaces the stored layout never mentioned', () => {
@@ -144,10 +152,31 @@ describe('moveSurfaceToZone', () => {
 
   test('rejects a zone the surface does not allow', () => {
     const before = createDefaultWorkspaceLayout();
-    const after = moveSurfaceToZone(before, 'terminal', 'center');
+    const after = moveSurfaceToZone(before, 'chat', 'left');
 
     expect(after).toBe(before);
-    expect(canPlaceSurfaceInZone('terminal', 'center')).toBe(false);
+    expect(canPlaceSurfaceInZone('chat', 'left')).toBe(false);
+    expect(canPlaceSurfaceInZone('chat', 'bottom')).toBe(false);
+  });
+
+  // Maintainer feedback (discussion #3844): panels other than the chat should
+  // not be limited to some zones.
+  test('lets every normal surface and plugin surface use all four zones', () => {
+    const surfaces = [...CONTEXT_SURFACES.filter((surface) => surface.id !== 'chat').map((surface) => surface.id), 'plugin:acme'];
+    for (const id of surfaces) {
+      for (const zone of WORKSPACE_ZONES) {
+        expect(`${id} in ${zone}: ${canPlaceSurfaceInZone(id, zone)}`).toBe(`${id} in ${zone}: true`);
+      }
+    }
+  });
+
+  test('moves files, git, terminal and diff into each zone', () => {
+    for (const id of ['editor', 'git', 'terminal', 'diff']) {
+      for (const zone of WORKSPACE_ZONES) {
+        const layout = moveSurfaceToZone(createDefaultWorkspaceLayout(), id, zone);
+        expect(`${id}: ${zoneOfSurface(layout, id)}`).toBe(`${id}: ${zone}`);
+      }
+    }
   });
 
   test('moving chat to the right takes it out of the center', () => {

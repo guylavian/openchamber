@@ -2079,12 +2079,7 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {}, 
     }),
   }));
   browserWindow.__ocLabel = label || nextWindowLabel();
-  browserWindow.__ocRuntimeConfig = {
-    apiBaseUrl: desktopApiBaseUrl,
-    clientToken: desktopClientToken,
-    requestHeaders: desktopRequestHeaders,
-    relayHostId: rendererRuntimeConfig.relayHostId || '',
-  };
+  browserWindow.__ocRuntimeConfig = { apiBaseUrl: desktopApiBaseUrl, clientToken: desktopClientToken, requestHeaders: desktopRequestHeaders };
   browserWindow.__ocInitScript = buildInitScript(desktopLocalOrigin, state.bootOutcome, desktopApiBaseUrl, desktopClientToken, desktopRequestHeaders);
   browserWindow.__ocTitleBarOverlayEnabled = titleBarOverlayEnabled;
   browserWindow.on('app-command', (event, command) => {
@@ -2406,49 +2401,6 @@ const createAdditionalWindow = async (url, runtimeConfig = {}) => {
     restoreGeometry: false,
     url,
     runtimeConfig,
-  });
-  return browserWindow;
-};
-
-// A workspace surface (terminal, files, git, ...) detached into its own window.
-// The renderer names only the surface and the project; the page and the
-// runtime connection are the requesting window's own, so this can open nothing
-// the requester could not already show, over the same host (relay included).
-// Keyed per origin, surface and project so asking again brings the existing
-// window forward instead of a second copy.
-const SURFACE_WINDOW_ID_PATTERN = /^(?:[a-z]+|plugin:[A-Za-z0-9._-]+)$/;
-const surfaceWindowsByKey = new Map();
-
-const openSurfaceWindow = async (sourceWindow, { surfaceId, directory }) => {
-  if (!sourceWindow || sourceWindow.isDestroyed()) {
-    throw new Error('Window is not available');
-  }
-  const sourceUrl = new URL(sourceWindow.webContents.getURL());
-  const key = `${sourceUrl.origin}\n${surfaceId}\n${directory}`;
-  const existing = surfaceWindowsByKey.get(key);
-  if (existing && !existing.isDestroyed()) {
-    if (existing.isMinimized()) existing.restore();
-    existing.show();
-    existing.focus();
-    return existing;
-  }
-
-  const targetUrl = new URL(sourceUrl.href);
-  targetUrl.hash = '';
-  targetUrl.search = new URLSearchParams({ ocWindow: 'surface', surface: surfaceId, directory }).toString();
-  const relayHostId = typeof sourceWindow.__ocRuntimeConfig?.relayHostId === 'string'
-    ? sourceWindow.__ocRuntimeConfig.relayHostId
-    : '';
-  const browserWindow = await createAdditionalWindow(targetUrl.toString(), { ...getWindowRuntimeConfig(sourceWindow), relayHostId });
-  if (!browserWindow) {
-    throw new Error('Window could not be created');
-  }
-  // It sits behind the main window most of the time; throttled timers would
-  // starve the heartbeat that tells the main window it is still open.
-  browserWindow.webContents.setBackgroundThrottling(false);
-  surfaceWindowsByKey.set(key, browserWindow);
-  browserWindow.on('closed', () => {
-    if (surfaceWindowsByKey.get(key) === browserWindow) surfaceWindowsByKey.delete(key);
   });
   return browserWindow;
 };
@@ -4398,17 +4350,6 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       return null;
     }
 
-    case 'desktop_open_surface_window': {
-      const surfaceId = typeof args.surfaceId === 'string' ? args.surfaceId.trim() : '';
-      const directory = typeof args.directory === 'string' ? args.directory.trim() : '';
-      if (!SURFACE_WINDOW_ID_PATTERN.test(surfaceId) || surfaceId === 'chat') {
-        throw new Error('Invalid surface');
-      }
-      if (!directory) throw new Error('Directory is required');
-      await openSurfaceWindow(browserWindow, { surfaceId, directory });
-      return null;
-    }
-
     case 'desktop_open_session_mini_chat_window': {
       const sessionId = typeof args.sessionId === 'string' ? args.sessionId.trim() : '';
       if (!sessionId) throw new Error('Session id is required');
@@ -4844,9 +4785,6 @@ const COMMANDS_SAFE_FOR_REMOTE = new Set([
   'desktop_new_window',
   'desktop_new_window_at_url',
   'desktop_new_window_for_host',
-  // Reopens the requesting page's own origin with its own runtime config, so a
-  // remote page gains nothing it could not already reach.
-  'desktop_open_surface_window',
   'desktop_set_window_title',
   'desktop_set_window_theme',
   'desktop_is_window_fullscreen',

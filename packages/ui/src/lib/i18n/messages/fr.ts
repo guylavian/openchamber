@@ -3489,7 +3489,6 @@ export const dict = {
   'workspace.move.center': 'Déplacer au centre',
   'workspace.move.right': 'Déplacer à droite',
   'workspace.move.bottom': 'Déplacer en bas',
-  'workspace.move.newWindow': 'Ouvrir dans une nouvelle fenêtre',
   'workspace.zone.collapse': 'Réduire la zone',
   'workspace.zone.label.left': 'Zone de gauche',
   'workspace.zone.label.center': 'Zone centrale',
