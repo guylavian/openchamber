@@ -1,6 +1,7 @@
 import React from 'react';
 
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
+import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import { cn } from '@/lib/utils';
 import { followWorkspaceLayoutOfOtherWindows, useUIStore } from '@/stores/useUIStore';
 import {
@@ -10,9 +11,14 @@ import {
   WORKSPACE_ZONE_MIN_SIZE,
 } from '@/lib/workspace/layout';
 import { ContextPanel } from '../ContextPanel';
+import { FilesEditorHost } from './FilesEditorHost';
+import { filesEditorMounted } from './filesSurfaceTabs';
 import { isWorkspaceZoneVisible, useWorkspaceZones } from './useWorkspaceZones';
 import { WorkspaceResizeHandle } from './WorkspaceResizeHandle';
 import { useWorkspaceOpeners } from './useWorkspaceOpeners';
+
+const FilesView = lazyWithChunkRecovery(() => import('@/components/views/FilesView').then((m) => ({ default: m.FilesView })));
+const renderFilesEditor = (visible: boolean) => <FilesView mode="editor-only" visible={visible} />;
 
 type Props = {
   /** The session conversation, drawn in whichever zone the chat surface is docked in. */
@@ -104,6 +110,8 @@ export const WorkspaceLayout: React.FC<Props> = ({ mainChat, overlays, isSurface
 
   return (
     <div ref={outerRef} className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      {/* Drawn once for every zone, so moving Files keeps its editor. */}
+      <FilesEditorHost mounted={filesEditorMounted(view.panel)} renderEditor={renderFilesEditor} />
       <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden" data-page-scroll-lock="true">
         {leftMounted ? (
           <>

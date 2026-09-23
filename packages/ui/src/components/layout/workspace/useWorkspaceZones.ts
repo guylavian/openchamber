@@ -7,7 +7,6 @@ import {
   useUIStore,
   type ContextPanelDirectoryState,
 } from '@/stores/useUIStore';
-import type { ContextPanelMode } from '@/lib/surfaces/modes';
 import {
   mainChatZone,
   sanitizeWorkspaceLayout,
@@ -51,10 +50,7 @@ export const useWorkspaceZones = (): WorkspaceZonesView => {
     [guestSurfaces, storedLayout],
   );
 
-  const occupied = React.useMemo(
-    () => occupiedZones(layout, panel?.tabs ?? []),
-    [layout, panel?.tabs],
-  );
+  const occupied = React.useMemo(() => occupiedZones(layout, panel), [layout, panel]);
 
   return { directoryKey, layout, panel, occupied };
 };
@@ -63,14 +59,16 @@ export const useWorkspaceZones = (): WorkspaceZonesView => {
  * Zones with something to draw in this window.
  *
  * The session conversation always has something to show, so its zone counts
- * as occupied even before any panel tab exists.
+ * as occupied even before any panel tab exists. A hidden Files still occupies
+ * its zone: the zone stays mounted, collapsed when nothing else is open there,
+ * so the editor inside keeps its unsaved edits until Files reopens.
  */
 export const occupiedZones = (
   layout: WorkspaceLayout,
-  tabs: readonly { mode: ContextPanelMode }[],
+  panel: Pick<ContextPanelDirectoryState, 'tabs' | 'hiddenFileTabs'> | undefined,
 ): Set<WorkspaceZone> => {
   const zones = new Set<WorkspaceZone>([mainChatZone(layout)]);
-  for (const tab of tabs) {
+  for (const tab of [...(panel?.tabs ?? []), ...(panel?.hiddenFileTabs ?? [])]) {
     zones.add(zoneOfMode(layout, tab.mode));
   }
   return zones;

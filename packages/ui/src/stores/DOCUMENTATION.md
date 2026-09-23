@@ -157,6 +157,32 @@ activated anywhere and is always a real tab. A missing or stale zone entry
 `activeTabIdByZone`, for the conversation's zone, and means the conversation is
 in front there; the conversation has no tab record of its own.
 
+Files is one surface in a zone, however many files are open. Its open files are
+still `mode: 'file'` tabs in `contextPanelByDirectory[dir].tabs`, the same
+records as before the zones, but a zone's strip folds them into one Files entry
+(`workspaceStripEntries` in `components/layout/workspace/filesSurfaceTabs.ts`)
+and the Files surface lists them in a strip of its own. A zone whose selection
+is a file tab is showing Files. Placement is stored once, for the `editor`
+surface; files carry none. Closing the last open file leaves the empty `file`
+placeholder, so Files stays in its zone showing its tree, whichever zone the
+user last worked in. Closing Files from its zone (`hideFilesSurface`) takes
+it out of the zone but keeps its file tabs in `hiddenFileTabs`, outside every
+zone and persisted; reopening Files from the rail, or opening any file, puts
+them back and shows the file used last. The editor's own open-file and tree
+state (`useFilesViewTabsStore`) is not touched by hiding, only by closing a
+file. A hidden Files also stays mounted: its zone still counts as occupied
+(`occupiedZones`), collapsed if nothing else is open there, and ContextPanel
+keeps the Files container for the hidden tabs (`mountedFileTabs`). The editor
+keeps unsaved edits only in its mounted component, so this is what carries a
+draft through hide and reopen; nothing is saved on the user's behalf.
+Moving Files keeps the draft too: each zone has its own panel, so the editor is
+not rendered inside a zone. `FilesEditorHost` (in `WorkspaceLayout`) renders
+the one editor while `filesEditorMounted` holds, and moves its DOM node into
+the `FilesEditorSlot` of whichever zone holds Files. The slot also hands over
+that zone's Escape handling, since React events from the editor bubble
+through the host rather than the zone's panel.
+Collapsing the zone also keeps every file.
+
 Context-panel session chats mount only the active chat iframe. After installing
 its message listener, the iframe requests its authoritative visibility from the
 parent. The parent accepts requests only from a currently mounted chat frame and

@@ -14,7 +14,6 @@ import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 // into the eager startup graph even when no such tab is open.
 const WalkthroughView = lazyWithChunkRecovery(() => import('@/components/views/walkthrough/WalkthroughView').then((m) => ({ default: m.WalkthroughView })));
 const DiffView = lazyWithChunkRecovery(() => import('@/components/views/DiffView').then((m) => ({ default: m.DiffView })));
-const FilesView = lazyWithChunkRecovery(() => import('@/components/views/FilesView').then((m) => ({ default: m.FilesView })));
 const GitView = lazyWithChunkRecovery(() => import('@/components/views/GitView').then((m) => ({ default: m.GitView })));
 // The Linear rail icon stays hidden until a workspace is connected, so most
 // users never render this panel; keep it out of the main bundle.
@@ -69,7 +68,16 @@ import { isPluginContextPanelMode, pluginIdFromMode } from '@/lib/surfaces/modes
 import { CONTEXT_SURFACES, getContextSurfaceWidthFraction } from '@/lib/surfaces/registry';
 import { MAIN_CHAT_TAB_ID, mainChatZone, zoneOfMode, type WorkspaceZone } from '@/lib/workspace/layout';
 import { WorkspaceMoveMenuItems } from './workspace/WorkspaceMoveMenuItems';
+import { FilesEditorSlot } from './workspace/FilesEditorHost';
 import { closableTabRanges } from './workspace/closableTabRanges';
+import {
+  FILES_SURFACE_TAB_ID,
+  fileTabToActivate,
+  mountedFileTabs,
+  reorderForStripDrag,
+  splitWorkspaceStripClose,
+  workspaceStripEntries,
+} from './workspace/filesSurfaceTabs';
 import { isVimEditorEventTarget } from '@/lib/editorFocus';
 import { isTerminalEventTarget } from '@/lib/terminalFocus';
 
@@ -496,6 +504,54 @@ const truncateTabLabel = (value: string, maxChars: number): string => {
   return `${value.slice(0, maxChars - 3)}...`;
 };
 
+/** Files as a whole wears the rail's Files icon, not the icon of a file. */
+const FILES_SURFACE_ICON = <Icon name="file-edit" className="h-3.5 w-3.5" />;
+
+/**
+ * The close rows of a tab's menu. `closeIds` decides what the ids mean: zone
+ * surfaces in the workspace strip, files in the Files strip.
+ */
+const TabCloseMenuItems: React.FC<{
+  id: string;
+  allIds: string[];
+  close: () => void;
+  closeIds: (ids: readonly string[]) => void;
+}> = ({ id, allIds, close, closeIds }) => {
+  const { t } = useI18n();
+  // The chat leads its zone and owns none of these: it cannot be closed,
+  // and the surfaces around it are what "close others" would remove.
+  const { closableIds, toLeft, toRight } = closableTabRanges(allIds, id, MAIN_CHAT_TAB_ID);
+  const others = closableIds.filter((tabId) => tabId !== id);
+  return (
+    <>
+      {id === MAIN_CHAT_TAB_ID ? null : (
+        <ContextMenuItem onClick={close}>
+          <Icon name="close" className="mr-2 size-4" />
+          {t('contextPanel.tab.menu.close')}
+        </ContextMenuItem>
+      )}
+      <ContextMenuSeparator />
+      <ContextMenuItem onClick={() => closeIds(others)} disabled={others.length === 0}>
+        <Icon name="expand-horizontal" className="mr-2 size-4" />
+        {t('contextPanel.tab.menu.closeOthers')}
+      </ContextMenuItem>
+      <ContextMenuItem onClick={() => closeIds(toLeft)} disabled={toLeft.length === 0}>
+        <Icon name="expand-left" className="mr-2 size-4" />
+        {t('contextPanel.tab.menu.closeToLeft')}
+      </ContextMenuItem>
+      <ContextMenuItem onClick={() => closeIds(toRight)} disabled={toRight.length === 0}>
+        <Icon name="expand-right" className="mr-2 size-4" />
+        {t('contextPanel.tab.menu.closeToRight')}
+      </ContextMenuItem>
+      <ContextMenuSeparator />
+      <ContextMenuItem onClick={() => closeIds(closableIds)} disabled={others.length === 0}>
+        <Icon name="close-circle" className="mr-2 size-4" />
+        {t('contextPanel.tab.menu.closeAll')}
+      </ContextMenuItem>
+    </>
+  );
+};
+
 
 type ContextPanelProps = {
   /**
@@ -520,7 +576,6 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({ zone, mainChat }) =>
   const panelState = useUIStore((state) => (directoryKey ? state.contextPanelByDirectory[directoryKey] : undefined));
   const workspaceLayout = useUIStore((state) => state.workspaceLayout);
   const closeContextZone = useUIStore((state) => state.closeContextZone);
-  const closeContextPanelTab = useUIStore((state) => state.closeContextPanelTab);
   const openContextPanelTab = useUIStore((state) => state.openContextPanelTab);
   const toggleContextPanelExpanded = useUIStore((state) => state.toggleContextPanelExpanded);
   const setContextPanelWidth = useUIStore((state) => state.setContextPanelWidth);
@@ -569,9 +624,14 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({ zone, mainChat }) =>
   const isOpen = (isPermanentZone || Boolean(panelState?.openZones.includes(zone)))
     && (Boolean(activeTab) || showsMainChat);
   const [availablePanelAreaWidth, setAvailablePanelAreaWidth] = React.useState<number | null>(null);
+  // A hidden Files keeps its container, and so its editor, mounted here.
+  const filesTabs = React.useMemo(
+    () => mountedFileTabs(tabs, panelState?.hiddenFileTabs ?? [], zoneOf('file') === zone),
+    [panelState?.hiddenFileTabs, tabs, zone, zoneOf],
+  );
   const hasOpenEditorFile = React.useMemo(
-    () => tabs.some((tab) => tab.mode === 'file' && tab.targetPath),
-    [tabs],
+    () => filesTabs.some((tab) => tab.targetPath),
+    [filesTabs],
   );
   // The editor column is shown for an open file unless the user hid it; the
   // tree never hides alongside it, so a hidden tree forces the editor back.
@@ -1054,11 +1114,23 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({ zone, mainChat }) =>
   }, [darkThemeId, lightThemeId, postChatSettingsSyncToEmbeddedChat, postEmbeddedVisibilityToChats, postThemeSyncToEmbeddedChat, tabs, themeMode]);
 
   // Everything docked in this zone is a tab here: the surfaces sharing the
-  // zone as well as the several instances a surface can have (open files,
-  // split chats, browser targets). The rail still opens a surface; this strip
-  // is how the user moves between what the zone already holds.
+  // zone as well as the several instances a surface can have (split chats,
+  // browser targets). Open files are not among them: they belong to Files,
+  // which is one tab here and lists its files in its own strip below. The rail
+  // still opens a surface; this strip is how the user moves between what the
+  // zone already holds.
   const tabItems = React.useMemo(() => {
-    const items = tabs.map((tab) => {
+    const items = workspaceStripEntries(tabs).map((tab) => {
+      if (tab === FILES_SURFACE_TAB_ID) {
+        const label = t('contextPanel.mode.files');
+        return {
+          id: FILES_SURFACE_TAB_ID,
+          label,
+          icon: FILES_SURFACE_ICON,
+          title: label,
+          closeLabel: t('contextPanel.tab.closeTabAria', { label }),
+        };
+      }
       const rawLabel = getTabLabel(tab, sessionTitleById, t);
       const label = truncateTabLabel(rawLabel, CONTEXT_TAB_LABEL_MAX_CHARS);
       const tabPathLabel = getRelativePathLabel(tab.targetPath, effectiveDirectory);
@@ -1085,15 +1157,38 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({ zone, mainChat }) =>
     }, ...items];
   }, [effectiveDirectory, faviconByOrigin, mainChat, sessionTitleById, t, tabs]);
 
-  // Multi-instance surfaces keep their strip even at one tab, so a single open
-  // file still has its own close control. A lone singleton surface shows its
-  // name instead, as it always did.
-  const isMultiInstanceMode = activeTab?.mode === 'file' || activeTab?.mode === 'chat' || activeTab?.mode === 'browser';
+  // Multi-instance surfaces keep their strip even at one tab, so a single
+  // split chat still has its own close control. A lone singleton surface,
+  // Files included, shows its name instead, as it always did.
+  const isMultiInstanceMode = activeTab?.mode === 'chat' || activeTab?.mode === 'browser';
   const showsTabStrip = tabItems.length > 1 || isMultiInstanceMode;
   // The center zone cannot be closed and has nothing to say when it holds one
   // surface, so it draws no chrome there — which is what keeps the default
-  // layout's chat looking exactly as it did before the workspace zones.
-  const showsHeader = !isPermanentZone || showsTabStrip;
+  // layout's chat looking exactly as it did before the workspace zones. Files
+  // is the exception: its editor and tree toggles live in this header.
+  const showsHeader = !isPermanentZone || showsTabStrip || activeTab?.mode === 'file';
+  const workspaceActiveId = showsMainChat
+    ? MAIN_CHAT_TAB_ID
+    : activeTab?.mode === 'file' ? FILES_SURFACE_TAB_ID : activeTab?.id ?? null;
+
+  // Files keeps its open files in its own strip. Only real files are listed:
+  // the explorer placeholder is Files with nothing open, not a file.
+  const openFileTabs = React.useMemo(
+    () => tabs.filter((tab) => tab.mode === 'file' && tab.targetPath),
+    [tabs],
+  );
+  const fileTabItems = React.useMemo(() => openFileTabs.map((tab) => {
+    const rawLabel = getTabLabel(tab, sessionTitleById, t);
+    const label = truncateTabLabel(rawLabel, CONTEXT_TAB_LABEL_MAX_CHARS);
+    const tabPathLabel = getRelativePathLabel(tab.targetPath, effectiveDirectory);
+    return {
+      id: tab.id,
+      label,
+      icon: getTabIcon(tab, faviconByOrigin),
+      title: tabPathLabel ? `${rawLabel}: ${tabPathLabel}` : rawLabel,
+      closeLabel: t('contextPanel.tab.closeTabAria', { label }),
+    };
+  }), [effectiveDirectory, faviconByOrigin, openFileTabs, sessionTitleById, t]);
   const zoneLabel = t(`workspace.zone.label.${zone}`);
 
   const activeNonChatContent = activeTab?.mode === 'context'
@@ -1151,65 +1246,51 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({ zone, mainChat }) =>
     }
     return dockings;
   }, [guests]);
-  const hasFileTabs = React.useMemo(
-    () => tabs.some((tab) => tab.mode === 'file'),
-    [tabs],
-  );
+  const hasFileTabs = filesTabs.length > 0;
 
   const isFileTabActive = activeTab?.mode === 'file';
 
   const closeContextPanelTabs = useUIStore((state) => state.closeContextPanelTabs);
+  const hideFilesSurface = useUIStore((state) => state.hideFilesSurface);
+  // Ids in the zone strip are surfaces. Closing Files there hides the surface
+  // and keeps its files; only a file's own close button closes a file.
+  const closeWorkspaceStripTabs = React.useCallback((ids: readonly string[]) => {
+    if (!directoryKey) return;
+    const { tabIds, hidesFiles } = splitWorkspaceStripClose(ids);
+    closeContextPanelTabs(directoryKey, tabIds);
+    if (hidesFiles) hideFilesSurface(directoryKey);
+  }, [closeContextPanelTabs, directoryKey, hideFilesSurface]);
+  const closeFileTabs = React.useCallback((ids: readonly string[]) => {
+    if (!directoryKey) return;
+    closeContextPanelTabs(directoryKey, ids);
+  }, [closeContextPanelTabs, directoryKey]);
+
   const renderTabContextMenu = React.useCallback(
     (args: { id: string; index: number; allIds: string[]; close: () => void }): React.ReactNode => {
       if (!directoryKey) {
         return null;
       }
-      const { id, allIds, close } = args;
-      // The chat leads its zone and owns none of these: it cannot be closed,
-      // and the surfaces around it are what "close others" would remove.
-      const { closableIds, toLeft, toRight } = closableTabRanges(allIds, id, MAIN_CHAT_TAB_ID);
-      const closeOthers = () => closeContextPanelTabs(directoryKey, closableIds.filter((tabId) => tabId !== id));
-      const closeToLeft = () => closeContextPanelTabs(directoryKey, toLeft);
-      const closeToRight = () => closeContextPanelTabs(directoryKey, toRight);
-      const closeAll = () => closeContextPanelTabs(directoryKey, closableIds);
-      const hasOthers = closableIds.filter((tabId) => tabId !== id).length > 0;
-      const isFirst = toLeft.length === 0;
-      const isLast = toRight.length === 0;
+      const { id } = args;
       const surfaceId = id === MAIN_CHAT_TAB_ID
         ? 'chat'
-        : surfaceIdForMode(tabs.find((tab) => tab.id === id)?.mode ?? null);
+        : surfaceIdForMode(id === FILES_SURFACE_TAB_ID ? 'file' : tabs.find((tab) => tab.id === id)?.mode ?? null);
       return (
         <>
           <WorkspaceMoveMenuItems surfaceId={surfaceId} currentZone={zone} />
           <ContextMenuSeparator />
-          {id === MAIN_CHAT_TAB_ID ? null : (
-            <ContextMenuItem onClick={close}>
-              <Icon name="close" className="mr-2 size-4" />
-              {t('contextPanel.tab.menu.close')}
-            </ContextMenuItem>
-          )}
-          <ContextMenuSeparator />
-          <ContextMenuItem onClick={closeOthers} disabled={!hasOthers}>
-            <Icon name="expand-horizontal" className="mr-2 size-4" />
-            {t('contextPanel.tab.menu.closeOthers')}
-          </ContextMenuItem>
-          <ContextMenuItem onClick={closeToLeft} disabled={isFirst}>
-            <Icon name="expand-left" className="mr-2 size-4" />
-            {t('contextPanel.tab.menu.closeToLeft')}
-          </ContextMenuItem>
-          <ContextMenuItem onClick={closeToRight} disabled={isLast}>
-            <Icon name="expand-right" className="mr-2 size-4" />
-            {t('contextPanel.tab.menu.closeToRight')}
-          </ContextMenuItem>
-          <ContextMenuSeparator />
-          <ContextMenuItem onClick={closeAll} disabled={!hasOthers}>
-            <Icon name="close-circle" className="mr-2 size-4" />
-            {t('contextPanel.tab.menu.closeAll')}
-          </ContextMenuItem>
+          <TabCloseMenuItems {...args} closeIds={closeWorkspaceStripTabs} />
         </>
       );
     },
-    [closeContextPanelTabs, directoryKey, t, tabs, zone],
+    [closeWorkspaceStripTabs, directoryKey, tabs, zone],
+  );
+  // A file is content inside Files, so its menu only closes files. Where Files
+  // sits is the surface's business: its tab above carries the move items.
+  const renderFileTabContextMenu = React.useCallback(
+    (args: { id: string; index: number; allIds: string[]; close: () => void }): React.ReactNode => (
+      directoryKey ? <TabCloseMenuItems {...args} closeIds={closeFileTabs} /> : null
+    ),
+    [closeFileTabs, directoryKey],
   );
 
   const labelSurfaceId = activeTab ? surfaceIdForMode(activeTab.mode) : showsMainChat ? 'chat' : null;
@@ -1219,7 +1300,7 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({ zone, mainChat }) =>
       {showsTabStrip ? (
         <SortableTabsStrip
           items={tabItems}
-          activeId={showsMainChat ? MAIN_CHAT_TAB_ID : activeTab?.id ?? null}
+          activeId={workspaceActiveId}
           onSelect={(tabID) => {
             if (!directoryKey) {
               return;
@@ -1228,19 +1309,20 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({ zone, mainChat }) =>
               focusMainChat(directoryKey);
               return;
             }
-            setActiveContextPanelTab(directoryKey, tabID);
-          }}
-          onClose={(tabID) => {
-            if (!directoryKey) {
+            if (tabID === FILES_SURFACE_TAB_ID) {
+              const fileTab = fileTabToActivate(tabs);
+              if (fileTab) setActiveContextPanelTab(directoryKey, fileTab.id);
               return;
             }
-            closeContextPanelTab(directoryKey, tabID);
+            setActiveContextPanelTab(directoryKey, tabID);
           }}
+          onClose={(tabID) => closeWorkspaceStripTabs([tabID])}
           onReorder={(activeTabID, overTabID) => {
             if (!directoryKey) {
               return;
             }
-            reorderContextPanelTabs(directoryKey, activeTabID, overTabID);
+            const move = reorderForStripDrag(activeTabID, overTabID, tabs);
+            if (move) reorderContextPanelTabs(directoryKey, move[0], move[1]);
           }}
           layoutMode="scrollable"
           variant="default"
@@ -1251,7 +1333,7 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({ zone, mainChat }) =>
         // the name offers the same docking menu a tab would.
         <ContextMenu>
           <ContextMenuTrigger render={<div className="flex min-w-0 flex-1 items-center gap-1.5 px-3" />}>
-            {activeTab ? getTabIcon(activeTab, faviconByOrigin) : null}
+            {activeTab?.mode === 'file' ? FILES_SURFACE_ICON : activeTab ? getTabIcon(activeTab, faviconByOrigin) : null}
             <span className="truncate typography-ui-label text-foreground">
               {activeTab ? getModeLabel(activeTab.mode, t) : showsMainChat ? t('layout.mainTab.chat') : null}
             </span>
@@ -1352,12 +1434,31 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({ zone, mainChat }) =>
       {header}
         <div className={cn('relative min-h-0 flex-1 overflow-hidden', isResizing && 'pointer-events-none')}>
           {hasFileTabs ? (
-            <div className={cn('absolute inset-0 flex', isFileTabActive ? 'flex' : 'hidden')}>
+            <div className={cn('absolute inset-0 flex-col', isFileTabActive ? 'flex' : 'hidden')}>
+              {fileTabItems.length > 0 ? (
+                <div className="flex h-9 shrink-0 items-stretch border-b border-border">
+                  <SortableTabsStrip
+                    items={fileTabItems}
+                    activeId={activeTab?.mode === 'file' ? activeTab.id : null}
+                    onSelect={(tabID) => {
+                      if (directoryKey) setActiveContextPanelTab(directoryKey, tabID);
+                    }}
+                    onClose={(tabID) => closeFileTabs([tabID])}
+                    onReorder={(activeTabID, overTabID) => {
+                      if (directoryKey) reorderContextPanelTabs(directoryKey, activeTabID, overTabID);
+                    }}
+                    layoutMode="scrollable"
+                    variant="default"
+                    tabContextMenu={renderFileTabContextMenu}
+                  />
+                </div>
+              ) : null}
+              <div className="flex min-h-0 flex-1">
               {hasOpenEditorFile || !contextEditorTreeVisible ? (
                 // Hidden rather than unmounted so a hidden editor keeps its state.
                 <div className={cn('h-full min-w-0 flex-1', hasOpenEditorFile && !showsEditor && 'hidden')}>
                   {hasOpenEditorFile ? (
-                    <React.Suspense fallback={null}><FilesView mode="editor-only" visible={isOpen && isFileTabActive && showsEditor} /></React.Suspense>
+                    <FilesEditorSlot visible={isOpen && isFileTabActive && showsEditor} onKeyDownCapture={handlePanelKeyDownCapture} />
                   ) : (
                     <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
                       <Icon name="file-code" className="h-12 w-12 text-muted-foreground/50" />
@@ -1368,6 +1469,7 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({ zone, mainChat }) =>
                 </div>
               ) : null}
               <EditorTreeColumn visible={contextEditorTreeVisible} active={isOpen && isFileTabActive} fill={!showsEditor} />
+              </div>
             </div>
           ) : null}
           {activeChatTab && activeChatSessionID && activeChatSrc ? (

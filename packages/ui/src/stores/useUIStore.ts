@@ -163,6 +163,14 @@ type ContextPanelTab = {
   touchedAt: number;
 };
 
+type CloseContextPanelTabsOptions = {
+  /**
+   * Files itself is leaving its zone, not files inside it, so no explorer
+   * placeholder is left behind.
+   */
+  closesFilesSurface?: boolean;
+};
+
 type ContextPanelTabDescriptor = {
   mode: ContextPanelMode;
   targetPath?: string | null;
@@ -203,6 +211,12 @@ export type ContextPanelDirectoryState = {
   // Ratios captured when a user resizes a surface. These remain responsive
   // across window sizes while widthByMode preserves older persisted values.
   widthFractionByMode: Partial<Record<ContextPanelMode, number>>;
+  /**
+   * File tabs of a Files surface the user closed from its zone. Closing Files
+   * hides it rather than closing its files: they wait here, out of every zone,
+   * and come back when Files reopens (`restoreHiddenFiles`).
+   */
+  hiddenFileTabs?: ContextPanelTab[];
   touchedAt: number;
 };
 
@@ -823,13 +837,23 @@ const closeContextPanelTabs = (
   current: ContextPanelDirectoryState,
   tabIds: readonly string[],
   zoneOf: ZoneResolver,
+  options?: CloseContextPanelTabsOptions,
 ): ContextPanelDirectoryState => {
   const closed = new Set(tabIds);
   const closedTabs = current.tabs.filter((tab) => closed.has(tab.id));
-  const nextTabs = current.tabs.filter((tab) => !closed.has(tab.id));
-  if (nextTabs.length === current.tabs.length) {
+  const remainingTabs = current.tabs.filter((tab) => !closed.has(tab.id));
+  if (remainingTabs.length === current.tabs.length) {
     return current;
   }
+
+  // The Files surface outlives its files: closing the last open file leaves
+  // the same empty placeholder the rail opens, so Files falls back to its tree
+  // in its zone instead of leaving it. This holds whichever zone the user last
+  // clicked in. Only closing Files itself, or the placeholder, removes it.
+  const leavesExplorer = !options?.closesFilesSurface
+    && closedTabs.some((tab) => tab.mode === 'file' && tab.targetPath)
+    && !remainingTabs.some((tab) => tab.mode === 'file');
+  const nextTabs = leavesExplorer ? [...remainingTabs, createContextPanelTab({ mode: 'file' })] : remainingTabs;
 
   const activeClosed = current.activeTabId ? closed.has(current.activeTabId) : false;
   if (!activeClosed) {
@@ -854,23 +878,6 @@ const closeContextPanelTabs = (
     ? sameModeTabs.reduce((best, tab) => (tab.touchedAt >= best.touchedAt ? tab : best))
     : null;
 
-  // The file surface outlives its files: closing the last real file tab leaves
-  // the same empty editor placeholder the rail opens, so the surface falls
-  // back to its file tree instead of taking the whole panel down with it.
-  // Closing the placeholder itself still closes the surface.
-  if (activeMode === 'file' && !nextSameModeTab && closedTabs.some((tab) => tab.mode === 'file' && tab.targetPath)) {
-    const placeholder = createContextPanelTab({ mode: 'file' });
-    const tabs = [...nextTabs, placeholder];
-    return {
-      ...current,
-      tabs,
-      activeTabId: placeholder.id,
-      activeTabIdByZone: repairZoneSelections(current.activeTabIdByZone, closedTabs, tabs, zoneOf),
-      openZones: pruneEmptyZones(current.openZones, tabs, zoneOf),
-      touchedAt: Date.now(),
-    };
-  }
-
   const activeZone = activeMode ? zoneOf(activeMode) : null;
   const nextZoneTab = nextSameModeTab
     ?? (activeZone ? mostRecentTab(nextTabs.filter((tab) => zoneOf(tab.mode) === activeZone)) : null);
@@ -883,6 +890,27 @@ const closeContextPanelTabs = (
     openZones: pruneEmptyZones(current.openZones, nextTabs, zoneOf),
     touchedAt: Date.now(),
   };
+};
+
+/**
+ * Takes Files out of its zone and keeps its files. Its file tabs, the explorer
+ * placeholder included, leave the panel the way any closed tab does, so zone
+ * selection and open zones repair as usual, but they are kept aside instead of
+ * dropped, and the editor's own open-file list is left alone.
+ */
+const hideFiles = (current: ContextPanelDirectoryState, zoneOf: ZoneResolver): ContextPanelDirectoryState => {
+  const fileTabs = current.tabs.filter((tab) => tab.mode === 'file');
+  if (fileTabs.length === 0) return current;
+  const next = closeContextPanelTabs(current, fileTabs.map((tab) => tab.id), zoneOf, { closesFilesSurface: true });
+  return { ...next, hiddenFileTabs: fileTabs };
+};
+
+/** Brings hidden files back, as they were. Callers activate the one to show. */
+const restoreHiddenFiles = (current: ContextPanelDirectoryState): ContextPanelDirectoryState => {
+  const hidden = current.hiddenFileTabs ?? [];
+  if (hidden.length === 0) return current;
+  const present = new Set(current.tabs.map((tab) => tab.id));
+  return { ...current, tabs: [...current.tabs, ...hidden.filter((tab) => !present.has(tab.id))], hiddenFileTabs: [] };
 };
 
 const reorderContextPanelTabs = (
@@ -948,6 +976,7 @@ const sanitizeContextPanelByDirectory = (
       activeTabIdByZone?: unknown;
       expanded?: unknown;
       tabs?: unknown;
+      hiddenFileTabs?: unknown;
       activeTabId?: unknown;
       widthByMode?: unknown;
       touchedAt?: unknown;
@@ -1006,6 +1035,7 @@ const sanitizeContextPanelByDirectory = (
       activeTabIdByZone: parseStoredActiveTabIdByZone(candidate.activeTabIdByZone),
       widthByMode,
       widthFractionByMode,
+      hiddenFileTabs: sanitizeContextPanelTabs(candidate.hiddenFileTabs).filter((tab) => tab.mode === 'file'),
       touchedAt: typeof candidate.touchedAt === 'number' && Number.isFinite(candidate.touchedAt)
         ? candidate.touchedAt
         : Date.now(),
@@ -1310,6 +1340,8 @@ interface UIStore {
   reorderContextPanelTabs: (directory: string, activeTabID: string, overTabID: string) => void;
   closeContextPanelTab: (directory: string, tabID: string) => void;
   closeContextPanelTabs: (directory: string, tabIds: readonly string[]) => void;
+  /** Closes Files from its zone but keeps its open files for when it reopens. */
+  hideFilesSurface: (directory: string) => void;
   closeContextPanel: (directory: string) => void;
   focusMainChat: (directory: string) => void;
   closeContextZone: (directory: string, zone: WorkspaceZone) => void;
@@ -1731,6 +1763,17 @@ export const useUIStore = create<UIStore>()(
             return;
           }
 
+          // Reopening Files brings back the files it was closed with; the
+          // most recent of them comes to the front below.
+          if (mode === 'file' && get().contextPanelByDirectory[normalizedDirectory]?.hiddenFileTabs?.length) {
+            set((current) => ({
+              contextPanelByDirectory: {
+                ...current.contextPanelByDirectory,
+                [normalizedDirectory]: restoreHiddenFiles(touchContextPanelState(current.contextPanelByDirectory[normalizedDirectory])),
+              },
+            }));
+          }
+
           const state = get();
           const panelState = state.contextPanelByDirectory[normalizedDirectory];
           const tabs = panelState?.tabs ?? [];
@@ -1809,7 +1852,11 @@ export const useUIStore = create<UIStore>()(
 
           set((state) => {
             const prev = state.contextPanelByDirectory[normalizedDirectory];
-            const current = touchContextPanelState(prev);
+            // Opening a file while Files is hidden reopens Files with the
+            // files it had, plus this one.
+            const current = nextTab.mode === 'file' && nextTab.targetPath
+              ? restoreHiddenFiles(touchContextPanelState(prev))
+              : touchContextPanelState(prev);
             const byDirectory = {
               ...state.contextPanelByDirectory,
               [normalizedDirectory]: upsertContextPanelTab(
@@ -2044,10 +2091,10 @@ export const useUIStore = create<UIStore>()(
 
             const zoneOf = (mode: ContextPanelMode) => zoneOfMode(state.workspaceLayout, mode);
             const next = closeContextPanelTabs(current, normalizedTabIds, zoneOf);
-            const activeTab = next.tabs.find((tab) => tab.id === next.activeTabId);
-            const returnedToTree = activeTab
-              ? next.openZones.includes(zoneOf(activeTab.mode)) && activeTab.mode === 'file' && !activeTab.targetPath
-              : false;
+            // Files fell back to its explorer: show the tree, or it would be
+            // an empty surface.
+            const returnedToTree = next.tabs.some((tab) => tab.mode === 'file' && !tab.targetPath)
+              && !current.tabs.some((tab) => tab.mode === 'file' && !tab.targetPath);
             const byDirectory = {
               ...state.contextPanelByDirectory,
               [normalizedDirectory]: next,
@@ -2069,6 +2116,28 @@ export const useUIStore = create<UIStore>()(
         },
 
         /** Collapses every auxiliary zone at once. The center keeps rendering. */
+        hideFilesSurface: (directory) => {
+          const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
+          if (!normalizedDirectory) {
+            return;
+          }
+
+          set((state) => {
+            const current = touchContextPanelState(state.contextPanelByDirectory[normalizedDirectory]);
+            const next = hideFiles(current, (mode) => zoneOfMode(state.workspaceLayout, mode));
+            if (next === current) {
+              return state;
+            }
+
+            const byDirectory = {
+              ...state.contextPanelByDirectory,
+              [normalizedDirectory]: next,
+            };
+
+            return { contextPanelByDirectory: clampContextPanelRoots(byDirectory, 20) };
+          });
+        },
+
         closeContextPanel: (directory) => {
           const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
           if (!normalizedDirectory) {

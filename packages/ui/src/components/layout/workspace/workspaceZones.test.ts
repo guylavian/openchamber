@@ -27,7 +27,7 @@ const view = (): WorkspaceZonesView => {
   const state = useUIStore.getState();
   const layout: WorkspaceLayout = state.workspaceLayout;
   const panel = state.contextPanelByDirectory[directory];
-  const occupied = occupiedZones(layout, panel?.tabs ?? []);
+  const occupied = occupiedZones(layout, panel);
   return { directoryKey: directory, layout, panel, occupied };
 };
 
