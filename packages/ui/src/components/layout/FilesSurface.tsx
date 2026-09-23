@@ -8,6 +8,7 @@ import { clampContextEditorTreeWidth, useUIStore } from '@/stores/useUIStore';
 import { SidebarFilesTree } from './SidebarFilesTree';
 import { TabCloseMenuItems } from './TabCloseMenuItems';
 import { FilesEditorSlot } from './workspace/FilesEditorHost';
+import { useGuardFileLeave } from './workspace/filesEditorWorkspace';
 
 // The editor surface's file-tree column: docked on the right, resizable from
 // its left edge, and animated open/closed like the app sidebars. In tree-only
@@ -170,13 +171,20 @@ export const FilesSurface: React.FC<FilesSurfaceProps> = ({
   const setActiveContextPanelTab = useUIStore((state) => state.setActiveContextPanelTab);
   const closeContextPanelTabs = useUIStore((state) => state.closeContextPanelTabs);
   const reorderContextPanelTabs = useUIStore((state) => state.reorderContextPanelTabs);
+  const guardFileLeave = useGuardFileLeave();
 
+  // Leaving the file in the editor, for another file or by closing it, goes
+  // through the editor's own save-or-discard check first.
   const selectFile = React.useCallback((id: string) => {
-    setActiveContextPanelTab(directoryKey, id);
-  }, [directoryKey, setActiveContextPanelTab]);
+    const select = () => setActiveContextPanelTab(directoryKey, id);
+    if (activeFile && id !== activeFile.id) guardFileLeave(activeFile.path, select);
+    else select();
+  }, [activeFile, directoryKey, guardFileLeave, setActiveContextPanelTab]);
   const closeFiles = React.useCallback((ids: readonly string[]) => {
-    closeContextPanelTabs(directoryKey, ids);
-  }, [closeContextPanelTabs, directoryKey]);
+    const close = () => closeContextPanelTabs(directoryKey, ids);
+    if (activeFile && ids.includes(activeFile.id)) guardFileLeave(activeFile.path, close);
+    else close();
+  }, [activeFile, closeContextPanelTabs, directoryKey, guardFileLeave]);
   const renderFileTabContextMenu = React.useCallback(
     (args: { id: string; index: number; allIds: string[]; close: () => void }): React.ReactNode => (
       <TabCloseMenuItems {...args} closeIds={closeFiles} />

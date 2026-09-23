@@ -201,7 +201,10 @@ and moves its DOM node into the `FilesEditorSlot` of whichever zone holds
 Files. A hidden Files keeps its zone mounted (`occupiedZones`, collapsed if
 nothing else is open there) and its container (`mountedFileTabs`). The slot
 also hands over that zone's Escape handling, since React events from the
-editor bubble through the host rather than the zone's panel.
+editor bubble through the host rather than the zone's panel. Leaving the
+loaded file from outside the editor (another file tab, closing it, opening a
+file from the tree) goes through `useGuardFileLeave`, which the editor answers
+with its own save-or-discard dialog; nothing is saved on the user's behalf.
 
 Context-panel session chats mount only the active chat iframe. After installing
 its message listener, the iframe requests its authoritative visibility from the

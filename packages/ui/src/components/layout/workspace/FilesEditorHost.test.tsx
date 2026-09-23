@@ -27,6 +27,7 @@ const { act } = React;
 const { createRoot } = await import('react-dom/client');
 const { I18nProvider } = await import('@/lib/i18n');
 const { FilesEditorHost, FilesEditorProvider, FilesEditorSlot } = await import('./FilesEditorHost');
+const { useGuardFileLeave, useRegisterFileLeaveGuard } = await import('./filesEditorWorkspace');
 
 type Zone = 'bottom' | 'left';
 
@@ -153,4 +154,47 @@ test('two workspaces keep separate editors', () => {
 
   act(() => secondRoot.unmount());
   second.remove();
+});
+
+// Leaving the loaded file goes through the editor's own save-or-discard
+// check. The stand-in editor holds the navigation until "the user decides".
+test('leaving an edited file waits for the editor; nothing is lost on the way', () => {
+  let decide: (() => void) | null = null;
+  let guardLeave: ((path: string, proceed: () => void) => void) | null = null;
+  const GuardedEditor: React.FC = () => {
+    useRegisterFileLeaveGuard(React.useCallback((path: string, proceed: () => void) => {
+      if (path === '/repo/foo.ts') decide = proceed;
+      else proceed();
+    }, []));
+    return null;
+  };
+  const Navigator: React.FC = () => {
+    guardLeave = useGuardFileLeave();
+    return null;
+  };
+  act(() => root.render(<FilesEditorProvider><GuardedEditor /><Navigator /></FilesEditorProvider>));
+
+  let navigated = 0;
+  act(() => guardLeave?.('/repo/foo.ts', () => { navigated += 1; }));
+  expect(navigated).toBe(0);
+  act(() => decide?.());
+  expect(navigated).toBe(1);
+
+  act(() => guardLeave?.('/repo/bar.ts', () => { navigated += 1; }));
+  expect(navigated).toBe(2);
+});
+
+test('outside a workspace, or with no editor mounted, navigation runs at once', () => {
+  let guardLeave: ((path: string, proceed: () => void) => void) | null = null;
+  const Navigator: React.FC = () => {
+    guardLeave = useGuardFileLeave();
+    return null;
+  };
+  let navigated = 0;
+  act(() => root.render(<Navigator />));
+  act(() => guardLeave?.('/repo/foo.ts', () => { navigated += 1; }));
+  act(() => root.render(<FilesEditorProvider><Navigator /></FilesEditorProvider>));
+  act(() => guardLeave?.('/repo/foo.ts', () => { navigated += 1; }));
+
+  expect(navigated).toBe(2);
 });
