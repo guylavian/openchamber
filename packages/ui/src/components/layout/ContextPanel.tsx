@@ -3,7 +3,7 @@ import React from 'react';
 import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
 import { DiffViewIcon } from '@/components/icons/DiffIcon';
 import { Button } from '@/components/ui/button';
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu';
+import { ContextMenu, ContextMenuContent, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu';
 import { SortableTabsStrip } from '@/components/ui/sortable-tabs-strip';
 import { PullRequestView } from '@/components/views/PullRequestView';
 import { TerminalView } from '@/components/views/TerminalView';
@@ -20,7 +20,6 @@ const GitView = lazyWithChunkRecovery(() => import('@/components/views/GitView')
 const LinearIssuesView = lazyWithChunkRecovery(() => import('@/components/views/LinearIssuesView').then((m) => ({ default: m.LinearIssuesView })));
 const PlanView = lazyWithChunkRecovery(() => import('@/components/views/PlanView').then((m) => ({ default: m.PlanView })));
 import { ProjectContextPanel } from './RightSidebarTabs';
-import { SidebarFilesTree } from './SidebarFilesTree';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useGuestSurfaces } from '@/hooks/useGuestSurfaces';
@@ -68,14 +67,15 @@ import { isPluginContextPanelMode, pluginIdFromMode } from '@/lib/surfaces/modes
 import { CONTEXT_SURFACES, getContextSurfaceWidthFraction } from '@/lib/surfaces/registry';
 import { MAIN_CHAT_TAB_ID, mainChatZone, zoneOfMode, type WorkspaceZone } from '@/lib/workspace/layout';
 import { WorkspaceMoveMenuItems } from './workspace/WorkspaceMoveMenuItems';
-import { FilesEditorSlot } from './workspace/FilesEditorHost';
-import { closableTabRanges } from './workspace/closableTabRanges';
+import { FilesSurface } from './FilesSurface';
+import { TabCloseMenuItems } from './TabCloseMenuItems';
 import {
   FILES_SURFACE_TAB_ID,
   fileTabToActivate,
   mountedFileTabs,
   reorderForStripDrag,
   splitWorkspaceStripClose,
+  stripEntryMode,
   workspaceStripEntries,
 } from './workspace/filesSurfaceTabs';
 import { isVimEditorEventTarget } from '@/lib/editorFocus';
@@ -322,129 +322,6 @@ const browserFaviconFor = (url: string, faviconByOrigin: Record<string, string>)
   }
 };
 
-// The editor surface's file-tree column: docked on the right, resizable from
-// its left edge, and animated open/closed like the app sidebars. In tree-only
-// mode (`fill`), the panel collapses around this fixed-width, right-aligned column.
-const EditorTreeColumn: React.FC<{ visible: boolean; active: boolean; fill?: boolean }> = ({ visible, active, fill = false }) => {
-  const { t } = useI18n();
-  const width = useUIStore((state) => state.contextEditorTreeWidth);
-  const setWidth = useUIStore((state) => state.setContextEditorTreeWidth);
-  const [isResizing, setIsResizing] = React.useState(false);
-  const startXRef = React.useRef(0);
-  const startWidthRef = React.useRef(width);
-  const liveWidthRef = React.useRef<number | null>(null);
-  const pointerIDRef = React.useRef<number | null>(null);
-  const columnRef = React.useRef<HTMLDivElement | null>(null);
-
-  const applyLiveTreeWidth = React.useCallback((nextWidth: number) => {
-    const column = columnRef.current;
-    if (!column) {
-      return;
-    }
-    column.style.width = `${nextWidth}px`;
-    column.style.setProperty('--oc-editor-tree-width', `${nextWidth}px`);
-  }, []);
-
-  const handlePointerDown = (event: React.PointerEvent) => {
-    if (!visible) {
-      return;
-    }
-    try {
-      event.currentTarget.setPointerCapture(event.pointerId);
-    } catch {
-      // ignore
-    }
-    pointerIDRef.current = event.pointerId;
-    setIsResizing(true);
-    startXRef.current = event.clientX;
-    startWidthRef.current = width;
-    liveWidthRef.current = width;
-    event.preventDefault();
-  };
-
-  const handlePointerMove = (event: React.PointerEvent) => {
-    if (!isResizing || pointerIDRef.current !== event.pointerId) {
-      return;
-    }
-    const delta = startXRef.current - event.clientX;
-    const nextWidth = clampContextEditorTreeWidth(startWidthRef.current + delta);
-    if (liveWidthRef.current === nextWidth) {
-      return;
-    }
-    liveWidthRef.current = nextWidth;
-    applyLiveTreeWidth(nextWidth);
-  };
-
-  const handlePointerEnd = (event: React.PointerEvent) => {
-    if (pointerIDRef.current !== event.pointerId) {
-      return;
-    }
-    try {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    } catch {
-      // ignore
-    }
-    const finalWidth = clampContextEditorTreeWidth(liveWidthRef.current ?? width);
-    pointerIDRef.current = null;
-    liveWidthRef.current = null;
-    setIsResizing(false);
-    setWidth(finalWidth);
-  };
-
-  const appliedWidth = visible ? width : 0;
-
-  return (
-    <div
-      ref={columnRef}
-      className={cn(
-        'relative h-full flex-shrink-0 overflow-hidden bg-background will-change-[width] motion-reduce:transition-none',
-        fill && 'ml-auto',
-      )}
-      style={{
-        width: `${isResizing ? (liveWidthRef.current ?? appliedWidth) : appliedWidth}px`,
-        maxWidth: fill ? '100%' : undefined,
-        ['--oc-editor-tree-width' as string]: `${isResizing ? (liveWidthRef.current ?? width) : width}px`,
-        overflowX: 'clip',
-        transitionProperty: isResizing ? 'none' : 'width',
-        transitionDuration: '200ms',
-        transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)',
-      }}
-      aria-hidden={!visible}
-    >
-      {/* Paint the divider without shifting tree content when the editor closes. */}
-      {visible && !fill && (
-        <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-0 z-20 w-px bg-border" />
-      )}
-      {visible && !fill && (
-        <div
-          className={cn(
-            'absolute left-0 top-0 z-20 h-full w-[3px] cursor-col-resize transition-colors hover:bg-[var(--interactive-border)]/80',
-            isResizing && 'bg-[var(--interactive-border)]'
-          )}
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerEnd}
-          onPointerCancel={handlePointerEnd}
-          role="separator"
-          aria-orientation="vertical"
-          aria-label={t('contextPanel.actions.resizePanelAria')}
-        />
-      )}
-      <div
-        className={cn(
-          'relative z-10 h-full shrink-0 transition-opacity duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none',
-          isResizing && 'pointer-events-none',
-          !visible && 'pointer-events-none select-none opacity-0'
-        )}
-        style={{ width: 'var(--oc-editor-tree-width)', maxWidth: fill ? '100%' : undefined }}
-        aria-hidden={!visible}
-      >
-        <SidebarFilesTree visible={visible && active} />
-      </div>
-    </div>
-  );
-};
-
 const getSessionIDFromDedupeKey = (dedupeKey: string | undefined): string | null => {
   if (!dedupeKey || !dedupeKey.startsWith('session:')) {
     return null;
@@ -507,50 +384,6 @@ const truncateTabLabel = (value: string, maxChars: number): string => {
 /** Files as a whole wears the rail's Files icon, not the icon of a file. */
 const FILES_SURFACE_ICON = <Icon name="file-edit" className="h-3.5 w-3.5" />;
 
-/**
- * The close rows of a tab's menu. `closeIds` decides what the ids mean: zone
- * surfaces in the workspace strip, files in the Files strip.
- */
-const TabCloseMenuItems: React.FC<{
-  id: string;
-  allIds: string[];
-  close: () => void;
-  closeIds: (ids: readonly string[]) => void;
-}> = ({ id, allIds, close, closeIds }) => {
-  const { t } = useI18n();
-  // The chat leads its zone and owns none of these: it cannot be closed,
-  // and the surfaces around it are what "close others" would remove.
-  const { closableIds, toLeft, toRight } = closableTabRanges(allIds, id, MAIN_CHAT_TAB_ID);
-  const others = closableIds.filter((tabId) => tabId !== id);
-  return (
-    <>
-      {id === MAIN_CHAT_TAB_ID ? null : (
-        <ContextMenuItem onClick={close}>
-          <Icon name="close" className="mr-2 size-4" />
-          {t('contextPanel.tab.menu.close')}
-        </ContextMenuItem>
-      )}
-      <ContextMenuSeparator />
-      <ContextMenuItem onClick={() => closeIds(others)} disabled={others.length === 0}>
-        <Icon name="expand-horizontal" className="mr-2 size-4" />
-        {t('contextPanel.tab.menu.closeOthers')}
-      </ContextMenuItem>
-      <ContextMenuItem onClick={() => closeIds(toLeft)} disabled={toLeft.length === 0}>
-        <Icon name="expand-left" className="mr-2 size-4" />
-        {t('contextPanel.tab.menu.closeToLeft')}
-      </ContextMenuItem>
-      <ContextMenuItem onClick={() => closeIds(toRight)} disabled={toRight.length === 0}>
-        <Icon name="expand-right" className="mr-2 size-4" />
-        {t('contextPanel.tab.menu.closeToRight')}
-      </ContextMenuItem>
-      <ContextMenuSeparator />
-      <ContextMenuItem onClick={() => closeIds(closableIds)} disabled={others.length === 0}>
-        <Icon name="close-circle" className="mr-2 size-4" />
-        {t('contextPanel.tab.menu.closeAll')}
-      </ContextMenuItem>
-    </>
-  );
-};
 
 
 type ContextPanelProps = {
@@ -1253,6 +1086,10 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({ zone, mainChat }) =>
   const hasFileTabs = filesTabs.length > 0;
 
   const isFileTabActive = activeTab?.mode === 'file';
+  const activeFile = React.useMemo(
+    () => (activeTab?.mode === 'file' && activeTab.targetPath ? { id: activeTab.id, path: activeTab.targetPath } : null),
+    [activeTab],
+  );
 
   const closeContextPanelTabs = useUIStore((state) => state.closeContextPanelTabs);
   const hideFilesSurface = useUIStore((state) => state.hideFilesSurface);
@@ -1264,10 +1101,6 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({ zone, mainChat }) =>
     closeContextPanelTabs(directoryKey, tabIds);
     if (hidesFiles) hideFilesSurface(directoryKey);
   }, [closeContextPanelTabs, directoryKey, hideFilesSurface]);
-  const closeFileTabs = React.useCallback((ids: readonly string[]) => {
-    if (!directoryKey) return;
-    closeContextPanelTabs(directoryKey, ids);
-  }, [closeContextPanelTabs, directoryKey]);
 
   const renderTabContextMenu = React.useCallback(
     (args: { id: string; index: number; allIds: string[]; close: () => void }): React.ReactNode => {
@@ -1277,7 +1110,7 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({ zone, mainChat }) =>
       const { id } = args;
       const surfaceId = id === MAIN_CHAT_TAB_ID
         ? 'chat'
-        : surfaceIdForMode(id === FILES_SURFACE_TAB_ID ? 'file' : tabs.find((tab) => tab.id === id)?.mode ?? null);
+        : surfaceIdForMode(stripEntryMode(id, tabs));
       return (
         <>
           <WorkspaceMoveMenuItems surfaceId={surfaceId} currentZone={zone} />
@@ -1287,14 +1120,6 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({ zone, mainChat }) =>
       );
     },
     [closeWorkspaceStripTabs, directoryKey, tabs, zone],
-  );
-  // A file is content inside Files, so its menu only closes files. Where Files
-  // sits is the surface's business: its tab above carries the move items.
-  const renderFileTabContextMenu = React.useCallback(
-    (args: { id: string; index: number; allIds: string[]; close: () => void }): React.ReactNode => (
-      directoryKey ? <TabCloseMenuItems {...args} closeIds={closeFileTabs} /> : null
-    ),
-    [closeFileTabs, directoryKey],
   );
 
   const labelSurfaceId = activeTab ? surfaceIdForMode(activeTab.mode) : showsMainChat ? 'chat' : null;
@@ -1449,44 +1274,18 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({ zone, mainChat }) =>
     <>
       {header}
         <div className={cn('relative min-h-0 flex-1 overflow-hidden', isResizing && 'pointer-events-none')}>
-          {hasFileTabs ? (
-            <div className={cn('absolute inset-0 flex-col', isFileTabActive ? 'flex' : 'hidden')}>
-              {fileTabItems.length > 0 ? (
-                <div className="flex h-9 shrink-0 items-stretch border-b border-border">
-                  <SortableTabsStrip
-                    items={fileTabItems}
-                    activeId={activeTab?.mode === 'file' ? activeTab.id : null}
-                    onSelect={(tabID) => {
-                      if (directoryKey) setActiveContextPanelTab(directoryKey, tabID);
-                    }}
-                    onClose={(tabID) => closeFileTabs([tabID])}
-                    onReorder={(activeTabID, overTabID) => {
-                      if (directoryKey) reorderContextPanelTabs(directoryKey, activeTabID, overTabID);
-                    }}
-                    layoutMode="scrollable"
-                    variant="default"
-                    tabContextMenu={renderFileTabContextMenu}
-                  />
-                </div>
-              ) : null}
-              <div className="flex min-h-0 flex-1">
-              {hasOpenEditorFile || !contextEditorTreeVisible ? (
-                // Hidden rather than unmounted so a hidden editor keeps its state.
-                <div className={cn('h-full min-w-0 flex-1', hasOpenEditorFile && !showsEditor && 'hidden')}>
-                  {hasOpenEditorFile ? (
-                    <FilesEditorSlot visible={isOpen && isFileTabActive && showsEditor} onKeyDownCapture={handlePanelKeyDownCapture} />
-                  ) : (
-                    <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
-                      <Icon name="file-code" className="h-12 w-12 text-muted-foreground/50" />
-                      <div className="typography-ui-header text-foreground">{t('contextPanel.editorEmpty.title')}</div>
-                      <div className="max-w-sm typography-micro text-muted-foreground">{t('contextPanel.editorEmpty.description')}</div>
-                    </div>
-                  )}
-                </div>
-              ) : null}
-              <EditorTreeColumn visible={contextEditorTreeVisible} active={isOpen && isFileTabActive} fill={!showsEditor} />
-              </div>
-            </div>
+          {hasFileTabs && directoryKey ? (
+            <FilesSurface
+              directoryKey={directoryKey}
+              fileTabItems={fileTabItems}
+              activeFile={activeFile}
+              shown={isFileTabActive}
+              zoneOpen={isOpen}
+              hasOpenFile={hasOpenEditorFile}
+              showsEditor={showsEditor}
+              treeVisible={contextEditorTreeVisible}
+              onKeyDownCapture={handlePanelKeyDownCapture}
+            />
           ) : null}
           {activeChatTab && activeChatSessionID && activeChatSrc ? (
             <iframe

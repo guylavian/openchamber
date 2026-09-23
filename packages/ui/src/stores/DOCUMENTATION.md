@@ -161,8 +161,8 @@ Files is one surface in a zone, however many files are open. Its open files are
 still `mode: 'file'` tabs in `contextPanelByDirectory[dir].tabs`, the same
 records as before the zones, but a zone's strip folds them into one Files entry
 (`workspaceStripEntries` in `components/layout/workspace/filesSurfaceTabs.ts`)
-and the Files surface lists them in a strip of its own. A zone whose selection
-is a file tab is showing Files. Placement is stored once, for the `editor`
+and `FilesSurface` lists them in a strip of its own. A zone whose selection is
+a file tab is showing Files. Placement is stored once, for the `editor`
 surface; files carry none.
 
 File tabs are kept as one contiguous group, and the group's place is Files'

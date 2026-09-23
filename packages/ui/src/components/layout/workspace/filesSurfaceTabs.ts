@@ -57,6 +57,13 @@ export const workspaceStripEntries = <T extends PanelTab>(tabs: readonly T[]): A
 };
 
 /**
+ * The surface a zone strip entry stands for. The Files entry is the whole
+ * Files surface, so its Move rows move Files; file tabs are never entries.
+ */
+export const stripEntryMode = (id: string, tabs: readonly PanelTab[]): ContextPanelMode | null =>
+  (id === FILES_SURFACE_TAB_ID ? 'file' : tabs.find((tab) => tab.id === id)?.mode ?? null);
+
+/**
  * What closing these zone strip ids does. Other surfaces close their tabs;
  * Files is hidden instead, keeping its open files for when it reopens.
  */

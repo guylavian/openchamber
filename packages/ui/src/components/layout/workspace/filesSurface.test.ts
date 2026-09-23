@@ -5,10 +5,7 @@
  * builds it (`workspaceStripEntries` over the tabs docked in the zone), so a
  * file leaking back into the zone strip fails here rather than only on screen.
  */
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 
 import { selectContextZoneTab, selectVisibleContextZoneTab, useUIStore } from '@/stores/useUIStore';
 import { useTerminalStore } from '@/stores/useTerminalStore';
@@ -22,6 +19,7 @@ import {
   mountedFileTabs,
   reorderForStripDrag,
   splitWorkspaceStripClose,
+  stripEntryMode,
   workspaceStripEntries,
 } from './filesSurfaceTabs';
 
@@ -172,17 +170,20 @@ describe('closing', () => {
     expect(openFiles()).toEqual([]);
   });
 
-  test('reopening Files from the rail brings back the same files and active file', async () => {
+  test('reopening Files from the rail brings back the same files and active file', () => {
     const store = useUIStore.getState();
+    let clock = 1_000;
+    const now = spyOn(Date, 'now').mockImplementation(() => clock);
     store.openContextSurface(directory, 'git');
     store.openContextFile(directory, '/repo/foo.ts');
     store.openContextFile(directory, '/repo/bar.ts');
-    // Separate clicks land on separate milliseconds; "used last" needs that.
-    await new Promise((resolve) => setTimeout(resolve, 2));
+    // The user comes back to foo a moment later; "used last" is by time.
+    clock = 2_000;
     store.setActiveContextPanelTab(directory, tabId('/repo/foo.ts'));
     closeFromZoneStrip([FILES_SURFACE_TAB_ID]);
 
     store.openContextSurface(directory, 'file');
+    now.mockRestore();
 
     expect(stripOf('right')).toEqual(['git', 'Files']);
     expect(openFiles()).toEqual(['/repo/foo.ts', '/repo/bar.ts']);
@@ -466,15 +467,16 @@ describe('strip helpers', () => {
 });
 
 describe('file tabs carry no placement', () => {
-  const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'ContextPanel.tsx'), 'utf-8');
-  const between = (start: string, end: string): string => source.slice(source.indexOf(start), source.indexOf(end, source.indexOf(start)));
+  test('the Files entry moves the Files surface, and no file is a zone entry of its own', () => {
+    const store = useUIStore.getState();
+    store.openContextSurface(directory, 'git');
+    store.openContextFile(directory, '/repo/foo.ts');
+    store.openContextFile(directory, '/repo/bar.ts');
+    const tabs = panel()?.tabs ?? [];
 
-  test('a file tab menu has no move rows; the Files tab menu moves the Files surface', () => {
-    const fileMenu = between('const renderFileTabContextMenu', '[closeFileTabs, directoryKey]');
-    expect(fileMenu).not.toContain('WorkspaceMoveMenuItems');
-    const surfaceMenu = between('const renderTabContextMenu', 'const renderFileTabContextMenu');
-    expect(surfaceMenu).toContain('WorkspaceMoveMenuItems');
-    expect(surfaceMenu).toContain("id === FILES_SURFACE_TAB_ID ? 'file'");
+    const entries = workspaceStripEntries(tabs).map((entry) => (entry === FILES_SURFACE_TAB_ID ? entry : entry.id));
+    expect(entries).toEqual(['git', FILES_SURFACE_TAB_ID]);
+    expect(entries.map((id) => stripEntryMode(id, tabs))).toEqual(['git', 'file']);
   });
 });
 
