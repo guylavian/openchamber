@@ -315,12 +315,5 @@ export const createTeamOrchestrator = ({
     /** Resolves when the run stops working (tests and shutdown). */
     settled: (runId) => drives.get(runId) ?? Promise.resolve(),
 
-    /** Cancels every active run (server shutdown). */
-    cancelAll: () => {
-      for (const state of active.values()) {
-        state.cancelled = true;
-        for (const controller of state.controllers.values()) controller.abort();
-      }
-    },
   };
 };

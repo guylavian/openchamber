@@ -19,13 +19,17 @@ export const agentName = (run: TeamRun, agentId: string | null): string | null =
   (agentId ? run.team.agents.find((agent) => agent.id === agentId)?.name ?? null : null);
 
 /**
- * The first meaningful line of a member's final message: a heading or
- * sentence to show in the summary next to its full output, never instead of it.
+ * A one-line headline for a member's final message, shown in the summary next
+ * to its full output, never instead of it. Members are asked to end with a
+ * short summary, so the line comes from the last paragraph; an opening such as
+ * "Here is the plan:" says little.
  */
 export const headlineOf = (output: string | null | undefined, limit = 160): string | null => {
-  const line = (output ?? '')
+  const clean = (candidate: string) => candidate.replace(/\*\*|__/g, '').replace(/^[#>*\-\s]+/, '').trim();
+  const paragraphs = (output ?? '').split(/\n\s*\n/).filter((paragraph) => paragraph.split('\n').some((line) => clean(line)));
+  const line = (paragraphs.at(-1) ?? '')
     .split('\n')
-    .map((candidate) => candidate.replace(/\*\*|__/g, '').replace(/^[#>*\-\s]+/, '').trim())
+    .map(clean)
     .find((candidate) => candidate.length > 0);
   if (!line) return null;
   return line.length > limit ? `${line.slice(0, limit - 1)}…` : line;

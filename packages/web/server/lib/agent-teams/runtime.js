@@ -139,7 +139,8 @@ export const createAgentTeamsRuntime = ({
     const worktree = created.worktree
       ? { path: created.worktree.path, branch: created.worktree.branch || branchName }
       : null;
-    onStarted({ sessionId: created.sessionId, directory: created.directory, worktree, model: created.model ?? null });
+    // The session service reports the model it applied as { providerID, modelID }.
+    onStarted({ sessionId: created.sessionId, directory: created.directory, worktree, model: modelRef(created.model) });
     // Tags the session with where it came from, so it can be traced back to
     // its run from anywhere sessions are listed. Best effort.
     void sessionService.setMetadata(created.sessionId, {
@@ -231,8 +232,9 @@ export const createAgentTeamsRuntime = ({
       }
     },
 
+    // Shutdown is not a cancel: the member sessions are left alone, and the
+    // next start marks the run as interrupted by the restart.
     async stop() {
-      orchestrator?.cancelAll();
       await flushRuns();
     },
 

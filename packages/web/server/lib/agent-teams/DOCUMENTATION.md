@@ -68,9 +68,11 @@ capped at 12,000 characters and diffs at 20,000, keeping both ends.
   Either way the later stages run again, because their input changed.
 - A run keeps a copy of the team as it was when it started, so editing or
   deleting the team changes neither the record nor a retry.
-- A run the previous server process was driving cannot be resumed; on start
-  it is marked `failed` and its running members say OpenChamber restarted.
-  Their sessions are untouched and may have finished on their own.
+- Shutting the server down is not a cancel: running members' sessions are
+  not interrupted, only pending run writes are flushed. A run the previous
+  server process was driving cannot be resumed; on start it is marked
+  `failed` and its running members say OpenChamber restarted. Their sessions
+  are untouched and may have finished on their own.
 - Each member has a two-hour limit; past it the member fails.
 
 ## Persistence

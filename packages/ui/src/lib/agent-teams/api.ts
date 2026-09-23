@@ -117,8 +117,17 @@ const jsonInit = (method: string, body: RequestBody): RequestInit => ({
 
 const BASE = '/api/openchamber/agent-teams';
 
+/**
+ * Lists parse item by item: one record the client cannot read (a newer server,
+ * a damaged run) is left out instead of hiding every other team or run.
+ */
+const eachValid = <T>(schema: z.ZodType<T>) => z.array(z.unknown()).transform((items) => items.flatMap((item) => {
+  const parsed = schema.safeParse(item);
+  return parsed.success ? [parsed.data] : [];
+}));
+
 export const fetchAgentTeams = async (): Promise<AgentTeam[]> =>
-  (await request(BASE, z.object({ teams: z.array(teamSchema) }))).teams;
+  (await request(BASE, z.object({ teams: eachValid(teamSchema) }))).teams;
 
 export const createAgentTeam = async (input: AgentTeamInput): Promise<AgentTeam> =>
   (await request(BASE, z.object({ team: teamSchema }), jsonInit('POST', input))).team;
@@ -131,7 +140,7 @@ export const deleteAgentTeam = async (teamId: string): Promise<void> => {
 };
 
 export const fetchTeamRuns = async (): Promise<TeamRun[]> =>
-  (await request(`${BASE}/runs`, z.object({ runs: z.array(runSchema) }))).runs;
+  (await request(`${BASE}/runs`, z.object({ runs: eachValid(runSchema) }))).runs;
 
 export const fetchTeamRun = async (runId: string): Promise<TeamRun> =>
   (await request(`${BASE}/runs/${encodeURIComponent(runId)}`, z.object({ run: runSchema }))).run;

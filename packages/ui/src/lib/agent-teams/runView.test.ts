@@ -50,6 +50,8 @@ describe('run view helpers', () => {
   test('takes the first meaningful line as a headline', () => {
     expect(headlineOf('\n\n> **Summary**\nrest')).toBe('Summary');
     expect(headlineOf('')).toBeNull();
+    // The closing summary, not the opening line.
+    expect(headlineOf('Here is what I did:\n\n- step one\n\nAdded OAuth endpoints and tests.')).toBe('Added OAuth endpoints and tests.');
     expect(headlineOf('x'.repeat(300), 10)).toBe(`${'x'.repeat(9)}…`);
   });
 

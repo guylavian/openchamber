@@ -47,7 +47,9 @@ const createFakes = ({ answers = {}, failing = {}, hanging = new Set() } = {}) =
       recordsBySession.set(sessionId, failing[memberName]
         ? [{ type: 'idle', outcome: 'failed' }, { type: 'assistant', content: [], error: { type: 'X', message: failing[memberName] } }]
         : [{ type: 'idle', outcome: 'succeeded' }, { type: 'assistant', content: [{ type: 'text', text: answers[memberName] ?? `${memberName} done` }] }]);
-      const result = { sessionId, directory, promptDispatched: true, model: payload.model ?? 'anthropic/claude' };
+      // The real service reports the applied model as { providerID, modelID }.
+      const [providerID, modelID] = (payload.model ?? 'opencode/big-pickle').split('/');
+      const result = { sessionId, directory, promptDispatched: true, model: { providerID, modelID } };
       if (payload.worktree) result.worktree = { path: directory, branch: payload.worktree.branchName };
       return result;
     }),
@@ -118,6 +120,8 @@ describe('agent teams runtime', () => {
     const done = runtime.getRun(run.id);
     expect(done.status).toBe('completed');
     expect(done.members.map((member) => member.sessionId)).toEqual(['ses-1', 'ses-2', 'ses-3']);
+    // Stored as text, the shape the run record and the UI read.
+    expect(done.members.map((member) => member.model)).toEqual(['opencode/big-pickle', 'openai/gpt-5', 'opencode/big-pickle']);
     expect(done.members[1].worktree).toEqual({ path: `/worktrees/${backend.worktree.name}`, branch: backend.worktree.branchName });
     expect(fakes.sessionService.setMetadata).toHaveBeenCalledWith('ses-1', expect.objectContaining({
       patch: { openchamber: { agentTeam: expect.objectContaining({ runId: run.id, memberId: 'planner' }) } },
@@ -156,6 +160,18 @@ describe('agent teams runtime', () => {
     expect(runtime.getRun(run.id).status).toBe('cancelled');
     expect(fakes.interrupted).toContain('ses-1');
     expect(fakes.created).toHaveLength(1);
+  });
+
+  it('does not interrupt running members when the server shuts down', async () => {
+    const fakes = createFakes({ hanging: new Set(['Planner']) });
+    const { runtime, store } = await setup(fakes);
+    const team = await runtime.createTeam(teamInput);
+    const run = runtime.startRun(team.id, { goal: 'g', directory: '/repo' });
+    await waitFor(() => runtime.getRun(run.id).members[0].sessionId === 'ses-1');
+    await runtime.stop();
+    expect(fakes.interrupted).toEqual([]);
+    // Written down as running; the next start reports the restart.
+    expect(store.state.runs.find((entry) => entry.id === run.id).status).toBe('running');
   });
 
   it('persists teams and announces changes', async () => {
