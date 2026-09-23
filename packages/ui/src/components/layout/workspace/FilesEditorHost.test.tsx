@@ -26,7 +26,7 @@ const React = await import('react');
 const { act } = React;
 const { createRoot } = await import('react-dom/client');
 const { I18nProvider } = await import('@/lib/i18n');
-const { FilesEditorHost, FilesEditorSlot } = await import('./FilesEditorHost');
+const { FilesEditorHost, FilesEditorProvider, FilesEditorSlot } = await import('./FilesEditorHost');
 
 type Zone = 'bottom' | 'left';
 
@@ -55,17 +55,19 @@ const DraftEditor: React.FC<{ visible: boolean }> = ({ visible }) => {
 /** Two zones, each its own subtree like a zone's panel, and the one host. */
 const Workspace: React.FC<{ zone: Zone; mounted?: boolean; onEscape?: () => void }> = ({ zone, mounted = true, onEscape = () => undefined }) => (
   <I18nProvider>
-    <FilesEditorHost mounted={mounted} renderEditor={(visible) => <DraftEditor visible={visible} />} />
-    {(['bottom', 'left'] as const).map((id) => (
-      <section key={id} data-zone={id}>
-        {zone === id ? (
-          <FilesEditorSlot
-            visible
-            onKeyDownCapture={(event) => { if (event.key === 'Escape') onEscape(); }}
-          />
-        ) : null}
-      </section>
-    ))}
+    <FilesEditorProvider>
+      <FilesEditorHost mounted={mounted} renderEditor={(visible) => <DraftEditor visible={visible} />} />
+      {(['bottom', 'left'] as const).map((id) => (
+        <section key={id} data-zone={id}>
+          {zone === id ? (
+            <FilesEditorSlot
+              visible
+              onKeyDownCapture={(event) => { if (event.key === 'Escape') onEscape(); }}
+            />
+          ) : null}
+        </section>
+      ))}
+    </FilesEditorProvider>
   </I18nProvider>
 );
 
@@ -117,4 +119,38 @@ test("the zone's Escape handling still sees keys from the editor", () => {
   });
 
   expect(escapes).toBe(1);
+});
+
+test('a host that unmounts takes its node out of the slot it was in', () => {
+  const Tree: React.FC<{ withHost: boolean }> = ({ withHost }) => (
+    <I18nProvider>
+      <FilesEditorProvider>
+        {withHost ? <FilesEditorHost mounted renderEditor={(visible) => <DraftEditor visible={visible} />} /> : null}
+        <section data-zone="bottom"><FilesEditorSlot visible onKeyDownCapture={() => undefined} /></section>
+      </FilesEditorProvider>
+    </I18nProvider>
+  );
+  act(() => root.render(<Tree withHost />));
+  const slot = container.querySelector('[data-zone="bottom"] > div');
+  expect(slot?.childElementCount).toBe(1);
+
+  act(() => root.render(<Tree withHost={false} />));
+
+  expect(container.querySelector('[data-zone="bottom"] > div')).toBe(slot);
+  expect(slot?.childElementCount).toBe(0);
+});
+
+test('two workspaces keep separate editors', () => {
+  const second = document.createElement('div');
+  document.body.appendChild(second);
+  const secondRoot = createRoot(second);
+  act(() => root.render(<Workspace zone="bottom" />));
+  act(() => secondRoot.render(<Workspace zone="left" />));
+
+  expect(container.querySelectorAll('[data-editor="files"]')).toHaveLength(1);
+  expect(second.querySelectorAll('[data-editor="files"]')).toHaveLength(1);
+  expect(second.querySelector('[data-editor="files"]')?.closest('[data-zone]')?.getAttribute('data-zone')).toBe('left');
+
+  act(() => secondRoot.unmount());
+  second.remove();
 });

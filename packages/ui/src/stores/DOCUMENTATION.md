@@ -195,8 +195,9 @@ Who owns what for Files:
 | Unsaved draft, undo, cursor | the mounted `FilesView` component |
 
 The draft lives only in the mounted editor, so the editor is never remounted by
-workspace changes. `FilesEditorHost` (in `WorkspaceLayout`) renders the one editor while
-`filesEditorMounted` holds, and moves its DOM node into the `FilesEditorSlot` of whichever zone holds
+workspace changes. `FilesEditorHost` (in `WorkspaceLayout`, scoped by
+`FilesEditorProvider`) renders the one editor while `filesEditorMounted` holds,
+and moves its DOM node into the `FilesEditorSlot` of whichever zone holds
 Files. A hidden Files keeps its zone mounted (`occupiedZones`, collapsed if
 nothing else is open there) and its container (`mountedFileTabs`). The slot
 also hands over that zone's Escape handling, since React events from the

@@ -2,29 +2,18 @@ import React from 'react';
 import { createPortal } from 'react-dom';
 
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
+import {
+  createFilesEditorWorkspace,
+  FilesEditorContext,
+  useFilesEditorWorkspace,
+  type FilesEditorPlacement,
+} from './filesEditorWorkspace';
 
-/**
- * Where the Files editor is drawn right now: the slot inside the zone that
- * holds Files, how that zone wants it shown, and that zone's key handling.
- */
-type FilesEditorPlacement = {
-  element: HTMLElement;
-  visible: boolean;
-  onKeyDownCapture: (event: React.KeyboardEvent<HTMLElement>) => void;
+/** Scopes the one Files editor to this workspace. */
+export const FilesEditorProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [workspace] = React.useState(createFilesEditorWorkspace);
+  return <FilesEditorContext.Provider value={workspace}>{children}</FilesEditorContext.Provider>;
 };
-
-// ponytail: one module-level slot, since a window shows one Files surface.
-let placement: FilesEditorPlacement | null = null;
-const listeners = new Set<() => void>();
-const setPlacement = (next: FilesEditorPlacement | null) => {
-  placement = next;
-  for (const listener of listeners) listener();
-};
-const subscribe = (listener: () => void) => {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
-};
-const getPlacement = () => placement;
 
 /**
  * Marks where the Files editor goes inside a zone. The editor itself is not
@@ -33,15 +22,16 @@ const getPlacement = () => placement;
  * zone. `FilesEditorHost` renders it once and moves it into this slot.
  */
 export const FilesEditorSlot: React.FC<Omit<FilesEditorPlacement, 'element'>> = ({ visible, onKeyDownCapture }) => {
+  const workspace = useFilesEditorWorkspace();
   const ref = React.useRef<HTMLDivElement>(null);
   React.useLayoutEffect(() => {
     const element = ref.current;
     if (!element) return undefined;
-    setPlacement({ element, visible, onKeyDownCapture });
+    workspace.setPlacement({ element, visible, onKeyDownCapture });
     return () => {
-      if (placement?.element === element) setPlacement(null);
+      if (workspace.getPlacement()?.element === element) workspace.setPlacement(null);
     };
-  }, [onKeyDownCapture, visible]);
+  }, [onKeyDownCapture, visible, workspace]);
   return <div ref={ref} className="h-full w-full" />;
 };
 
@@ -50,7 +40,8 @@ export const FilesEditorSlot: React.FC<Omit<FilesEditorPlacement, 'element'>> = 
  * open file, wherever Files is docked and while it is hidden, and its DOM
  * node is moved into the current zone's slot, so a move keeps the same editor
  * with its unsaved edits, undo history and cursor. Between one slot leaving
- * and the next arriving, the node is simply detached.
+ * and the next arriving, the node is simply detached; the host removes it
+ * when it unmounts.
  *
  * React events from the editor bubble through this component, not through the
  * zone's panel, so the zone's own key handling (Escape collapses the zone) is
@@ -61,12 +52,14 @@ export const FilesEditorHost: React.FC<{
   /** The editor, told whether its zone shows it. */
   renderEditor: (visible: boolean) => React.ReactNode;
 }> = ({ mounted, renderEditor }) => {
-  const current = React.useSyncExternalStore(subscribe, getPlacement, getPlacement);
+  const workspace = useFilesEditorWorkspace();
+  const current = React.useSyncExternalStore(workspace.subscribe, workspace.getPlacement, workspace.getPlacement);
   const [node] = React.useState(() => document.createElement('div'));
   React.useLayoutEffect(() => {
     node.className = 'h-full w-full';
     if (current && node.parentElement !== current.element) current.element.appendChild(node);
   }, [current, node]);
+  React.useLayoutEffect(() => () => node.remove(), [node]);
 
   if (!mounted) return null;
   return createPortal(

@@ -11,7 +11,7 @@ import {
   WORKSPACE_ZONE_MIN_SIZE,
 } from '@/lib/workspace/layout';
 import { ContextPanel } from '../ContextPanel';
-import { FilesEditorHost } from './FilesEditorHost';
+import { FilesEditorHost, FilesEditorProvider } from './FilesEditorHost';
 import { filesEditorMounted } from './filesSurfaceTabs';
 import { isWorkspaceZoneVisible, useWorkspaceZones } from './useWorkspaceZones';
 import { WorkspaceResizeHandle } from './WorkspaceResizeHandle';
@@ -109,71 +109,73 @@ export const WorkspaceLayout: React.FC<Props> = ({ mainChat, overlays, isSurface
   );
 
   return (
-    <div ref={outerRef} className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-      {/* Drawn once for every zone, so moving Files keeps its editor. */}
-      <FilesEditorHost mounted={filesEditorMounted(view.panel)} renderEditor={renderFilesEditor} />
-      <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden" data-page-scroll-lock="true">
-        {leftMounted ? (
-          <>
-            {/* Zero width while collapsed; the inner box keeps its size so the
-                panes do not reflow and come back exactly as they were. */}
-            <div className="relative h-full shrink-0 overflow-hidden bg-background" style={{ width: leftOpen ? leftWidth : 0 }}>
-              <div className="absolute inset-y-0 left-0 flex flex-col" style={{ width: leftWidth }}>
-                {renderZone('left')}
+    <FilesEditorProvider>
+      <div ref={outerRef} className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        {/* Drawn once for every zone, so moving Files keeps its editor. */}
+        <FilesEditorHost mounted={filesEditorMounted(view.panel)} renderEditor={renderFilesEditor} />
+        <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden" data-page-scroll-lock="true">
+          {leftMounted ? (
+            <>
+              {/* Zero width while collapsed; the inner box keeps its size so the
+                  panes do not reflow and come back exactly as they were. */}
+              <div className="relative h-full shrink-0 overflow-hidden bg-background" style={{ width: leftOpen ? leftWidth : 0 }}>
+                <div className="absolute inset-y-0 left-0 flex flex-col" style={{ width: leftWidth }}>
+                  {renderZone('left')}
+                </div>
               </div>
-            </div>
-            {leftOpen ? (
+              {leftOpen ? (
+                <WorkspaceResizeHandle
+                  zone="left"
+                  size={leftWidth}
+                  maxSize={maxLeftWidth}
+                  onResize={(size) => setWorkspaceZoneSize('left', size)}
+                />
+              ) : null}
+            </>
+          ) : null}
+
+          {/* The center and the right zone share this box: the right zone sizes
+              itself against it, and the work-status panel measures it, so both
+              see the space next to the left zone rather than the whole row. */}
+          <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden" data-page-scroll-lock="true" data-chat-area="true">
+            <main ref={centerRef} className="relative flex min-w-0 flex-1 overflow-hidden bg-background" data-page-scroll-lock="true">
+              {showsCenter ? (
+                <div className={cn('absolute inset-0', isSurfacePageOpen && 'invisible')}>
+                  {renderZone('center')}
+                </div>
+              ) : null}
+              {overlays}
+            </main>
+
+            {/* Self-sizing and self-collapsing: the right panel owns its width,
+                its closed state, its expand-over-the-center state and its own
+                resize handle. */}
+            {rightMounted ? (
+              <ErrorBoundary>
+                <ContextPanel zone="right" mainChat={chatZone === 'right' ? mainChat : undefined} />
+              </ErrorBoundary>
+            ) : null}
+          </div>
+        </div>
+
+        {bottomMounted ? (
+          <>
+            {bottomOpen ? (
               <WorkspaceResizeHandle
-                zone="left"
-                size={leftWidth}
-                maxSize={maxLeftWidth}
-                onResize={(size) => setWorkspaceZoneSize('left', size)}
+                zone="bottom"
+                size={bottomHeight}
+                maxSize={bottomLimit}
+                onResize={(size) => setWorkspaceZoneSize('bottom', size)}
               />
             ) : null}
+            <div className="relative w-full shrink-0 overflow-hidden bg-background" style={{ height: bottomOpen ? bottomHeight : 0 }}>
+              <div className="absolute inset-x-0 top-0 flex flex-col" style={{ height: bottomHeight }}>
+                {renderZone('bottom')}
+              </div>
+            </div>
           </>
         ) : null}
-
-        {/* The center and the right zone share this box: the right zone sizes
-            itself against it, and the work-status panel measures it, so both
-            see the space next to the left zone rather than the whole row. */}
-        <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden" data-page-scroll-lock="true" data-chat-area="true">
-          <main ref={centerRef} className="relative flex min-w-0 flex-1 overflow-hidden bg-background" data-page-scroll-lock="true">
-            {showsCenter ? (
-              <div className={cn('absolute inset-0', isSurfacePageOpen && 'invisible')}>
-                {renderZone('center')}
-              </div>
-            ) : null}
-            {overlays}
-          </main>
-
-          {/* Self-sizing and self-collapsing: the right panel owns its width,
-              its closed state, its expand-over-the-center state and its own
-              resize handle. */}
-          {rightMounted ? (
-            <ErrorBoundary>
-              <ContextPanel zone="right" mainChat={chatZone === 'right' ? mainChat : undefined} />
-            </ErrorBoundary>
-          ) : null}
-        </div>
       </div>
-
-      {bottomMounted ? (
-        <>
-          {bottomOpen ? (
-            <WorkspaceResizeHandle
-              zone="bottom"
-              size={bottomHeight}
-              maxSize={bottomLimit}
-              onResize={(size) => setWorkspaceZoneSize('bottom', size)}
-            />
-          ) : null}
-          <div className="relative w-full shrink-0 overflow-hidden bg-background" style={{ height: bottomOpen ? bottomHeight : 0 }}>
-            <div className="absolute inset-x-0 top-0 flex flex-col" style={{ height: bottomHeight }}>
-              {renderZone('bottom')}
-            </div>
-          </div>
-        </>
-      ) : null}
-    </div>
+    </FilesEditorProvider>
   );
 };
