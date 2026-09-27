@@ -11,6 +11,7 @@ const BUILT_IN_CONTEXT_PANEL_MODES = [
   'linear',
   'notes',
   'terminal',
+  'jobs',
 ] as const;
 
 export type BuiltInContextPanelMode = (typeof BUILT_IN_CONTEXT_PANEL_MODES)[number];

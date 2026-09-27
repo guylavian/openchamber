@@ -17,7 +17,8 @@ export type BuiltInContextSurfaceId =
   | 'notes'
   | 'context'
   | 'browser'
-  | 'chat';
+  | 'chat'
+  | 'jobs';
 
 export type ContextSurfaceId = BuiltInContextSurfaceId | `plugin:${string}`;
 
@@ -142,6 +143,15 @@ export const CONTEXT_SURFACES: readonly ContextSurfaceDescriptor[] = [
     availability: 'always',
   },
   {
+    id: 'jobs',
+    descriptionKey: 'contextRail.surface.jobs.description',
+    defaultWidthFraction: 0.45,
+    mode: 'jobs',
+    icon: 'briefcase',
+    labelKey: 'contextPanel.mode.jobs',
+    availability: 'always',
+  },
+  {
     id: 'browser',
     descriptionKey: 'contextRail.surface.browser.description',
     defaultWidthFraction: 0.45,
@@ -259,6 +269,11 @@ export const getVisibleContextRailSurfaces = (options: VisibleRailSurfacesOption
     // not have. Offering the surface anyway would promise the panel people see
     // on the desktop.
     if (surface.id === 'browser' && options.isVSCode) {
+      return false;
+    }
+    // Foreman state lives in the OpenChamber server's data dir, which the
+    // VS Code extension does not run: no store to read, so no surface.
+    if (surface.id === 'jobs' && options.isVSCode) {
       return false;
     }
     if (surface.id === 'linear' && !options.linearConnected) {

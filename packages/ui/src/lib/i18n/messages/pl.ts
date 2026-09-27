@@ -6,6 +6,7 @@ import { routingI18n } from './routing.i18n';
 import { pluginPanelI18n } from './plugin-panel.i18n';
 import { surfacePanelI18n } from './surface-panel.i18n';
 import { fileArtifactsI18n } from './file-artifacts.i18n';
+import { foremanPanelI18n } from './foreman-panel.i18n';
 
 export const dict: Record<I18nKey, string> = {
   'sessions.aiRename.action': 'Zmień nazwę z AI',
@@ -41,6 +42,7 @@ export const dict: Record<I18nKey, string> = {
   ...pluginPanelI18n.pl,
   ...surfacePanelI18n.pl,
   ...fileArtifactsI18n.pl,
+  ...foremanPanelI18n.pl,
   'terminalView.actions.attachSelection': 'Dołącz zaznaczone dane wyjściowe',
   'terminalView.actions.copySelection': 'Kopiuj zaznaczone dane wyjściowe',
   'terminalView.toast.selectionCopied': 'Skopiowano dane wyjściowe',
