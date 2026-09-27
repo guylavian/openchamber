@@ -52,13 +52,34 @@ const runAttentionSchema = z.object({
   message: z.string().optional(),
 });
 
+const RUN_ERROR_STAGES = ['workspace', 'session', 'dispatch', 'execution'] as const;
+
+/** Why a failed run failed, and at which step. Present only while failed. */
+const runErrorSchema = z.object({
+  stage: z.enum(RUN_ERROR_STAGES),
+  message: z.string(),
+});
+
+/**
+ * How the run is carried out. Today always an OpenCode session: the run
+ * points at it, the session knows nothing of the run. No `id` means a start
+ * is in progress.
+ */
+const runExecutionSchema = z.object({
+  type: z.literal('opencode-session'),
+  id: z.string().min(1).optional(),
+  directory: z.string().optional(),
+  createdAt: timestamp,
+});
+
 export const runSchema = z.object({
   id: z.string().min(1),
   taskId: z.string().min(1),
   status: z.enum(RUN_STATUSES),
   attention: runAttentionSchema.optional(),
-  /** An existing OpenCode session this attempt ran in, when there is one. */
-  sessionId: z.string().optional(),
+  error: runErrorSchema.optional(),
+  execution: runExecutionSchema.optional(),
+  requestId: z.string().optional(),
   createdAt: timestamp,
   updatedAt: timestamp,
   startedAt: timestamp.optional(),
@@ -66,7 +87,7 @@ export const runSchema = z.object({
 });
 
 export const foremanStateSchema = z.object({
-  version: z.literal(1),
+  version: z.literal(2),
   jobs: z.array(jobSchema),
   tasks: z.array(taskSchema),
   runs: z.array(runSchema),
@@ -76,6 +97,8 @@ export type Job = z.infer<typeof jobSchema>;
 export type Task = z.infer<typeof taskSchema>;
 export type Run = z.infer<typeof runSchema>;
 export type RunAttention = z.infer<typeof runAttentionSchema>;
+export type RunError = z.infer<typeof runErrorSchema>;
+export type RunExecution = z.infer<typeof runExecutionSchema>;
 export type ForemanState = z.infer<typeof foremanStateSchema>;
 
 export interface CreateJobInput {
@@ -90,8 +113,12 @@ export interface CreateTaskInput {
 }
 
 export interface CreateRunInput {
-  sessionId?: string;
+  /** Makes a retried create land once. */
+  requestId?: string;
 }
+
+export const startRunResultSchema = z.object({ run: runSchema, alreadyStarted: z.boolean() });
+export type StartRunResult = z.infer<typeof startRunResultSchema>;
 
 export interface JobPatch {
   title?: string;
@@ -108,7 +135,6 @@ export interface TaskPatch {
 export interface RunPatch {
   status?: RunStatus;
   attention?: RunAttention | null;
-  sessionId?: string | null;
 }
 
 export const tasksForJob = (tasks: readonly Task[], jobId: string): Task[] =>

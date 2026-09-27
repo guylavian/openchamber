@@ -14,12 +14,14 @@ import { Input } from '@/components/ui/input';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { Textarea } from '@/components/ui/textarea';
 import { useI18n, type I18nKey } from '@/lib/i18n';
-import type { CreateJobInput, Job, JobStatus, Run, RunAttention, RunStatus, Task, TaskStatus } from '@/lib/foreman/model';
+import type { CreateJobInput, Job, JobStatus, Run, RunAttention, RunError, RunStatus, Task, TaskStatus } from '@/lib/foreman/model';
 import { runsForTask, tasksForJob } from '@/lib/foreman/model';
 import { cn } from '@/lib/utils';
 import { isIMECompositionEvent } from '@/lib/ime';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useForemanStore } from '@/stores/useForemanStore';
+import { useUIStore } from '@/stores/useUIStore';
+import { openSessionFromToast } from '@/sync/session-navigation';
 
 /**
  * The Jobs surface: Job → Task → Run, read from and written to the server
@@ -45,6 +47,26 @@ const ATTENTION_KEY = {
   question: 'foreman.jobs.attention.question',
   conflict: 'foreman.jobs.attention.conflict',
 } satisfies Record<RunAttention['type'], I18nKey>;
+
+const ERROR_STAGE_KEY = {
+  workspace: 'foreman.jobs.error.stage.workspace',
+  session: 'foreman.jobs.error.stage.session',
+  dispatch: 'foreman.jobs.error.stage.dispatch',
+  execution: 'foreman.jobs.error.stage.execution',
+} satisfies Record<RunError['stage'], I18nKey>;
+
+/**
+ * Shows the session carrying a run: switches to its directory and brings the
+ * conversation forward in whichever zone it is docked. The same path a
+ * notification's "Open session" takes.
+ */
+const openRunSession = (run: Run) => {
+  const sessionId = run.execution?.id;
+  const directory = run.execution?.directory;
+  if (!sessionId || !directory) return;
+  openSessionFromToast(sessionId, directory);
+  useUIStore.getState().focusMainChat(directory);
+};
 
 const statusTone = (status: JobStatus | TaskStatus | RunStatus): string => {
   switch (status) {
@@ -173,37 +195,76 @@ const CreateDialog: React.FC<CreateDialogProps> = ({
   );
 };
 
-const RunRow: React.FC<{ run: Run; number: number }> = ({ run, number }) => {
+const RunRow: React.FC<{ run: Run; number: number; onStart: () => Promise<void> }> = ({ run, number, onStart }) => {
   const { t } = useI18n();
+  const [busy, setBusy] = React.useState(false);
+  const sessionId = run.execution?.id;
+  const starting = Boolean(run.execution) && !sessionId;
   return (
-    <li className="flex items-center gap-2 px-2 py-1">
-      <Icon name="play" className="size-3.5 text-muted-foreground" />
-      <span className="typography-meta flex-1 truncate">{t('foreman.jobs.run.label', { number })}</span>
-      {run.sessionId ? (
-        <span className="typography-micro text-muted-foreground truncate" title={run.sessionId}>
-          {t('foreman.jobs.run.session', { id: run.sessionId.slice(0, 8) })}
-        </span>
+    <li className="flex flex-col gap-0.5 px-2 py-1">
+      <div className="flex items-center gap-2">
+        <Icon name="play" className="size-3.5 text-muted-foreground" />
+        <span className="typography-meta flex-1 truncate">{t('foreman.jobs.run.label', { number })}</span>
+        {run.attention ? (
+          <span className="typography-micro text-status-warning" title={run.attention.message}>
+            {t(ATTENTION_KEY[run.attention.type])}
+          </span>
+        ) : null}
+        {starting ? <span className="typography-micro text-muted-foreground">{t('foreman.jobs.run.starting')}</span> : null}
+        <StatusLabel status={run.status} />
+        {sessionId ? (
+          <Button
+            variant="ghost"
+            size="xs"
+            onClick={() => openRunSession(run)}
+            title={t('foreman.jobs.run.session', { id: sessionId })}
+          >
+            <Icon name="chat-4" className="size-3.5" />
+            {t('foreman.jobs.actions.openSession')}
+          </Button>
+        ) : null}
+        {run.status === 'queued' && !run.execution ? (
+          <Button
+            variant="ghost"
+            size="xs"
+            disabled={busy}
+            onClick={() => {
+              setBusy(true);
+              void onStart().finally(() => setBusy(false));
+            }}
+          >
+            {t('foreman.jobs.actions.start')}
+          </Button>
+        ) : null}
+      </div>
+      {run.error ? (
+        <div className="typography-micro pl-5 text-status-error" title={run.error.message}>
+          {t(ERROR_STAGE_KEY[run.error.stage])}: {run.error.message}
+        </div>
       ) : null}
-      {run.attention ? (
-        <span className="typography-micro text-status-warning" title={run.attention.message}>
-          {t(ATTENTION_KEY[run.attention.type])}
-        </span>
-      ) : null}
-      <StatusLabel status={run.status} />
     </li>
   );
 };
 
-const TaskCard: React.FC<{ task: Task; runs: Run[]; onNewRun: () => Promise<void> }> = ({ task, runs, onNewRun }) => {
+interface TaskCardProps {
+  task: Task;
+  runs: Run[];
+  /** Records a new attempt and starts it. */
+  onStartRun: () => Promise<void>;
+  /** Starts an attempt that was recorded but never started. */
+  onStartExisting: (runId: string) => Promise<void>;
+}
+
+const TaskCard: React.FC<TaskCardProps> = ({ task, runs, onStartRun, onStartExisting }) => {
   const { t } = useI18n();
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
 
-  const newRun = async () => {
+  const guarded = async (action: () => Promise<void>) => {
     setBusy(true);
     setError(null);
     try {
-      await onNewRun();
+      await action();
     } catch (cause) {
       setError(t('foreman.jobs.error.save', { message: describeError(cause instanceof Error ? cause : String(cause)) }));
     } finally {
@@ -226,9 +287,9 @@ const TaskCard: React.FC<{ task: Task; runs: Run[]; onNewRun: () => Promise<void
       <div className="border-t border-border/40 px-1 py-1">
         <div className="flex items-center justify-between px-2 py-0.5">
           <span className="typography-micro text-muted-foreground">{t('foreman.jobs.runs.heading')}</span>
-          <Button variant="ghost" size="xs" onClick={() => void newRun()} disabled={busy}>
-            <Icon name="add" className="size-3.5" />
-            {t('foreman.jobs.actions.newRun')}
+          <Button variant="outline" size="xs" onClick={() => void guarded(onStartRun)} disabled={busy}>
+            <Icon name="play" className="size-3.5" />
+            {t('foreman.jobs.actions.startRun')}
           </Button>
         </div>
         {error ? <div className="typography-micro text-status-error px-2 pb-1">{error}</div> : null}
@@ -236,7 +297,9 @@ const TaskCard: React.FC<{ task: Task; runs: Run[]; onNewRun: () => Promise<void
           <div className="typography-micro text-muted-foreground px-2 pb-1">{t('foreman.jobs.runs.empty')}</div>
         ) : (
           <ul>
-            {runs.map((run, index) => <RunRow key={run.id} run={run} number={index + 1} />)}
+            {runs.map((run, index) => (
+              <RunRow key={run.id} run={run} number={index + 1} onStart={() => guarded(() => onStartExisting(run.id))} />
+            ))}
           </ul>
         )}
       </div>
@@ -250,6 +313,7 @@ const JobDetail: React.FC<{ job: Job; onBack: () => void }> = ({ job, onBack }) 
   const runs = useForemanStore((state) => state.runs);
   const createTask = useForemanStore((state) => state.createTask);
   const createRun = useForemanStore((state) => state.createRun);
+  const startRun = useForemanStore((state) => state.startRun);
   const [adding, setAdding] = React.useState(false);
   const jobTasks = React.useMemo(() => tasksForJob(tasks, job.id), [tasks, job.id]);
 
@@ -288,7 +352,13 @@ const JobDetail: React.FC<{ job: Job; onBack: () => void }> = ({ job, onBack }) 
                   key={task.id}
                   task={task}
                   runs={runsForTask(runs, task.id)}
-                  onNewRun={async () => { await createRun(task.id); }}
+                  onStartRun={async () => {
+                    // One id per click: a retried request lands on the same run,
+                    // and the server gives one run one session.
+                    const run = await createRun(task.id, { requestId: crypto.randomUUID() });
+                    await startRun(run.id);
+                  }}
+                  onStartExisting={async (runId) => { await startRun(runId); }}
                 />
               ))}
             </ul>

@@ -10,7 +10,7 @@ import { createForemanStore } from './useForemanStore';
  * a network or a module mock.
  */
 const createFakeApi = (): ForemanApi & { state: ForemanState; failNextFetch: () => void } => {
-  const state: ForemanState = { version: 1, jobs: [], tasks: [], runs: [] };
+  const state: ForemanState = { version: 2, jobs: [], tasks: [], runs: [] };
   let ids = 0;
   let fail = false;
   const id = () => `id-${(ids += 1)}`;
@@ -48,10 +48,21 @@ const createFakeApi = (): ForemanApi & { state: ForemanState; failNextFetch: () 
     },
     createRun: async (taskId, input) => {
       if (!state.tasks.some((entry) => entry.id === taskId)) throw new Error('task not found');
+      const existing = input.requestId ? state.runs.find((entry) => entry.taskId === taskId && entry.requestId === input.requestId) : undefined;
+      if (existing) return { ...existing };
       const run: Run = { id: id(), taskId, status: 'queued', createdAt: at(), updatedAt: at() };
-      if (input.sessionId) run.sessionId = input.sessionId;
+      if (input.requestId) run.requestId = input.requestId;
       state.runs.push(run);
       return run;
+    },
+    startRun: async (runId) => {
+      const run = state.runs.find((entry) => entry.id === runId);
+      if (!run) throw new Error('run not found');
+      if (run.execution?.id) return { run: { ...run }, alreadyStarted: true };
+      run.execution = { type: 'opencode-session', id: `ses_${runId}`, directory: '/repo', createdAt: at() };
+      run.status = 'running';
+      run.startedAt = at();
+      return { run: { ...run }, alreadyStarted: false };
     },
     updateRun: async (runId, patch) => {
       const run = state.runs.find((entry) => entry.id === runId);
@@ -91,10 +102,11 @@ describe('useForemanStore', () => {
     const store = createForemanStore(api);
     const job = await store.getState().createJob({ title: 'Job', goal: 'Goal' });
     const task = await store.getState().createTask(job.id, { title: 'Task' });
-    const run = await store.getState().createRun(task.id, { sessionId: 'ses_1' });
+    const run = await store.getState().createRun(task.id, { requestId: 'click-1' });
+    const again = await store.getState().createRun(task.id, { requestId: 'click-1' });
     expect(task.jobId).toBe(job.id);
     expect(run.taskId).toBe(task.id);
-    expect(run.sessionId).toBe('ses_1');
+    expect(again.id).toBe(run.id);
     const { jobs, tasks, runs } = store.getState();
     expect(jobs).toHaveLength(1);
     expect(tasks[0].jobId).toBe(jobs[0].id);
@@ -139,5 +151,19 @@ describe('useForemanStore', () => {
     await pending;
     expect(store.getState().loadStatus).toBe('idle');
     expect(store.getState().jobs).toEqual([]);
+  });
+
+  test('starting a run stores the server\'s answer: running, with its session', async () => {
+    const api = createFakeApi();
+    const store = createForemanStore(api);
+    const job = await store.getState().createJob({ title: 'Job' });
+    const task = await store.getState().createTask(job.id, { title: 'Task' });
+    const run = await store.getState().createRun(task.id);
+    const started = await store.getState().startRun(run.id);
+    expect(started.status).toBe('running');
+    expect(store.getState().runs[0].execution?.id).toBe(`ses_${run.id}`);
+    const again = await store.getState().startRun(run.id);
+    expect(again.execution?.id).toBe(started.execution?.id);
+    expect(store.getState().runs).toHaveLength(1);
   });
 });

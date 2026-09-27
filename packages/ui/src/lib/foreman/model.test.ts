@@ -8,23 +8,35 @@ describe('foreman model parsing', () => {
   const run = { id: 'r1', taskId: 't1', status: 'queued', createdAt: 1, updatedAt: 1 };
 
   test('accepts what the server writes, optionals absent', () => {
-    const parsed = foremanStateSchema.parse({ version: 1, jobs: [job], tasks: [task], runs: [run] });
+    const parsed = foremanStateSchema.parse({ version: 2, jobs: [job], tasks: [task], runs: [run] });
     expect(parsed.jobs[0].goal).toBeUndefined();
-    expect(parsed.runs[0].sessionId).toBeUndefined();
+    expect(parsed.runs[0].execution).toBeUndefined();
   });
 
-  test('accepts a run waiting with attention and a session reference', () => {
+  test('accepts a run waiting with attention and an execution reference', () => {
     const parsed = runSchema.parse({
-      ...run, status: 'waiting_for_user', attention: { type: 'permission', message: 'ok?' }, sessionId: 'ses_1', startedAt: 2,
+      ...run,
+      status: 'waiting_for_user',
+      attention: { type: 'permission', message: 'ok?' },
+      execution: { type: 'opencode-session', id: 'ses_1', directory: '/repo', createdAt: 2 },
+      startedAt: 2,
     });
     expect(parsed.attention?.type).toBe('permission');
-    expect(parsed.sessionId).toBe('ses_1');
+    expect(parsed.execution?.id).toBe('ses_1');
+  });
+
+  test('accepts a failed run with its reason, and a start in progress with no session id yet', () => {
+    const failed = runSchema.parse({ ...run, status: 'failed', error: { stage: 'dispatch', message: 'no model' } });
+    expect(failed.error?.stage).toBe('dispatch');
+    const starting = runSchema.parse({ ...run, execution: { type: 'opencode-session', createdAt: 3 } });
+    expect(starting.execution?.id).toBeUndefined();
+    expect(runSchema.safeParse({ ...run, execution: { type: 'docker', id: 'x', createdAt: 3 } }).success).toBe(false);
   });
 
   test('rejects unknown statuses and versions instead of guessing', () => {
     expect(jobSchema.safeParse({ ...job, status: 'blocked' }).success).toBe(false);
     expect(runSchema.safeParse({ ...run, status: 'waiting' }).success).toBe(false);
-    expect(foremanStateSchema.safeParse({ version: 2, jobs: [], tasks: [], runs: [] }).success).toBe(false);
+    expect(foremanStateSchema.safeParse({ version: 3, jobs: [], tasks: [], runs: [] }).success).toBe(false);
   });
 
   test('tasks and runs are found by their parent', () => {

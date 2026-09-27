@@ -12,6 +12,7 @@ import type {
   Task,
   TaskPatch,
 } from '@/lib/foreman/model';
+import { subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
 import { subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
 
 /**
@@ -43,6 +44,8 @@ export interface ForemanStoreActions {
   updateTask: (taskId: string, patch: TaskPatch) => Promise<Task>;
   createRun: (taskId: string, input?: CreateRunInput) => Promise<Run>;
   updateRun: (runId: string, patch: RunPatch) => Promise<Run>;
+  /** Starts a queued run; the server makes its session. Safe to repeat. */
+  startRun: (runId: string) => Promise<Run>;
   /** Forget everything; the next `load` starts from nothing. */
   reset: () => void;
 }
@@ -131,6 +134,12 @@ export const createForemanStore = (api: ForemanApi) => {
       return run;
     },
 
+    startRun: async (runId) => {
+      const { run } = await api.startRun(runId);
+      set((state) => ({ runs: upsert(state.runs, run) }));
+      return run;
+    },
+
     reset: () => {
       generation += 1;
       inFlight = null;
@@ -142,3 +151,20 @@ export const createForemanStore = (api: ForemanApi) => {
 export const useForemanStore = createForemanStore(foremanApi);
 
 subscribeRuntimeEndpointChanged(() => useForemanStore.getState().reset());
+
+// The server moves runs on as their sessions progress and says so; the store
+// re-reads rather than trusting the event's contents, so a missed or
+// reordered event cannot leave it stale. Only a store someone has loaded
+// listens, so an app that never opens Jobs never asks.
+let unsubscribeForemanEvents: (() => void) | null = null;
+useForemanStore.subscribe((state) => {
+  if (state.loadStatus === 'idle') {
+    unsubscribeForemanEvents?.();
+    unsubscribeForemanEvents = null;
+    return;
+  }
+  if (unsubscribeForemanEvents) return;
+  unsubscribeForemanEvents = subscribeOpenchamberEvents((event) => {
+    if (event.type === 'foreman-changed') void useForemanStore.getState().load();
+  });
+});

@@ -5,6 +5,7 @@ import {
   foremanStateSchema,
   jobSchema,
   runSchema,
+  startRunResultSchema,
   taskSchema,
   type CreateJobInput,
   type CreateRunInput,
@@ -14,6 +15,7 @@ import {
   type JobPatch,
   type Run,
   type RunPatch,
+  type StartRunResult,
   type Task,
   type TaskPatch,
 } from './model';
@@ -44,14 +46,24 @@ export interface ForemanApi {
   updateTask: (taskId: string, patch: TaskPatch) => Promise<Task>;
   createRun: (taskId: string, input: CreateRunInput) => Promise<Run>;
   updateRun: (runId: string, patch: RunPatch) => Promise<Run>;
+  /** Starts a queued run in an OpenCode session. Safe to repeat. */
+  startRun: (runId: string) => Promise<StartRunResult>;
 }
 
 const errorPayloadSchema = z.object({ error: z.string(), code: z.string().optional() });
 
-const request = async <T>(path: string, schema: z.ZodType<T>, init?: { method: string; body: object }): Promise<T> => {
-  const response = await runtimeFetch(path, init
-    ? { method: init.method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(init.body) }
-    : undefined);
+const requestInit = (init?: { method: string; body?: object }): RequestInit | undefined => {
+  if (!init) return undefined;
+  const result: RequestInit = { method: init.method };
+  if (init.body) {
+    result.headers = { 'Content-Type': 'application/json' };
+    result.body = JSON.stringify(init.body);
+  }
+  return result;
+};
+
+const request = async <T>(path: string, schema: z.ZodType<T>, init?: { method: string; body?: object }): Promise<T> => {
+  const response = await runtimeFetch(path, requestInit(init));
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
     const failure = errorPayloadSchema.safeParse(payload);
@@ -78,4 +90,5 @@ export const foremanApi: ForemanApi = {
   updateTask: (taskId, patch) => request(`/api/foreman/tasks/${encode(taskId)}`, taskSchema, { method: 'PATCH', body: patch }),
   createRun: (taskId, input) => request(`/api/foreman/tasks/${encode(taskId)}/runs`, runSchema, { method: 'POST', body: input }),
   updateRun: (runId, patch) => request(`/api/foreman/runs/${encode(runId)}`, runSchema, { method: 'PATCH', body: patch }),
+  startRun: (runId) => request(`/api/foreman/runs/${encode(runId)}/start`, startRunResultSchema, { method: 'POST' }),
 };
