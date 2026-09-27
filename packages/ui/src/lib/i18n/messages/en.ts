@@ -11,6 +11,7 @@ import { isolatedSpacesI18n } from './isolated-spaces.i18n';
 import { providersI18n } from './providers.i18n';
 import { mcpGridI18n } from './mcp-grid.i18n';
 import { pluginsGridI18n } from './plugins-grid.i18n';
+import { foremanPanelI18n } from './foreman-panel.i18n';
 
 export const dict = {
   "opencodeCompatibility.bundled": "OpenCode is bundled with OpenChamber. Update OpenChamber to get OpenCode v2.",
@@ -68,6 +69,7 @@ export const dict = {
   ...providersI18n.en,
   ...mcpGridI18n.en,
   ...pluginsGridI18n.en,
+  ...foremanPanelI18n.en,
   'terminalView.actions.attachSelection': 'Attach selected output',
   'terminalView.actions.copySelection': 'Copy selected output',
   'terminalView.toast.selectionCopied': 'Output copied',

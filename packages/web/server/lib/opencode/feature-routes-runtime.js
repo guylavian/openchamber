@@ -12,6 +12,8 @@ import { registerGitRoutes } from '../git/routes.js';
 import { registerDevServerRoutes } from '../dev-servers/routes.js';
 import { registerMagicPromptRoutes } from '../magic-prompts/routes.js';
 import { registerSessionFoldersRoutes } from '../session-folders/routes.js';
+import { registerForemanRoutes } from '../foreman/routes.js';
+import { createForemanStore } from '../foreman/store.js';
 import { registerProjectContextRoutes } from '../project-context/routes.js';
 import { registerProjectSetupRoutes } from '../projects/routes.js';
 import { registerAgentMemoryRoutes } from '../agent-memory/routes.js';
@@ -364,6 +366,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       path,
       openchamberDataDir,
     });
+    registerForemanRoutes(app, { store: createForemanStore({ dataDir: openchamberDataDir }) });
     registerFsRoutes(app, {
       os,
       path,
