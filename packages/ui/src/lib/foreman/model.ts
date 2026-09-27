@@ -70,6 +70,8 @@ const runExecutionSchema = z.object({
   id: z.string().min(1).optional(),
   directory: z.string().optional(),
   createdAt: timestamp,
+  /** OpenCode no longer has the session; the reference stays for the record. */
+  deletedAt: timestamp.optional(),
 });
 
 export const runSchema = z.object({

@@ -96,7 +96,7 @@ export const runChangeForEvent = (payload) => {
     case 'form.settled':
       return { sessionID, status: 'running', onlyWhileAttention: 'question' };
     case 'session.deleted':
-      return { sessionID, status: 'failed', error: { stage: 'execution', message: 'The OpenCode session was deleted' }, onlyWhileActive: true };
+      return { sessionID, sessionDeleted: true };
     default:
       return null;
   }
@@ -222,6 +222,21 @@ export const createForemanExecution = ({
     return { run: finalRun, alreadyStarted: false };
   };
 
+  /**
+   * The session is gone. The reference is kept, marked deleted, so the run
+   * still says what carried it out; an unfinished run cannot go on without
+   * it, and one that already finished keeps its outcome.
+   */
+  const sessionGone = (current, message) => {
+    if (!current.execution || current.execution.deletedAt) return null;
+    const next = { execution: { ...current.execution, deletedAt: now() } };
+    if (!['completed', 'failed', 'cancelled'].includes(current.status)) {
+      next.status = 'failed';
+      next.error = { stage: 'execution', message };
+    }
+    return next;
+  };
+
   /** Starts a queued run. Idempotent: a run that has a session never gets another. */
   const startRun = (runId) => {
     const inFlight = starting.get(runId);
@@ -235,6 +250,11 @@ export const createForemanExecution = ({
     const runs = await store.runsForExecution(EXECUTION_TYPE, eventChange.sessionID);
     if (runs.length === 0) return;
 
+    if (eventChange.sessionDeleted) {
+      for (const run of runs) await change(run.id, (current) => sessionGone(current, 'The OpenCode session was deleted'));
+      return;
+    }
+
     let status = eventChange.status;
     if (eventChange.unlessChildrenWork) {
       // Completed only when OpenCode says nothing of this session still runs.
@@ -246,7 +266,6 @@ export const createForemanExecution = ({
     for (const run of runs) {
       await change(run.id, (current) => {
         if (eventChange.onlyWhileAttention && current.attention?.type !== eventChange.onlyWhileAttention) return null;
-        if (eventChange.onlyWhileActive && ['completed', 'failed', 'cancelled'].includes(current.status)) return null;
         if (eventChange.unlessWaiting && current.status === 'waiting_for_user') return null;
         if (current.status === status && !eventChange.attention && !eventChange.error) return null;
         const next = { status };
@@ -291,7 +310,7 @@ export const createForemanExecution = ({
       if (children !== false) continue;
       const outcome = await readSessionOutcome(sessionId, run.execution.directory ?? '').catch(() => 'unknown');
       if (outcome === 'missing') {
-        await change(run.id, () => ({ status: 'failed', error: { stage: 'execution', message: 'The OpenCode session no longer exists' } }));
+        await change(run.id, (current) => sessionGone(current, 'The OpenCode session no longer exists'));
       } else if (run.status === 'queued') {
         // The session was made but the server stopped before the task was
         // confirmed sent. Whether it arrived is visible in the session.

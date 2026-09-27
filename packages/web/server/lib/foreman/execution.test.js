@@ -274,13 +274,24 @@ describe('status follows the session', () => {
     expect((await current()).status).toBe('running');
   });
 
-  it('a deleted session fails an active run but leaves a finished one finished', async () => {
+  it('a deleted session fails an active run and marks the reference deleted', async () => {
+    const { execution, current } = await startedRun();
+    execution.processPayload(event('session.deleted', { sessionID: 'ses_1' }));
+    await settle();
+    const run = await current();
+    expect(run).toMatchObject({ status: 'failed', error: { stage: 'execution' }, execution: { id: 'ses_1' } });
+    expect(run.execution.deletedAt).toBeGreaterThan(0);
+  });
+
+  it('a deleted session leaves a finished run finished, but marks the reference deleted', async () => {
     const { execution, current } = await startedRun();
     execution.processPayload(event('session.idle', { sessionID: 'ses_1' }));
     await settle();
     execution.processPayload(event('session.deleted', { sessionID: 'ses_1' }));
     await settle();
-    expect((await current()).status).toBe('completed');
+    const run = await current();
+    expect(run.status).toBe('completed');
+    expect(run.execution.deletedAt).toBeGreaterThan(0);
   });
 
   it('the event mapping ignores what it cannot trust', () => {
@@ -317,6 +328,7 @@ describe('restart reconciliation', () => {
   it('a session that no longer exists fails the run and keeps the reference', async () => {
     const { run } = await afterRestart({ outcome: 'missing' });
     expect(run).toMatchObject({ status: 'failed', error: { stage: 'execution' }, execution: { id: 'ses_1' } });
+    expect(run.execution.deletedAt).toBeGreaterThan(0);
   });
 
   it('an unknown outcome leaves the run as it was', async () => {

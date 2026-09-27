@@ -119,6 +119,8 @@ const executionSchema = z.object({
   id: z.string().min(1).optional(),
   directory: z.string().optional(),
   createdAt: timestamp,
+  /** Set when OpenCode no longer has the session; the reference stays for the record. */
+  deletedAt: timestamp.optional(),
 });
 const runErrorSchema = z.object({ stage: z.enum(RUN_ERROR_STAGES), message: z.string() });
 const storedRunSchema = z.object({

@@ -199,6 +199,7 @@ const RunRow: React.FC<{ run: Run; number: number; onStart: () => Promise<void> 
   const { t } = useI18n();
   const [busy, setBusy] = React.useState(false);
   const sessionId = run.execution?.id;
+  const sessionDeleted = Boolean(run.execution?.deletedAt);
   const starting = Boolean(run.execution) && !sessionId;
   return (
     <li className="flex flex-col gap-0.5 px-2 py-1">
@@ -212,7 +213,10 @@ const RunRow: React.FC<{ run: Run; number: number; onStart: () => Promise<void> 
         ) : null}
         {starting ? <span className="typography-micro text-muted-foreground">{t('foreman.jobs.run.starting')}</span> : null}
         <StatusLabel status={run.status} />
-        {sessionId ? (
+        {sessionDeleted ? (
+          <span className="typography-micro text-muted-foreground">{t('foreman.jobs.run.sessionDeleted')}</span>
+        ) : null}
+        {sessionId && !sessionDeleted ? (
           <Button
             variant="ghost"
             size="xs"
