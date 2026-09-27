@@ -1,4 +1,5 @@
 import React from 'react';
+import { create } from 'zustand';
 
 import { Icon } from '@/components/icon/Icon';
 import { Button } from '@/components/ui/button';
@@ -29,6 +30,16 @@ import { openSessionFromToast } from '@/sync/session-navigation';
  * and tasks are created by hand, a run is a recorded attempt. Nothing here
  * starts an agent.
  */
+
+/**
+ * Which job the surface has open. Kept outside the component: moving the
+ * surface to another zone remounts it, and the open job must survive that.
+ * View state only; Foreman's data lives in useForemanStore.
+ */
+const useJobsSelection = create<{ jobId: string | null; select: (jobId: string | null) => void }>()((set) => ({
+  jobId: null,
+  select: (jobId) => set({ jobId }),
+}));
 
 const STATUS_KEY = {
   pending: 'foreman.jobs.status.pending',
@@ -394,7 +405,8 @@ export const JobsView: React.FC = () => {
   const load = useForemanStore((state) => state.load);
   const createJob = useForemanStore((state) => state.createJob);
   const currentDirectory = useDirectoryStore((state) => state.currentDirectory);
-  const [selectedJobId, setSelectedJobId] = React.useState<string | null>(null);
+  const selectedJobId = useJobsSelection((state) => state.jobId);
+  const setSelectedJobId = useJobsSelection((state) => state.select);
   const [creating, setCreating] = React.useState(false);
 
   React.useEffect(() => {
