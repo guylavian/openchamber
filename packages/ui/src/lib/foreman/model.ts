@@ -22,7 +22,6 @@ const ATTENTION_TYPES = ['permission', 'question', 'conflict'] as const;
 export type JobStatus = (typeof JOB_STATUSES)[number];
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 export type RunStatus = (typeof RUN_STATUSES)[number];
-export type AttentionType = (typeof ATTENTION_TYPES)[number];
 
 const timestamp = z.number().finite();
 
@@ -100,7 +99,6 @@ export type Task = z.infer<typeof taskSchema>;
 export type Run = z.infer<typeof runSchema>;
 export type RunAttention = z.infer<typeof runAttentionSchema>;
 export type RunError = z.infer<typeof runErrorSchema>;
-export type RunExecution = z.infer<typeof runExecutionSchema>;
 export type ForemanState = z.infer<typeof foremanStateSchema>;
 
 export interface CreateJobInput {

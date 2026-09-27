@@ -64,10 +64,9 @@ type FileOpenRequestEvent = { type: 'file-open-request' } & z.infer<typeof fileO
  * entries: listeners re-read from the server, so the event cannot go stale
  * between being sent and being handled.
  */
-/** A Foreman run moved on (its session started, waited, finished). Listeners re-read. */
+/** A Foreman run moved on (its session started, waited, finished). Carries nothing: listeners re-read. */
 type ForemanChangedEvent = {
   type: 'foreman-changed';
-  runId?: string;
 };
 type AgentMemoryChangedEvent = {
   type: 'agent-memory-changed';
@@ -362,9 +361,7 @@ const dispatchFromEnvelope = (envelope: { type: string; properties: unknown }) =
   }
 
   if (envelope.type === 'openchamber:foreman-changed') {
-    const properties = getEventProperties(envelope.properties);
     const nextEvent: ForemanChangedEvent = { type: 'foreman-changed' };
-    if (typeof properties?.runId === 'string' && properties.runId.length > 0) nextEvent.runId = properties.runId;
     for (const listener of listeners) listener(nextEvent);
     return;
   }

@@ -25,9 +25,9 @@ import { subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
  * server is not an empty job list. A runtime switch drops everything.
  */
 
-export type ForemanLoadStatus = 'idle' | 'loading' | 'ready' | 'error';
+type ForemanLoadStatus = 'idle' | 'loading' | 'ready' | 'error';
 
-export interface ForemanStoreState {
+interface ForemanStoreState {
   loadStatus: ForemanLoadStatus;
   loadError: string | null;
   jobs: Job[];
@@ -35,7 +35,7 @@ export interface ForemanStoreState {
   runs: Run[];
 }
 
-export interface ForemanStoreActions {
+interface ForemanStoreActions {
   /** Reads the whole state from the server; concurrent callers share one request. */
   load: () => Promise<void>;
   createJob: (input: CreateJobInput) => Promise<Job>;
@@ -50,7 +50,7 @@ export interface ForemanStoreActions {
   reset: () => void;
 }
 
-export type ForemanStore = ForemanStoreState & ForemanStoreActions;
+type ForemanStore = ForemanStoreState & ForemanStoreActions;
 
 const initialState: ForemanStoreState = {
   loadStatus: 'idle',
