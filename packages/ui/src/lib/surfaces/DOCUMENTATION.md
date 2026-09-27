@@ -42,6 +42,8 @@ Full-screen extension pages are separate from this rail registry. `contributes.p
   configure button — `ContextRailSurfacesDialog`), drops the plan surface
   unless plan mode is enabled,
   drops the walkthrough on VS Code and below `WALKTHROUGH_MIN_WIDTH`, hides
+  the Foreman jobs surface on VS Code (no OpenChamber server there — see
+  `packages/web/server/lib/foreman/DOCUMENTATION.md`), hides
   Linear unless a workspace is connected, hides the pull-request surface
   unless GitHub is connected (OAuth or `gh` CLI — signed in from Settings →
   Integrations), and hides `has-content` surfaces

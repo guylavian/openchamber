@@ -71,6 +71,12 @@ evidence that the model went away. Callers with a graceful fallback (a note kept
 verbatim, a reply spoken in full) do not consult it; they silence the 404 on
 `requestSmallModel` instead.
 
+`useForemanStore` caches Foreman's jobs, tasks and runs as the server
+returned them (`GET /api/foreman/state` plus each mutation's answer). It never
+invents an entity, keeps the last loaded state when a load fails and says so
+in `loadError`, and resets on a runtime switch. The domain and its rules live
+in `packages/web/server/lib/foreman/DOCUMENTATION.md`.
+
 ### UI state stores
 
 Sidebar visibility and its persisted width are independent. Opening or closing
