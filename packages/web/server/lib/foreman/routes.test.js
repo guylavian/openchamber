@@ -5,6 +5,7 @@ import path from 'node:path';
 
 import { registerForemanRoutes } from './routes.js';
 import { createForemanStore } from './store.js';
+import { createForemanExecution } from './execution.js';
 
 // Express is not started: handlers are captured and invoked directly, the
 // body parser skipped, as the other route tests in this server do.
@@ -33,9 +34,21 @@ const createApp = () => {
 const setup = () => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'foreman-routes-'));
   const store = createForemanStore({ dataDir, warn: () => {} });
+  const sessions = [];
+  const execution = createForemanExecution({
+    store,
+    sessionService: {
+      create: async ({ directory }) => { sessions.push(directory); return { sessionId: `ses_${sessions.length}`, directory }; },
+      send: async () => ({ promptDispatched: true }),
+    },
+    validateDirectoryPath: async (directory) => ({ ok: Boolean(directory), directory }),
+    activityProbe: { fetchActiveSessionStatuses: async () => ({}), hasWorkingChildren: async () => false },
+    readSessionOutcome: async () => 'unknown',
+    warn: () => {},
+  });
   const harness = createApp();
-  registerForemanRoutes(harness.app, { store });
-  return { ...harness, dataDir };
+  registerForemanRoutes(harness.app, { store, execution });
+  return { ...harness, dataDir, sessions };
 };
 
 describe('foreman routes', () => {
@@ -86,5 +99,21 @@ describe('foreman routes', () => {
     const done = await call('PATCH', '/api/foreman/runs/:runId', { params: { runId: run.id }, body: { status: 'completed' } });
     expect(done.body.attention).toBeUndefined();
     expect(done.body.finishedAt).toBeGreaterThan(0);
+  });
+
+  it('start answers 201 the first time and 200 with the same session after that', async () => {
+    const { call, sessions } = setup();
+    const job = (await call('POST', '/api/foreman/jobs', { body: { title: 'Job', directory: '/repo' } })).body;
+    const task = (await call('POST', '/api/foreman/jobs/:jobId/tasks', { params: { jobId: job.id }, body: { title: 'Task' } })).body;
+    const run = (await call('POST', '/api/foreman/tasks/:taskId/runs', { params: { taskId: task.id }, body: { requestId: 'r1' } })).body;
+    const first = await call('POST', '/api/foreman/runs/:runId/start', { params: { runId: run.id } });
+    expect(first.statusCode).toBe(201);
+    expect(first.body.run).toMatchObject({ status: 'running', execution: { id: 'ses_1' } });
+    const second = await call('POST', '/api/foreman/runs/:runId/start', { params: { runId: run.id } });
+    expect(second.statusCode).toBe(200);
+    expect(second.body.alreadyStarted).toBe(true);
+    expect(sessions).toEqual(['/repo']);
+    expect((await call('PATCH', '/api/foreman/runs/:runId', { params: { runId: run.id }, body: { status: 'completed' } })).statusCode).toBe(409);
+    expect((await call('POST', '/api/foreman/runs/:runId/start', { params: { runId: 'nope' } })).statusCode).toBe(404);
   });
 });

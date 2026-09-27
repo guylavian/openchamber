@@ -131,6 +131,10 @@ import { createDevTunnelRuntime } from './lib/dev-tunnel/runtime.js';
 import { registerBrowserControlRoutes } from './lib/browser-control/routes.js';
 import { createManagedConfigRuntime } from './lib/opencode/managed-config-file.js';
 import { createOpenChamberSessionService } from './lib/openchamber-sessions/routes.js';
+import { createOpenCodeClient as createOpenChamberOpenCodeClient } from './lib/openchamber-sessions/opencode-client.js';
+import { createForemanStore } from './lib/foreman/store.js';
+import { createForemanExecution } from './lib/foreman/execution.js';
+import { createSessionActivityProbe as createForemanActivityProbe } from './lib/opencode/session-activity.js';
 import { createSessionMetadataStore, createOpenCodeSessionMetadata } from './lib/openchamber-sessions/session-metadata-store.js';
 import { createScheduledTaskService } from './lib/scheduled-tasks/service.js';
 import { createOpenChamberControlService } from './lib/openchamber-control/service.js';
@@ -1080,6 +1084,7 @@ globalMessageStreamHub.subscribeEvent((event) => {
     sessionGoalRuntime.processPayload(payload, directory || payload.properties?.directory || '');
     contextObligatoryRuntime.processPayload(payload, directory || payload.properties?.directory || '');
     linearSessionStatusRuntime.processPayload(payload);
+    foremanExecution.processPayload(payload);
   }
 });
 
@@ -1621,6 +1626,40 @@ const pluginNotificationEmitter = createPluginNotificationEmitter({
   broadcastUiNotification,
 });
 
+// Foreman: Job -> Task -> Run. One store and one execution runtime per
+// server; a Run is carried out by a session made through the session service
+// above, and its status follows the event hub below.
+const foremanStore = createForemanStore({ dataDir: OPENCHAMBER_DATA_DIR });
+/** What became of a session's last turn, read from OpenCode itself. */
+const readForemanSessionOutcome = async (sessionID, directory) => {
+  const client = createOpenChamberOpenCodeClient({
+    baseUrl: buildOpenCodeUrl('/', '').replace(/\/$/, ''),
+    headers: getOpenCodeAuthHeaders(),
+    directory,
+  });
+  try {
+    await client.session.get({ sessionID });
+  } catch (error) {
+    if (error?._tag === 'SessionNotFoundError') return 'missing';
+    return 'unknown';
+  }
+  const response = await client.message.list({ sessionID, limit: 20, order: 'desc' }).catch(() => null);
+  const messages = Array.isArray(response?.data) ? response.data : null;
+  if (!messages) return 'unknown';
+  const last = messages.find((message) => message?.type === 'assistant');
+  if (!last) return 'unknown';
+  if (last.error) return 'failed';
+  return Number.isFinite(last.time?.completed) ? 'succeeded' : 'unknown';
+};
+const foremanExecution = createForemanExecution({
+  store: foremanStore,
+  sessionService: openChamberSessionService,
+  validateDirectoryPath,
+  activityProbe: createForemanActivityProbe({ buildOpenCodeUrl, getOpenCodeAuthHeaders }),
+  readSessionOutcome: readForemanSessionOutcome,
+  broadcast: (event) => broadcastOpenChamberUiEvent(event),
+});
+
 const openChamberControlService = createOpenChamberControlService({
   readSettingsFromDiskMigrated,
   sanitizeProjects,
@@ -1663,6 +1702,10 @@ const ensureGlobalWatcherStarted = async () => {
 };
 const bootstrapOpenCodeAtStartup = async (...args) => {
   await openCodeLifecycleRuntime.bootstrapOpenCodeAtStartup(...args);
+  // Runs whose session moved on while this server was down. Reads only.
+  void waitForOpenCodeReady(60_000, 500)
+    .then(() => foremanExecution.reconcile())
+    .catch((error) => console.warn('[foreman] reconciliation skipped:', error?.message || error));
   scheduleOpenCodeApiDetection();
   if (openCodeLifecycleState.openCodeProcess && !openCodeLifecycleState.isExternalOpenCode) {
     startHealthMonitoring();
@@ -2280,6 +2323,8 @@ async function main(options = {}) {
     scheduledTaskService,
     openChamberSessionService,
     openChamberControlService,
+    foremanStore,
+    foremanExecution,
     waitForOpenCodeReady,
     emitSessionCreatedEvent,
     getOpenChamberEventClients: () => uiOpenChamberEventClients,

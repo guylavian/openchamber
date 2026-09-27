@@ -24,7 +24,7 @@ import cryptoDefault from 'node:crypto';
 import { z } from 'zod';
 
 export const FOREMAN_FILE_NAME = 'foreman.json';
-const FOREMAN_STATE_VERSION = 1;
+const FOREMAN_STATE_VERSION = 2;
 
 const JOB_STATUSES = ['pending', 'running', 'waiting', 'completed', 'failed', 'cancelled'];
 const TASK_STATUSES = ['pending', 'running', 'blocked', 'completed', 'failed', 'cancelled'];
@@ -32,13 +32,19 @@ const RUN_STATUSES = ['queued', 'running', 'waiting_for_user', 'failed', 'comple
 const ATTENTION_TYPES = ['permission', 'question', 'conflict'];
 
 const RUN_TERMINAL_STATUSES = new Set(['failed', 'completed', 'cancelled']);
+/** Where a Run's attempt went wrong: finding the workspace, making the
+ * session, handing it the task, or during the work itself. */
+const RUN_ERROR_STAGES = ['workspace', 'session', 'dispatch', 'execution'];
+/** The only execution kind today. A Run is an attempt; an OpenCode session is
+ * one way to carry it out, so the reference names its kind. */
+const EXECUTION_TYPES = ['opencode-session'];
 
 const MAX_TITLE_LENGTH = 200;
 const MAX_TEXT_LENGTH = 20_000;
 
 export class ForemanStoreError extends Error {
   /**
-   * @param {'invalid_input' | 'not_found' | 'unsupported_version'} code
+   * @param {'invalid_input' | 'not_found' | 'unsupported_version' | 'conflict'} code
    * @param {string} message
    */
   constructor(code, message) {
@@ -68,11 +74,14 @@ const taskPatchSchema = z.object({
   instructions: clearableText,
   status: z.enum(TASK_STATUSES).optional(),
 }).strict();
-const createRunSchema = z.object({ sessionId: z.string().trim().max(MAX_TITLE_LENGTH).transform((value) => value || undefined).optional() }).strict();
+// `requestId` makes a retried create land once: the same (task, requestId)
+// answers with the run the first request made.
+const createRunSchema = z.object({
+  requestId: z.string().trim().min(1).max(MAX_TITLE_LENGTH).optional(),
+}).strict();
 const runPatchSchema = z.object({
   status: z.enum(RUN_STATUSES).optional(),
   attention: attentionSchema.nullable().optional(),
-  sessionId: z.string().trim().max(MAX_TITLE_LENGTH).transform((value) => value || null).nullable().optional(),
 }).strict();
 
 const parse = (schema, value) => {
@@ -104,12 +113,22 @@ const storedTaskSchema = z.object({
   createdAt: timestamp,
   updatedAt: timestamp,
 });
+const executionSchema = z.object({
+  type: z.enum(EXECUTION_TYPES),
+  /** Absent while the session is being created: a start is in progress. */
+  id: z.string().min(1).optional(),
+  directory: z.string().optional(),
+  createdAt: timestamp,
+});
+const runErrorSchema = z.object({ stage: z.enum(RUN_ERROR_STAGES), message: z.string() });
 const storedRunSchema = z.object({
   id: z.string(),
   taskId: z.string(),
   status: z.enum(RUN_STATUSES),
   attention: attentionSchema.optional(),
-  sessionId: z.string().optional(),
+  error: runErrorSchema.optional(),
+  execution: executionSchema.optional(),
+  requestId: z.string().optional(),
   createdAt: timestamp,
   updatedAt: timestamp,
   startedAt: timestamp.optional(),
@@ -120,6 +139,27 @@ export const foremanFileSchema = z.object({
   jobs: z.array(storedJobSchema),
   tasks: z.array(storedTaskSchema),
   runs: z.array(storedRunSchema),
+});
+/**
+ * Version 1 kept an optional bare `sessionId` on a run. It becomes an
+ * execution reference; nothing else changed.
+ */
+const storedRunV1Schema = storedRunSchema.omit({ error: true, execution: true, requestId: true }).extend({
+  sessionId: z.string().optional(),
+});
+const foremanFileV1Schema = z.object({
+  version: z.literal(1),
+  jobs: z.array(storedJobSchema),
+  tasks: z.array(storedTaskSchema),
+  runs: z.array(storedRunV1Schema),
+});
+const migrateV1 = (v1) => ({
+  version: FOREMAN_STATE_VERSION,
+  jobs: v1.jobs,
+  tasks: v1.tasks,
+  runs: v1.runs.map(({ sessionId, ...run }) => (sessionId
+    ? { ...run, execution: { type: 'opencode-session', id: sessionId, createdAt: run.createdAt } }
+    : run)),
 });
 /** Only the version, to tell "written by a newer OpenChamber" from "unreadable". */
 const versionedFileSchema = z.object({ version: z.number().finite() });
@@ -183,6 +223,13 @@ export const createForemanStore = ({
     const stored = foremanFileSchema.safeParse(parsed);
     if (stored.success) {
       state = stored.data;
+      return;
+    }
+    // Converted in memory only; the file is rewritten as v2 on the next
+    // mutation, so a read alone never changes what is on disk.
+    const v1 = foremanFileV1Schema.safeParse(parsed);
+    if (v1.success) {
+      state = migrateV1(v1.data);
       return;
     }
     // Unreadable: keep the bytes for the person to look at, start empty. The
@@ -252,6 +299,23 @@ export const createForemanStore = ({
 
   const clone = (value) => JSON.parse(JSON.stringify(value));
 
+  /**
+   * A run's status and everything that must agree with it. Attention exists
+   * only while waiting for a person, an error only while failed, a finish
+   * time only while finished: leaving the state clears what described it.
+   */
+  const applyRunStatus = (run, status, at) => {
+    run.status = status;
+    if (status === 'running' && run.startedAt === undefined) run.startedAt = at;
+    if (RUN_TERMINAL_STATUSES.has(status)) {
+      if (run.finishedAt === undefined) run.finishedAt = at;
+    } else {
+      delete run.finishedAt;
+    }
+    if (status !== 'waiting_for_user') delete run.attention;
+    if (status !== 'failed') delete run.error;
+  };
+
   const findOrThrow = (list, id, kind) => {
     const index = list.findIndex((entry) => entry.id === id);
     if (index < 0) throw new ForemanStoreError('not_found', `${kind} ${id} does not exist`);
@@ -319,28 +383,82 @@ export const createForemanStore = ({
     },
 
     async createRun(taskId, input = {}) {
-      const { sessionId } = parse(createRunSchema, input);
+      const { requestId } = parse(createRunSchema, input);
       return mutate((draft) => {
         findOrThrow(draft.tasks, taskId, 'task');
+        if (requestId) {
+          const existing = draft.runs.find((entry) => entry.taskId === taskId && entry.requestId === requestId);
+          if (existing) return clone(existing);
+        }
         const at = now();
         const run = { id: randomUUID(), taskId, status: 'queued', createdAt: at, updatedAt: at };
-        if (sessionId) run.sessionId = sessionId;
+        if (requestId) run.requestId = requestId;
         draft.runs.push(run);
         return clone(run);
       });
     },
 
-    async updateRun(runId, patch) {
-      const { status, attention, sessionId } = parse(runPatchSchema, patch);
+    /** The run, its task and its job, read together. */
+    async runContext(runId) {
+      await ensureLoaded();
+      assertWritable();
+      const run = state.runs.find((entry) => entry.id === runId);
+      if (!run) throw new ForemanStoreError('not_found', `run ${runId} does not exist`);
+      const task = state.tasks.find((entry) => entry.id === run.taskId) ?? null;
+      const job = task ? state.jobs.find((entry) => entry.id === task.jobId) ?? null : null;
+      return clone({ run, task, job });
+    },
+
+    /** Runs whose execution is the given session. */
+    async runsForExecution(type, id) {
+      await ensureLoaded();
+      if (unsupportedVersion !== null) return [];
+      return clone(state.runs.filter((run) => run.execution?.type === type && run.execution.id === id));
+    },
+
+    /** Runs that own an execution and have not finished, for reconciliation. */
+    async activeExecutions() {
+      await ensureLoaded();
+      if (unsupportedVersion !== null) return [];
+      return clone(state.runs.filter((run) => run.execution?.id && !RUN_TERMINAL_STATUSES.has(run.status)));
+    },
+
+    /**
+     * The execution side's single write path: `change` receives a copy of the
+     * run and returns the fields to set (`status`, `attention`, `error`,
+     * `execution`), or null to leave the run alone. Everything the status
+     * implies is applied by `applyRunStatus`, so the invariants hold here too.
+     */
+    async applyExecutionChange(runId, change) {
       return mutate((draft) => {
         const index = findOrThrow(draft.runs, runId, 'run');
+        const current = draft.runs[index];
+        const next = change(clone(current));
+        if (!next) return { run: clone(current), changed: false };
+        const at = now();
+        const run = { ...current, updatedAt: at };
+        if (next.execution === null) delete run.execution;
+        else if (next.execution !== undefined) run.execution = next.execution;
+        if (next.status !== undefined) applyRunStatus(run, next.status, at);
+        if (next.attention !== undefined && run.status === 'waiting_for_user') run.attention = next.attention;
+        if (next.error !== undefined && run.status === 'failed') run.error = next.error;
+        draft.runs[index] = run;
+        return { run: clone(run), changed: true };
+      });
+    },
+
+    async updateRun(runId, patch) {
+      const { status, attention } = parse(runPatchSchema, patch);
+      return mutate((draft) => {
+        const index = findOrThrow(draft.runs, runId, 'run');
+        // Once a run owns an execution, its status follows that execution;
+        // a hand-written status would be contradicted by the next event.
+        if (draft.runs[index].execution) {
+          throw new ForemanStoreError('conflict', 'This run is executing; its status follows the session');
+        }
         const at = now();
         const run = { ...draft.runs[index], updatedAt: at };
-        if (status !== undefined) {
-          run.status = status;
-          if (status === 'running' && run.startedAt === undefined) run.startedAt = at;
-          if (RUN_TERMINAL_STATUSES.has(status) && run.finishedAt === undefined) run.finishedAt = at;
-        }
+        if (status !== undefined) applyRunStatus(run, status, at);
         if (attention === null) delete run.attention;
         else if (attention !== undefined) {
           if (run.status !== 'waiting_for_user') {
@@ -350,8 +468,6 @@ export const createForemanStore = ({
         }
         // The invariant: no attention outside waiting_for_user, ever.
         if (run.status !== 'waiting_for_user') delete run.attention;
-        if (sessionId === null) delete run.sessionId;
-        else if (sessionId !== undefined) run.sessionId = sessionId;
         draft.runs[index] = run;
         return clone(run);
       });

@@ -25,7 +25,7 @@ describe('foreman store: default state', () => {
   it('a data dir with no Foreman file is an empty state, and reading it writes nothing', async () => {
     const dir = tempDir();
     const store = makeStore(dir);
-    expect(await store.snapshot()).toEqual({ version: 1, jobs: [], tasks: [], runs: [] });
+    expect(await store.snapshot()).toEqual({ version: 2, jobs: [], tasks: [], runs: [] });
     expect(fs.existsSync(path.join(dir, FOREMAN_FILE_NAME))).toBe(false);
   });
 
@@ -66,15 +66,52 @@ describe('foreman store: jobs, tasks and runs', () => {
     expect((await store.snapshot()).tasks).toHaveLength(1);
   });
 
-  it('a run belongs to an existing task, starts queued, and may point at a session', async () => {
+  it('a run belongs to an existing task and starts queued, with no execution', async () => {
     const store = makeStore(tempDir());
     const job = await store.createJob({ title: 'job' });
     const task = await store.createTask(job.id, { title: 'task' });
-    const run = await store.createRun(task.id, { sessionId: 'ses_123' });
-    expect(run).toEqual({ id: 'id-3', taskId: task.id, status: 'queued', sessionId: 'ses_123', createdAt: 1_003, updatedAt: 1_003 });
-    const bare = await store.createRun(task.id);
-    expect(bare.sessionId).toBeUndefined();
+    const run = await store.createRun(task.id);
+    expect(run).toEqual({ id: 'id-3', taskId: task.id, status: 'queued', createdAt: 1_003, updatedAt: 1_003 });
     await expect(store.createRun('nope')).rejects.toMatchObject({ code: 'not_found' });
+    await expect(store.createRun(task.id, { sessionId: 'ses_1' })).rejects.toMatchObject({ code: 'invalid_input' });
+  });
+
+  it('a retried create with the same requestId lands once', async () => {
+    const store = makeStore(tempDir());
+    const job = await store.createJob({ title: 'job' });
+    const task = await store.createTask(job.id, { title: 'task' });
+    const [a, b] = await Promise.all([
+      store.createRun(task.id, { requestId: 'click-1' }),
+      store.createRun(task.id, { requestId: 'click-1' }),
+    ]);
+    expect(a.id).toBe(b.id);
+    const other = await store.createRun(task.id, { requestId: 'click-2' });
+    expect(other.id).not.toBe(a.id);
+    expect((await store.snapshot()).runs).toHaveLength(2);
+  });
+
+  it('a run that owns an execution refuses hand-written status', async () => {
+    const store = makeStore(tempDir());
+    const job = await store.createJob({ title: 'job' });
+    const task = await store.createTask(job.id, { title: 'task' });
+    const run = await store.createRun(task.id);
+    await store.applyExecutionChange(run.id, () => ({ execution: { type: 'opencode-session', id: 'ses_1', createdAt: 1 } }));
+    await expect(store.updateRun(run.id, { status: 'completed' })).rejects.toMatchObject({ code: 'conflict' });
+  });
+
+  it('execution changes keep error and attention tied to their status', async () => {
+    const store = makeStore(tempDir());
+    const job = await store.createJob({ title: 'job' });
+    const task = await store.createTask(job.id, { title: 'task' });
+    const run = await store.createRun(task.id);
+    const failed = await store.applyExecutionChange(run.id, () => ({ status: 'failed', error: { stage: 'dispatch', message: 'x' } }));
+    expect(failed.run.error).toEqual({ stage: 'dispatch', message: 'x' });
+    expect(failed.run.finishedAt).toBeDefined();
+    const running = await store.applyExecutionChange(run.id, () => ({ status: 'running' }));
+    expect(running.run.error).toBeUndefined();
+    expect(running.run.finishedAt).toBeUndefined();
+    const unchanged = await store.applyExecutionChange(run.id, () => null);
+    expect(unchanged.changed).toBe(false);
   });
 
   it('status updates bump updatedAt and refuse unknown statuses', async () => {
@@ -133,15 +170,16 @@ describe('foreman store: persistence', () => {
     const store = makeStore(dir);
     const job = await store.createJob({ title: 'job', goal: 'g' });
     const task = await store.createTask(job.id, { title: 'task' });
-    const run = await store.createRun(task.id, { sessionId: 's1' });
+    const run = await store.createRun(task.id);
     await store.updateRun(run.id, { status: 'waiting_for_user', attention: { type: 'question' } });
+    await store.applyExecutionChange(run.id, () => ({ execution: { type: 'opencode-session', id: 's1', directory: '/repo', createdAt: 5 } }));
 
     const reloaded = makeStore(dir);
     const snapshot = await reloaded.snapshot();
-    expect(snapshot.version).toBe(1);
+    expect(snapshot.version).toBe(2);
     expect(snapshot.jobs).toEqual([job]);
     expect(snapshot.tasks).toEqual([task]);
-    expect(snapshot.runs[0]).toMatchObject({ id: run.id, taskId: task.id, status: 'waiting_for_user', attention: { type: 'question' }, sessionId: 's1' });
+    expect(snapshot.runs[0]).toMatchObject({ id: run.id, taskId: task.id, status: 'waiting_for_user', attention: { type: 'question' }, execution: { type: 'opencode-session', id: 's1', directory: '/repo', createdAt: 5 } });
     expect(foremanFileSchema.safeParse(readState(dir)).success).toBe(true);
   });
 
@@ -179,7 +217,7 @@ describe('foreman store: persistence', () => {
     fs.writeFileSync(path.join(dir, FOREMAN_FILE_NAME), '{ not json');
     const warnings = [];
     const store = makeStore(dir, { warn: (message) => warnings.push(message) });
-    expect(await store.snapshot()).toEqual({ version: 1, jobs: [], tasks: [], runs: [] });
+    expect(await store.snapshot()).toEqual({ version: 2, jobs: [], tasks: [], runs: [] });
     expect(fs.readdirSync(dir).some((name) => name.startsWith(`${FOREMAN_FILE_NAME}.corrupt-`))).toBe(true);
     expect(warnings).toHaveLength(1);
   });
@@ -188,12 +226,36 @@ describe('foreman store: persistence', () => {
     const dir = tempDir();
     fs.writeFileSync(path.join(dir, FOREMAN_FILE_NAME), JSON.stringify({ version: 1, jobs: [{ id: 1 }], tasks: [], runs: [] }));
     const store = makeStore(dir);
-    expect(await store.snapshot()).toEqual({ version: 1, jobs: [], tasks: [], runs: [] });
+    expect(await store.snapshot()).toEqual({ version: 2, jobs: [], tasks: [], runs: [] });
+  });
+
+  it('a version 1 file is read as version 2: a bare sessionId becomes an execution reference', async () => {
+    const dir = tempDir();
+    const v1 = {
+      version: 1,
+      jobs: [{ id: 'j', title: 'J', status: 'pending', createdAt: 1, updatedAt: 1 }],
+      tasks: [{ id: 't', jobId: 'j', title: 'T', status: 'pending', createdAt: 1, updatedAt: 1 }],
+      runs: [
+        { id: 'r1', taskId: 't', status: 'queued', createdAt: 2, updatedAt: 2 },
+        { id: 'r2', taskId: 't', status: 'running', sessionId: 'ses_9', createdAt: 3, updatedAt: 3 },
+      ],
+    };
+    fs.writeFileSync(path.join(dir, FOREMAN_FILE_NAME), JSON.stringify(v1));
+    const store = makeStore(dir);
+    const snapshot = await store.snapshot();
+    expect(snapshot.version).toBe(2);
+    expect(snapshot.runs[0].execution).toBeUndefined();
+    expect(snapshot.runs[1].execution).toEqual({ type: 'opencode-session', id: 'ses_9', createdAt: 3 });
+    expect(snapshot.runs[1].sessionId).toBeUndefined();
+    // Reading converts in memory only; the file changes on the next write.
+    expect(readState(dir).version).toBe(1);
+    await store.createJob({ title: 'next' });
+    expect(readState(dir).version).toBe(2);
   });
 
   it('a file from a newer version is neither read nor overwritten', async () => {
     const dir = tempDir();
-    const newer = JSON.stringify({ version: 2, jobs: [], tasks: [], runs: [], extra: true });
+    const newer = JSON.stringify({ version: 3, jobs: [], tasks: [], runs: [], extra: true });
     fs.writeFileSync(path.join(dir, FOREMAN_FILE_NAME), newer);
     const store = makeStore(dir);
     await expect(store.snapshot()).rejects.toMatchObject({ code: 'unsupported_version' });

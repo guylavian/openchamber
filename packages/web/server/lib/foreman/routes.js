@@ -14,6 +14,7 @@ const STATUS_BY_CODE = {
   invalid_input: 400,
   not_found: 404,
   unsupported_version: 409,
+  conflict: 409,
 };
 
 const respondError = (res, error) => {
@@ -26,9 +27,12 @@ const respondError = (res, error) => {
 
 /**
  * @param {import('express').Express} app
- * @param {{ store: ReturnType<typeof import('./store.js').createForemanStore> }} dependencies
+ * @param {{
+ *   store: ReturnType<typeof import('./store.js').createForemanStore>,
+ *   execution: ReturnType<typeof import('./execution.js').createForemanExecution>,
+ * }} dependencies
  */
-export const registerForemanRoutes = (app, { store }) => {
+export const registerForemanRoutes = (app, { store, execution }) => {
   app.get('/api/foreman/state', async (_req, res) => {
     try {
       return res.json(await store.snapshot());
@@ -72,6 +76,17 @@ export const registerForemanRoutes = (app, { store }) => {
   app.post('/api/foreman/tasks/:taskId/runs', parseJsonBody, async (req, res) => {
     try {
       return res.status(201).json(await store.createRun(req.params.taskId, req.body ?? {}));
+    } catch (error) {
+      return respondError(res, error);
+    }
+  });
+
+  // Starts a queued run: one OpenCode session, the task sent to it. Safe to
+  // repeat: a run that has a session answers with it and makes no other.
+  app.post('/api/foreman/runs/:runId/start', async (req, res) => {
+    try {
+      const { run, alreadyStarted } = await execution.startRun(req.params.runId);
+      return res.status(alreadyStarted ? 200 : 201).json({ run, alreadyStarted });
     } catch (error) {
       return respondError(res, error);
     }
