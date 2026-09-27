@@ -44,7 +44,7 @@ const MAX_TEXT_LENGTH = 20_000;
 
 export class ForemanStoreError extends Error {
   /**
-   * @param {'invalid_input' | 'not_found' | 'unsupported_version' | 'conflict'} code
+   * @param {'invalid_input' | 'not_found' | 'unsupported_version' | 'conflict' | 'abort_failed'} code
    * @param {string} message
    */
   constructor(code, message) {
@@ -130,6 +130,8 @@ const storedRunSchema = z.object({
   attention: attentionSchema.optional(),
   error: runErrorSchema.optional(),
   execution: executionSchema.optional(),
+  /** Set when a person stopped the run through Foreman; the stop is final. */
+  stoppedAt: timestamp.optional(),
   requestId: z.string().optional(),
   createdAt: timestamp,
   updatedAt: timestamp,
@@ -439,6 +441,7 @@ export const createForemanStore = ({
         if (!next) return { run: clone(current), changed: false };
         const at = now();
         const run = { ...current, updatedAt: at };
+        if (next.stoppedAt !== undefined) run.stoppedAt = next.stoppedAt;
         if (next.execution === null) delete run.execution;
         else if (next.execution !== undefined) run.execution = next.execution;
         if (next.status !== undefined) applyRunStatus(run, next.status, at);

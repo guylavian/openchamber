@@ -6,6 +6,7 @@ import {
   jobSchema,
   runSchema,
   startRunResultSchema,
+  stopRunResultSchema,
   taskSchema,
   type CreateJobInput,
   type CreateRunInput,
@@ -16,6 +17,7 @@ import {
   type Run,
   type RunPatch,
   type StartRunResult,
+  type StopRunResult,
   type Task,
   type TaskPatch,
 } from './model';
@@ -48,6 +50,8 @@ export interface ForemanApi {
   updateRun: (runId: string, patch: RunPatch) => Promise<Run>;
   /** Starts a queued run in an OpenCode session. Safe to repeat. */
   startRun: (runId: string) => Promise<StartRunResult>;
+  /** Interrupts an active run's session and cancels the run. Safe to repeat. */
+  stopRun: (runId: string) => Promise<StopRunResult>;
 }
 
 const errorPayloadSchema = z.object({ error: z.string(), code: z.string().optional() });
@@ -91,4 +95,5 @@ export const foremanApi: ForemanApi = {
   createRun: (taskId, input) => request(`/api/foreman/tasks/${encode(taskId)}/runs`, runSchema, { method: 'POST', body: input }),
   updateRun: (runId, patch) => request(`/api/foreman/runs/${encode(runId)}`, runSchema, { method: 'PATCH', body: patch }),
   startRun: (runId) => request(`/api/foreman/runs/${encode(runId)}/start`, startRunResultSchema, { method: 'POST' }),
+  stopRun: (runId) => request(`/api/foreman/runs/${encode(runId)}/stop`, stopRunResultSchema, { method: 'POST' }),
 };

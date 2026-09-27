@@ -15,6 +15,7 @@ const STATUS_BY_CODE = {
   not_found: 404,
   unsupported_version: 409,
   conflict: 409,
+  abort_failed: 502,
 };
 
 const respondError = (res, error) => {
@@ -87,6 +88,16 @@ export const registerForemanRoutes = (app, { store, execution }) => {
     try {
       const { run, alreadyStarted } = await execution.startRun(req.params.runId);
       return res.status(alreadyStarted ? 200 : 201).json({ run, alreadyStarted });
+    } catch (error) {
+      return respondError(res, error);
+    }
+  });
+
+  // Stops an active run by interrupting its session. Safe to repeat: a run
+  // that is not running answers with itself and nothing is interrupted.
+  app.post('/api/foreman/runs/:runId/stop', async (req, res) => {
+    try {
+      return res.json(await execution.stopRun(req.params.runId));
     } catch (error) {
       return respondError(res, error);
     }

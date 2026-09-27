@@ -124,6 +124,8 @@ export const createForemanExecution = ({
 }) => {
   /** runId → the start in progress, so a second request joins it. */
   const starting = new Map();
+  /** runId → the stop in progress, likewise. */
+  const stopping = new Map();
   /** sessionId → the tail of its event chain; events for one session apply in order. */
   const sessionQueues = new Map();
 
@@ -246,6 +248,51 @@ export const createForemanExecution = ({
     return promise;
   };
 
+  const TERMINAL = ['completed', 'failed', 'cancelled'];
+  const ACTIVE = ['running', 'waiting_for_user'];
+
+  const performStop = async (runId) => {
+    const { run } = await store.runContext(runId);
+    // Finished runs are left exactly as they are: nothing to interrupt.
+    if (TERMINAL.includes(run.status)) return { run, stopped: false };
+    if (!ACTIVE.includes(run.status) || !run.execution?.id) {
+      throw conflict('This run has not started; there is nothing to stop');
+    }
+    const cancel = (extra = {}) => change(runId, (current) => (TERMINAL.includes(current.status)
+      ? null
+      : { status: 'cancelled', stoppedAt: now(), ...extra }));
+
+    if (run.execution.deletedAt) return { run: await cancel(), stopped: true };
+
+    let result;
+    try {
+      result = await sessionService.interrupt(run.execution.id, { directory: run.execution.directory ?? '' });
+    } catch (error) {
+      // The session may still be working: the run keeps its status, and the
+      // person is told the stop did not happen.
+      throw new ForemanStoreError('abort_failed', `The session could not be stopped: ${errorMessage(error, 'unknown error')}`);
+    }
+    if (result?.missing) {
+      return { run: await cancel({ execution: { ...run.execution, deletedAt: now() } }), stopped: true };
+    }
+    // Interrupted, or already idle: either way nothing runs for this attempt
+    // now, and the person asked for it to end.
+    return { run: await cancel(), stopped: true };
+  };
+
+  /**
+   * Stops an active run by interrupting its OpenCode session. Idempotent:
+   * concurrent stops share one interrupt, and a run that is no longer active
+   * answers with itself.
+   */
+  const stopRun = (runId) => {
+    const inFlight = stopping.get(runId);
+    if (inFlight) return inFlight;
+    const promise = performStop(runId).finally(() => stopping.delete(runId));
+    stopping.set(runId, promise);
+    return promise;
+  };
+
   const applyEventChange = async (eventChange) => {
     const runs = await store.runsForExecution(EXECUTION_TYPE, eventChange.sessionID);
     if (runs.length === 0) return;
@@ -265,6 +312,8 @@ export const createForemanExecution = ({
 
     for (const run of runs) {
       await change(run.id, (current) => {
+        // A run a person stopped stays stopped, whatever its session does next.
+        if (current.stoppedAt) return null;
         if (eventChange.onlyWhileAttention && current.attention?.type !== eventChange.onlyWhileAttention) return null;
         if (eventChange.unlessWaiting && current.status === 'waiting_for_user') return null;
         if (current.status === status && !eventChange.attention && !eventChange.error) return null;
@@ -327,5 +376,5 @@ export const createForemanExecution = ({
     }
   };
 
-  return { startRun, processPayload, reconcile };
+  return { startRun, stopRun, processPayload, reconcile };
 };

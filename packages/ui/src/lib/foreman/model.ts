@@ -80,6 +80,8 @@ export const runSchema = z.object({
   attention: runAttentionSchema.optional(),
   error: runErrorSchema.optional(),
   execution: runExecutionSchema.optional(),
+  /** A person stopped this run through Foreman; the stop is final. */
+  stoppedAt: timestamp.optional(),
   requestId: z.string().optional(),
   createdAt: timestamp,
   updatedAt: timestamp,
@@ -119,6 +121,9 @@ export interface CreateRunInput {
 
 export const startRunResultSchema = z.object({ run: runSchema, alreadyStarted: z.boolean() });
 export type StartRunResult = z.infer<typeof startRunResultSchema>;
+
+export const stopRunResultSchema = z.object({ run: runSchema, stopped: z.boolean() });
+export type StopRunResult = z.infer<typeof stopRunResultSchema>;
 
 export interface JobPatch {
   title?: string;

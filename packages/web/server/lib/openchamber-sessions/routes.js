@@ -979,8 +979,26 @@ export const createOpenChamberSessionService = (dependencies) => {
     }
   };
 
+  /**
+   * Interrupts a session's running turn: the same OpenCode call as the chat's
+   * Stop button. `interrupted` is false when nothing was running; `missing`
+   * when OpenCode does not know the session. Anything else throws.
+   */
+  const interrupt = async (sessionID, { directory = '' } = {}) => {
+    const id = asNonEmptyString(sessionID);
+    if (!id) throw new OpenChamberControlError('a session id is required', 400);
+    try {
+      const result = await clientFor(asNonEmptyString(directory) || undefined).session.interrupt({ sessionID: id });
+      return { interrupted: result?.interrupted === true, missing: false };
+    } catch (error) {
+      if (error?._tag === 'SessionNotFoundError') return { interrupted: false, missing: true };
+      throw error;
+    }
+  };
+
   return {
     create,
+    interrupt,
     archive,
     unarchive,
     archiveStore,

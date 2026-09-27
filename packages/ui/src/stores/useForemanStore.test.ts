@@ -64,6 +64,14 @@ const createFakeApi = (): ForemanApi & { state: ForemanState; failNextFetch: () 
       run.startedAt = at();
       return { run: { ...run }, alreadyStarted: false };
     },
+    stopRun: async (runId) => {
+      const run = state.runs.find((entry) => entry.id === runId);
+      if (!run) throw new Error('run not found');
+      if (run.status !== 'running' && run.status !== 'waiting_for_user') return { run: { ...run }, stopped: false };
+      run.status = 'cancelled';
+      run.stoppedAt = at();
+      return { run: { ...run }, stopped: true };
+    },
     updateRun: async (runId, patch) => {
       const run = state.runs.find((entry) => entry.id === runId);
       if (!run) throw new Error('run not found');
@@ -164,6 +172,21 @@ describe('useForemanStore', () => {
     expect(store.getState().runs[0].execution?.id).toBe(`ses_${run.id}`);
     const again = await store.getState().startRun(run.id);
     expect(again.execution?.id).toBe(started.execution?.id);
+    expect(store.getState().runs).toHaveLength(1);
+  });
+
+  test('stopping a run stores the server\'s answer: cancelled, and a repeat changes nothing', async () => {
+    const api = createFakeApi();
+    const store = createForemanStore(api);
+    const job = await store.getState().createJob({ title: 'Job' });
+    const task = await store.getState().createTask(job.id, { title: 'Task' });
+    const run = await store.getState().createRun(task.id);
+    await store.getState().startRun(run.id);
+    const stopped = await store.getState().stopRun(run.id);
+    expect(stopped.status).toBe('cancelled');
+    expect(stopped.stoppedAt).toBeGreaterThan(0);
+    const again = await store.getState().stopRun(run.id);
+    expect(again.stoppedAt).toBe(stopped.stoppedAt);
     expect(store.getState().runs).toHaveLength(1);
   });
 });

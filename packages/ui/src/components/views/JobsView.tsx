@@ -206,9 +206,19 @@ const CreateDialog: React.FC<CreateDialogProps> = ({
   );
 };
 
-const RunRow: React.FC<{ run: Run; number: number; onStart: () => Promise<void> }> = ({ run, number, onStart }) => {
+interface RunRowProps {
+  run: Run;
+  number: number;
+  onStart: () => Promise<void>;
+  onStop: () => Promise<void>;
+}
+
+const RunRow: React.FC<RunRowProps> = ({ run, number, onStart, onStop }) => {
   const { t } = useI18n();
   const [busy, setBusy] = React.useState(false);
+  const [stopping, setStopping] = React.useState(false);
+  const [stopError, setStopError] = React.useState<string | null>(null);
+  const active = run.status === 'running' || run.status === 'waiting_for_user';
   const sessionId = run.execution?.id;
   const sessionDeleted = Boolean(run.execution?.deletedAt);
   const starting = Boolean(run.execution) && !sessionId;
@@ -238,6 +248,22 @@ const RunRow: React.FC<{ run: Run; number: number; onStart: () => Promise<void> 
             {t('foreman.jobs.actions.openSession')}
           </Button>
         ) : null}
+        {active && sessionId ? (
+          <Button
+            variant="ghost"
+            size="xs"
+            disabled={stopping}
+            onClick={() => {
+              setStopping(true);
+              setStopError(null);
+              void onStop()
+                .catch((cause: Error) => setStopError(describeError(cause)))
+                .finally(() => setStopping(false));
+            }}
+          >
+            {stopping ? t('foreman.jobs.run.stopping') : t('foreman.jobs.actions.stop')}
+          </Button>
+        ) : null}
         {run.status === 'queued' && !run.execution ? (
           <Button
             variant="ghost"
@@ -252,6 +278,9 @@ const RunRow: React.FC<{ run: Run; number: number; onStart: () => Promise<void> 
           </Button>
         ) : null}
       </div>
+      {stopError ? (
+        <div className="typography-micro pl-5 text-status-error">{t('foreman.jobs.error.save', { message: stopError })}</div>
+      ) : null}
       {run.error ? (
         <div className="typography-micro pl-5 text-status-error" title={run.error.message}>
           {t(ERROR_STAGE_KEY[run.error.stage])}: {run.error.message}
@@ -268,9 +297,11 @@ interface TaskCardProps {
   onStartRun: () => Promise<void>;
   /** Starts an attempt that was recorded but never started. */
   onStartExisting: (runId: string) => Promise<void>;
+  /** Stops an active attempt: its session is interrupted. */
+  onStopRun: (runId: string) => Promise<void>;
 }
 
-const TaskCard: React.FC<TaskCardProps> = ({ task, runs, onStartRun, onStartExisting }) => {
+const TaskCard: React.FC<TaskCardProps> = ({ task, runs, onStartRun, onStartExisting, onStopRun }) => {
   const { t } = useI18n();
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
@@ -313,7 +344,13 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, runs, onStartRun, onStartExis
         ) : (
           <ul>
             {runs.map((run, index) => (
-              <RunRow key={run.id} run={run} number={index + 1} onStart={() => guarded(() => onStartExisting(run.id))} />
+              <RunRow
+                key={run.id}
+                run={run}
+                number={index + 1}
+                onStart={() => guarded(() => onStartExisting(run.id))}
+                onStop={() => onStopRun(run.id)}
+              />
             ))}
           </ul>
         )}
@@ -329,6 +366,7 @@ const JobDetail: React.FC<{ job: Job; onBack: () => void }> = ({ job, onBack }) 
   const createTask = useForemanStore((state) => state.createTask);
   const createRun = useForemanStore((state) => state.createRun);
   const startRun = useForemanStore((state) => state.startRun);
+  const stopRun = useForemanStore((state) => state.stopRun);
   const [adding, setAdding] = React.useState(false);
   const jobTasks = React.useMemo(() => tasksForJob(tasks, job.id), [tasks, job.id]);
 
@@ -374,6 +412,7 @@ const JobDetail: React.FC<{ job: Job; onBack: () => void }> = ({ job, onBack }) 
                     await startRun(run.id);
                   }}
                   onStartExisting={async (runId) => { await startRun(runId); }}
+                  onStopRun={async (runId) => { await stopRun(runId); }}
                 />
               ))}
             </ul>

@@ -35,11 +35,13 @@ const setup = () => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'foreman-routes-'));
   const store = createForemanStore({ dataDir, warn: () => {} });
   const sessions = [];
+  const interrupts = [];
   const execution = createForemanExecution({
     store,
     sessionService: {
       create: async ({ directory }) => { sessions.push(directory); return { sessionId: `ses_${sessions.length}`, directory }; },
       send: async () => ({ promptDispatched: true }),
+      interrupt: async (sessionId) => { interrupts.push(sessionId); return { interrupted: true, missing: false }; },
     },
     validateDirectoryPath: async (directory) => ({ ok: Boolean(directory), directory }),
     activityProbe: { fetchActiveSessionStatuses: async () => ({}), hasWorkingChildren: async () => false },
@@ -48,7 +50,7 @@ const setup = () => {
   });
   const harness = createApp();
   registerForemanRoutes(harness.app, { store, execution });
-  return { ...harness, dataDir, sessions };
+  return { ...harness, dataDir, sessions, interrupts };
 };
 
 describe('foreman routes', () => {
@@ -115,5 +117,21 @@ describe('foreman routes', () => {
     expect(sessions).toEqual(['/repo']);
     expect((await call('PATCH', '/api/foreman/runs/:runId', { params: { runId: run.id }, body: { status: 'completed' } })).statusCode).toBe(409);
     expect((await call('POST', '/api/foreman/runs/:runId/start', { params: { runId: 'nope' } })).statusCode).toBe(404);
+  });
+
+  it('stop interrupts the session once and answers the same on a repeat', async () => {
+    const { call, interrupts } = setup();
+    const job = (await call('POST', '/api/foreman/jobs', { body: { title: 'Job', directory: '/repo' } })).body;
+    const task = (await call('POST', '/api/foreman/jobs/:jobId/tasks', { params: { jobId: job.id }, body: { title: 'Task' } })).body;
+    const run = (await call('POST', '/api/foreman/tasks/:taskId/runs', { params: { taskId: task.id }, body: {} })).body;
+    const queued = await call('POST', '/api/foreman/runs/:runId/stop', { params: { runId: run.id } });
+    expect(queued.statusCode).toBe(409);
+    await call('POST', '/api/foreman/runs/:runId/start', { params: { runId: run.id } });
+    const first = await call('POST', '/api/foreman/runs/:runId/stop', { params: { runId: run.id } });
+    expect(first.statusCode).toBe(200);
+    expect(first.body).toMatchObject({ stopped: true, run: { status: 'cancelled' } });
+    const second = await call('POST', '/api/foreman/runs/:runId/stop', { params: { runId: run.id } });
+    expect(second.body).toMatchObject({ stopped: false, run: { status: 'cancelled' } });
+    expect(interrupts).toEqual(['ses_1']);
   });
 });

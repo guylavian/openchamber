@@ -46,6 +46,8 @@ interface ForemanStoreActions {
   updateRun: (runId: string, patch: RunPatch) => Promise<Run>;
   /** Starts a queued run; the server makes its session. Safe to repeat. */
   startRun: (runId: string) => Promise<Run>;
+  /** Stops an active run; its session is interrupted by the server. Safe to repeat. */
+  stopRun: (runId: string) => Promise<Run>;
   /** Forget everything; the next `load` starts from nothing. */
   reset: () => void;
 }
@@ -136,6 +138,12 @@ export const createForemanStore = (api: ForemanApi) => {
 
     startRun: async (runId) => {
       const { run } = await api.startRun(runId);
+      set((state) => ({ runs: upsert(state.runs, run) }));
+      return run;
+    },
+
+    stopRun: async (runId) => {
+      const { run } = await api.stopRun(runId);
       set((state) => ({ runs: upsert(state.runs, run) }));
       return run;
     },

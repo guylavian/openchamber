@@ -113,6 +113,7 @@ describe('layout never touches Foreman data', () => {
       createRun: () => record('createRun', state.runs[0]),
       updateRun: () => record('updateRun', state.runs[0]),
       startRun: () => record('startRun', { run: state.runs[0], alreadyStarted: true }),
+      stopRun: () => record('stopRun', { run: state.runs[0], stopped: false }),
     };
     const foreman = createForemanStore(api);
     await foreman.getState().load();
@@ -129,6 +130,8 @@ describe('layout never touches Foreman data', () => {
 
     expect(calls).toEqual(['fetchState']);
     expect({ jobs: foreman.getState().jobs, tasks: foreman.getState().tasks, runs: foreman.getState().runs }).toEqual(before);
+    // Nothing about the layout stopped, restarted or touched the running run.
     expect(foreman.getState().runs[0]).toMatchObject({ status: 'running', execution: { id: 'ses_1' } });
+    expect(foreman.getState().runs[0].stoppedAt).toBeUndefined();
   });
 });

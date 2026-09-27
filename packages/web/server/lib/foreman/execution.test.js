@@ -13,12 +13,23 @@ const tempDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'foreman-exec-'));
  * directory, send queues a prompt. Records every call, so a test can count
  * sessions and read what each one was sent.
  */
-const createFakeSessionService = ({ failCreate = false, failSend = false, notQueued = false, createDelayMs = 0 } = {}) => {
+const createFakeSessionService = ({
+  failCreate = false, failSend = false, notQueued = false, createDelayMs = 0,
+  interruptResult = { interrupted: true, missing: false }, failInterrupt = false, interruptDelayMs = 0,
+} = {}) => {
   const sessions = [];
   const sends = [];
+  const interrupts = [];
   return {
     sessions,
     sends,
+    interrupts,
+    async interrupt(sessionId, { directory }) {
+      interrupts.push({ sessionId, directory });
+      if (interruptDelayMs) await new Promise((resolve) => setTimeout(resolve, interruptDelayMs));
+      if (failInterrupt) throw new Error('OpenCode did not answer');
+      return interruptResult;
+    },
     async create({ directory, title }) {
       if (createDelayMs) await new Promise((resolve) => setTimeout(resolve, createDelayMs));
       if (failCreate) throw new Error('OpenCode is not running');
@@ -354,5 +365,113 @@ describe('restart reconciliation', () => {
     const { service } = await afterRestart({ outcome: 'succeeded' });
     expect(service.sessions).toHaveLength(0);
     expect(service.sends).toHaveLength(0);
+  });
+});
+
+describe('stopping a run', () => {
+  const running = async (options) => {
+    const context = await setup(options);
+    await context.execution.startRun(context.run.id);
+    const current = async () => (await context.store.snapshot()).runs[0];
+    return { ...context, current };
+  };
+
+  it('interrupts exactly its own session, in its directory, and cancels the run', async () => {
+    const { execution, service, run, workspace, current } = await running();
+    const { run: stopped, stopped: didStop } = await execution.stopRun(run.id);
+    expect(didStop).toBe(true);
+    expect(service.interrupts).toEqual([{ sessionId: 'ses_1', directory: workspace }]);
+    expect(stopped.status).toBe('cancelled');
+    expect(stopped.stoppedAt).toBeGreaterThan(0);
+    expect(stopped.finishedAt).toBeGreaterThan(0);
+    expect((await current()).execution.id).toBe('ses_1');
+  });
+
+  it('a run waiting for the user stops too, and its attention goes', async () => {
+    const { execution, service, run, current } = await running();
+    execution.processPayload(event('permission.asked', { sessionID: 'ses_1', id: 'p1', action: 'edit' }));
+    await settle();
+    await execution.stopRun(run.id);
+    const stopped = await current();
+    expect(service.interrupts).toHaveLength(1);
+    expect(stopped.status).toBe('cancelled');
+    expect(stopped.attention).toBeUndefined();
+  });
+
+  it('two stops at once interrupt once; a later stop interrupts nothing', async () => {
+    const service = createFakeSessionService({ interruptDelayMs: 30 });
+    const { execution, run } = await running({ service });
+    const [a, b] = await Promise.all([execution.stopRun(run.id), execution.stopRun(run.id)]);
+    expect(service.interrupts).toHaveLength(1);
+    expect(a.run.status).toBe('cancelled');
+    expect(b.run.status).toBe('cancelled');
+    const again = await execution.stopRun(run.id);
+    expect(again.stopped).toBe(false);
+    expect(service.interrupts).toHaveLength(1);
+  });
+
+  it('a completed run is not interrupted and keeps its outcome', async () => {
+    const { execution, service, run, current } = await running();
+    execution.processPayload(event('session.idle', { sessionID: 'ses_1' }));
+    await settle();
+    const result = await execution.stopRun(run.id);
+    expect(result.stopped).toBe(false);
+    expect(service.interrupts).toHaveLength(0);
+    expect((await current()).status).toBe('completed');
+  });
+
+  it('a session OpenCode no longer has: cancelled, and the reference marked deleted', async () => {
+    const service = createFakeSessionService({ interruptResult: { interrupted: false, missing: true } });
+    const { execution, run, current } = await running({ service });
+    await execution.stopRun(run.id);
+    const stopped = await current();
+    expect(stopped.status).toBe('cancelled');
+    expect(stopped.execution.deletedAt).toBeGreaterThan(0);
+  });
+
+  it('a session already known deleted is cancelled without asking OpenCode', async () => {
+    const { execution, service, store, run, current } = await running();
+    await store.applyExecutionChange(run.id, (r) => ({ execution: { ...r.execution, deletedAt: 5 } }));
+    await execution.stopRun(run.id);
+    expect(service.interrupts).toHaveLength(0);
+    expect((await current()).status).toBe('cancelled');
+  });
+
+  it('when the interrupt fails the run is not claimed stopped', async () => {
+    const service = createFakeSessionService({ failInterrupt: true });
+    const { execution, run, current } = await running({ service });
+    await expect(execution.stopRun(run.id)).rejects.toMatchObject({ code: 'abort_failed' });
+    const after = await current();
+    expect(after.status).toBe('running');
+    expect(after.stoppedAt).toBeUndefined();
+    // And a retry can still stop it.
+    service.interrupt = async () => ({ interrupted: true, missing: false });
+    expect((await execution.stopRun(run.id)).run.status).toBe('cancelled');
+  });
+
+  it('a run that never started has nothing to stop', async () => {
+    const { execution, run } = await setup();
+    await expect(execution.stopRun(run.id)).rejects.toMatchObject({ code: 'conflict' });
+  });
+
+  it('a stopped run stays cancelled whatever its session does next', async () => {
+    const { execution, run, current } = await running();
+    await execution.stopRun(run.id);
+    execution.processPayload(event('session.status', { sessionID: 'ses_1', status: { type: 'busy' } }));
+    execution.processPayload(event('session.idle', { sessionID: 'ses_1' }));
+    await settle();
+    expect((await current()).status).toBe('cancelled');
+  });
+
+  it('after a restart the run is still cancelled and nothing is started again', async () => {
+    const { execution, service, run, make, current } = await running();
+    await execution.stopRun(run.id);
+    const restarted = make();
+    await restarted.reconcile();
+    const again = await restarted.startRun(run.id);
+    expect(again.alreadyStarted).toBe(true);
+    expect((await current()).status).toBe('cancelled');
+    expect(service.sessions).toHaveLength(1);
+    expect(service.sends).toHaveLength(1);
   });
 });
