@@ -140,8 +140,12 @@ not upgraded, and why:
 |---|---|---|---|---|
 | `node-addon-api` | root, exact `7.1.1` | Held at 7 (8.x is current) | `node-pty` 1.2.0-beta.15 declares `node-addon-api ^7.1.0`, and the Windows native rebuild (`packages/electron/scripts/rebuild-native.mjs`) copies the root copy into `node-pty`, so 8 would break that declared range. | `node-pty` moves to `node-addon-api` 8. |
 | `@types/vscode` | `packages/vscode`, `^1.85.0` | Range held at the engine floor (resolves to the latest 1.x) | `vsce` refuses to package when the `@types/vscode` range exceeds `engines.vscode`, and higher typings would admit APIs older supported VS Code lacks. | `engines.vscode` is raised. |
-| `@xenova/transformers` | root and `packages/ui`, `^2.17.2` | Decision pending; not a routine bump | Nothing imports it (the local WASM speech-to-text that used it was removed; only a module declaration remains), no bundle and no packaged app contains it, and it is deprecated in favour of `@huggingface/transformers`. It brings `protobufjs` 6 and `sharp` 0.32, the 13 `bun audit` advisories left, as install-time exposure only. Replacing or removing it is a product decision. | Decided: remove, or migrate a real use to `@huggingface/transformers`. |
 | `cross-env` | root, `packages/ui`, `packages/web`, `^10.1.0` | Current, unused | Nothing invokes it. | Dependency cleanup. |
+
+`@xenova/transformers` was removed: nothing imported it after the local WASM
+speech-to-text was dropped, and it brought `protobufjs` 6, `sharp` 0.32 and
+`onnxruntime` 1.14 into the install (the last `bun audit` advisories). If local
+speech-to-text returns, start from `@huggingface/transformers`.
 
 `uuid` is overridden to `11.1.1` (root `overrides`): its only consumer is
 `xcode` under `@capacitor/cli`, whose latest release still asks for
