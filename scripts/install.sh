@@ -6,7 +6,7 @@ set -euo pipefail
 
 PACKAGE_NAME="@openchamber/web"
 BIN_NAME="openchamber"
-MIN_NODE_VERSION=22
+MIN_NODE_VERSION=24
 
 # Colors
 RED='\033[0;31m'

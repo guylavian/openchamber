@@ -23,6 +23,11 @@ COPY . .
 RUN bun run --cwd packages/sdk build
 RUN bun run build:web
 
+# Node.js 24 LTS, the supported baseline, on the same Debian release as the Bun
+# base (trixie). Debian's own nodejs package is the 20.x line, below the
+# supported floor.
+FROM node:24.21.0-trixie-slim AS node
+
 FROM oven/bun:1.4.2 AS runtime
 WORKDIR /home/openchamber
 
@@ -31,11 +36,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   ca-certificates \
   git \
   less \
-  nodejs \
-  npm \
   openssh-client \
   python3 \
   && rm -rf /var/lib/apt/lists/*
+
+# Node.js 24 LTS from the official image (see the `node` stage above).
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
+RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+  && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
+  && node --version && npm --version
 
 # Replace the base image's 'bun' user (UID 1000) with 'openchamber'
 # so mounted volumes with 1000:1000 ownership work correctly.
