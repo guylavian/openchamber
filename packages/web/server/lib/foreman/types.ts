@@ -13,3 +13,11 @@ export const RUN_STATUSES = ['queued', 'running', 'waiting_for_user', 'failed', 
 export type JobStatus = (typeof JOB_STATUSES)[number];
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 export type RunStatus = (typeof RUN_STATUSES)[number];
+
+export type AttentionType = 'permission' | 'question' | 'conflict';
+
+/** Why a run needs a person. */
+export interface Attention {
+  type: AttentionType;
+  message?: string;
+}

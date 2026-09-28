@@ -33,20 +33,55 @@
 
 import { z } from 'zod';
 
+import type { Attention } from './types.js';
+
 const textField = z.string().trim().catch('');
-const trimmed = (value) => textField.parse(value);
+const trimmed = (value: unknown): string => textField.parse(value);
+
+// What the readers hand back, as this module has always read them. The
+// shapes describe that contract; nothing here checks them at run time.
+type Maybe<Value> = Value | null | undefined;
+type Awaitable<Value> = Value | Promise<Value>;
+interface PendingRequests {
+  permissions?: Maybe<Iterable<Maybe<{ message?: unknown; action?: unknown }>>>;
+  forms?: Maybe<Iterable<Maybe<{ title?: unknown }>>>;
+}
+interface SessionReading {
+  model?: Maybe<{ providerID?: unknown }>;
+}
+interface GatewayReading {
+  blockers?: Maybe<ArrayLike<unknown>>;
+}
+interface SessionLocation {
+  sessionId: string;
+  directory?: string;
+}
+
+export type ExecutionTruth =
+  // `attention` is always present; it holds the first pending request, which
+  // the checker cannot prove exists behind `waiting.length > 0`.
+  | { verdict: 'blocked'; source: string; resolvable: boolean; attention: Attention | undefined; reason?: string | undefined }
+  | { verdict: 'idle'; source: string; resolvable: true }
+  | { verdict: 'unknown'; source: string; resolvable: false; reason: string };
+
+export interface ExecutionTruthReaders {
+  readPendingRequests?: Maybe<(location: { sessionId: string; directory: string }) => Awaitable<Maybe<PendingRequests>>>;
+  readSession?: Maybe<(location: { sessionId: string; directory: string }) => Awaitable<Maybe<SessionReading>>>;
+  readGatewayBlockers?: Maybe<(location: { sessionId: string; directory: string; providerId: string; session: SessionReading | undefined }) => Awaitable<Maybe<GatewayReading>>>;
+  gatewayProviders?: readonly string[];
+}
 
 /** Providers whose sessions carry work in a process OpenChamber does not own. */
-export const GATEWAY_PROVIDER_IDS = ['claude-code'];
+export const GATEWAY_PROVIDER_IDS: string[] = ['claude-code'];
 
 /** How each gateway is named in what a person reads. */
-const GATEWAY_LABELS = { 'claude-code': 'Claude Code' };
+const GATEWAY_LABELS: Partial<Record<string, string>> = { 'claude-code': 'Claude Code' };
 
-const gatewayLabel = (providerId) => GATEWAY_LABELS[providerId] || providerId;
+const gatewayLabel = (providerId: string): string => GATEWAY_LABELS[providerId] || providerId;
 
 /** Readers that throw → undefined; undefined carries that out of the layering. */
-const read = async (reader) => {
-  let value;
+const read = async <Value>(reader: () => Awaitable<Value>): Promise<NonNullable<Value> | undefined> => {
+  let value: Value;
   try {
     value = await reader();
   } catch {
@@ -56,8 +91,8 @@ const read = async (reader) => {
 };
 
 /** OpenCode's pending requests, in the vocabulary a run's attention speaks. */
-const pendingAttention = (requests) => {
-  const list = [];
+const pendingAttention = (requests: PendingRequests): Attention[] => {
+  const list: Attention[] = [];
   for (const permission of requests.permissions ?? []) {
     const message = trimmed(permission?.message) || trimmed(permission?.action);
     list.push({ type: 'permission', ...(message ? { message } : {}) });
@@ -70,15 +105,15 @@ const pendingAttention = (requests) => {
 };
 
 /** Map OpenCode pending requests → verdict, or idle when none waiting. */
-const mapOpenCodeRequests = (requests) => {
+const mapOpenCodeRequests = (requests: PendingRequests): ExecutionTruth => {
   const waiting = pendingAttention(requests);
   if (waiting.length > 0) return { verdict: 'blocked', source: 'opencode', resolvable: true, attention: waiting[0] };
   return { verdict: 'idle', source: 'opencode', resolvable: true };
 };
 
-const blocked = (source, attention, resolvable, reason) => ({ verdict: 'blocked', source, resolvable, attention, reason });
-const idle = (source) => ({ verdict: 'idle', source, resolvable: true });
-const unknown = (source, reason) => ({ verdict: 'unknown', source, resolvable: false, reason });
+const blocked = (source: string, attention: Attention, resolvable: boolean, reason?: string): ExecutionTruth => ({ verdict: 'blocked', source, resolvable, attention, reason });
+const idle = (source: string): ExecutionTruth => ({ verdict: 'idle', source, resolvable: true });
+const unknown = (source: string, reason: string): ExecutionTruth => ({ verdict: 'unknown', source, resolvable: false, reason });
 
 /**
  * Decides what a session is really doing, reading each layer through its owner.
@@ -91,8 +126,8 @@ export const createExecutionTruthProbe = ({
   readSession,
   readGatewayBlockers,
   gatewayProviders = GATEWAY_PROVIDER_IDS,
-}) => {
-  const readExecutionTruth = async ({ sessionId, directory = '' }) => {
+}: ExecutionTruthReaders): { readExecutionTruth: (location: SessionLocation) => Promise<ExecutionTruth> } => {
+  const readExecutionTruth = async ({ sessionId, directory = '' }: SessionLocation): Promise<ExecutionTruth> => {
     // 1. OpenCode's own requests — a person can settle these, outranking underneath.
     const requests = await read(() => readPendingRequests ? readPendingRequests({ sessionId, directory }) : undefined);
     if (requests !== undefined) {

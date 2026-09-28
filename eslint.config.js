@@ -24,9 +24,13 @@ export default tseslint.config([
     // Server TypeScript: typed lint, zero `any` and nothing that defeats the
     // checker. No `any` (explicit or flowing in), no type assertions other than
     // `as const`, no non-null assertions, no @ts- directives, and no
-    // eslint-disable comments to switch any of it off. Data from outside
-    // (JSON, HTTP bodies, events) enters as `unknown` and is narrowed by Zod or
-    // type guards. Uses the TypeScript 6 API (see docs/platform-toolchain.md).
+    // eslint-disable comments to switch any of it off. Modules converted from
+    // JavaScript keep its runtime behaviour exactly, so the two rules that can
+    // only be satisfied by changing it are off: no-unnecessary-condition (it
+    // would delete defensive `?.`, `??` and branches the types call unreachable)
+    // and restrict-template-expressions (it would replace `${value}` with
+    // `${String(value)}`, which differs for a symbol). Uses the TypeScript 6 API
+    // (see docs/platform-toolchain.md).
     // Patterns are relative to the directory ESLint runs in: the repo root, or
     // packages/web when its `lint` script passes --config.
     files: ['**/packages/web/server/**/*.ts', 'server/**/*.ts'],
@@ -52,6 +56,8 @@ export default tseslint.config([
       }],
       '@typescript-eslint/consistent-type-assertions': ['error', { assertionStyle: 'never' }],
       '@typescript-eslint/no-non-null-assertion': 'error',
+      '@typescript-eslint/no-unnecessary-condition': 'off',
+      '@typescript-eslint/restrict-template-expressions': 'off',
     },
   },
 ])
