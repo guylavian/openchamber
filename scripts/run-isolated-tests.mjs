@@ -17,16 +17,17 @@
 
 import { spawn } from 'node:child_process';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { resolveBunExecutable } from './lib/bun-executable.mjs';
 
-const TEST_FILE = /\.(test|spec)\.(js|cjs|mjs|jsx|ts|tsx)$/;
+const TEST_FILE = /\.(test|spec)\.(js|cjs|mjs|jsx|ts|tsx|mts|cts)$/;
 const SKIP_DIRS = new Set(['node_modules', 'dist', 'dist-bundle', 'build', 'out', '.git', 'ios', 'android']);
 const MAX_PARALLEL = 4;
-const bunExecutable = resolveBunExecutable();
 
-const collect = (root, found = []) => {
+export const collect = (root, found = []) => {
   for (const entry of readdirSync(root, { withFileTypes: true })) {
     if (entry.name.startsWith('.') && entry.name !== '.') continue;
     const full = path.join(root, entry.name);
@@ -39,19 +40,44 @@ const collect = (root, found = []) => {
   return found;
 };
 
-/** `null` when the file names no known runner, so it is reported instead of skipped silently. */
+const VSCODE = /(?:^|[\\/])packages[\\/]vscode[\\/]/;
+const require = createRequire(import.meta.url);
+
+/** Every relative import or require names a file extension, as ESM JavaScript requires. Parsed, so strings that look like imports do not count. */
+const hasExplicitExtensions = (source) => {
+  const ts = require('typescript');
+  return ts.preProcessFile(source, true, true).importedFiles
+    .map((imported) => imported.fileName)
+    .filter((specifier) => specifier.startsWith('./') || specifier.startsWith('../'))
+    .every((specifier) => /\.[cm]?[jt]sx?$|\.json$/.test(specifier));
+};
+
+/**
+ * The runner for a test file, or `null` when it names none, so it is reported
+ * instead of skipped silently.
+ *
+ * TypeScript `node:test` files whose relative imports all name an extension
+ * (every file converted from JavaScript) run on Node, as they did as
+ * JavaScript; Node strips the types and resolves those specifiers exactly as
+ * it does in production. Other TypeScript goes to Bun, which implements
+ * `node:test`: Node cannot resolve the extensionless local specifiers older
+ * TypeScript tests use (`./sseProxy`), so it never ran them at all. The VS Code
+ * extension's TypeScript tests (a CommonJS package) and `.tsx` (Node does not
+ * strip JSX) stay on Bun too.
+ */
+export const runnerFor = (file, source) => {
+  const isTypeScript = /\.(tsx?|mts|cts)$/.test(file);
+  const importsBunTest = /(?:from\s+|require\(\s*)['"]bun:test['"]/.test(source);
+  const importsNodeTest = /(?:from\s+|require\(\s*)['"]node:test['"]/.test(source);
+  if (importsBunTest) return 'bun';
+  if (isTypeScript) return importsNodeTest && !file.endsWith('.tsx') && !VSCODE.test(file) && hasExplicitExtensions(source) ? 'node' : 'bun';
+  return importsNodeTest ? 'node' : null;
+};
+
 const resolveCommand = (file) => {
-  const source = readFileSync(file, 'utf8');
-  const isTypeScript = /\.tsx?$/.test(file);
-  // TypeScript goes to Bun even when the file imports `node:test`, which Bun
-  // implements. Node's ESM loader cannot resolve the extensionless local
-  // specifiers these files use (`./sseProxy`), so it never ran them at all.
-  if (isTypeScript || /(?:from\s+|require\(\s*)['"]bun:test['"]/.test(source)) {
-    return { label: 'bun', command: bunExecutable, args: ['test', file] };
-  }
-  if (/(?:from\s+|require\(\s*)['"]node:test['"]/.test(source)) {
-    return { label: 'node', command: 'node', args: ['--test', file] };
-  }
+  const runner = runnerFor(file, readFileSync(file, 'utf8'));
+  if (runner === 'bun') return { label: 'bun', command: resolveBunExecutable(), args: ['test', file] };
+  if (runner === 'node') return { label: 'node', command: 'node', args: ['--test', file] };
   return null;
 };
 
@@ -110,61 +136,65 @@ const run = ({ command, args }) => new Promise((resolve) => {
   });
 });
 
-const roots = process.argv.slice(2);
-if (roots.length === 0) {
-  console.error('run-isolated-tests: expected at least one root directory');
-  process.exit(1);
-}
-
-const files = [];
-for (const root of roots) {
-  const resolved = path.resolve(root);
-  if (!statSync(resolved).isDirectory()) {
-    console.error(`run-isolated-tests: not a directory: ${root}`);
+const main = async () => {
+  const roots = process.argv.slice(2);
+  if (roots.length === 0) {
+    console.error('run-isolated-tests: expected at least one root directory');
     process.exit(1);
   }
-  files.push(...collect(resolved));
-}
-files.sort();
 
-const failures = [];
-const unknown = [];
-let passed = 0;
-let next = 0;
-
-const worker = async () => {
-  while (next < files.length) {
-    const file = files[next++];
-    const relative = path.relative(process.cwd(), file);
-    const resolved = resolveCommand(file);
-    if (!resolved) {
-      unknown.push(relative);
-      continue;
+  const files = [];
+  for (const root of roots) {
+    const resolved = path.resolve(root);
+    if (!statSync(resolved).isDirectory()) {
+      console.error(`run-isolated-tests: not a directory: ${root}`);
+      process.exit(1);
     }
-    const { code, output, dropped, timedOut } = await run(resolved);
-    if (dropped > 0) console.error(`NOISY (${resolved.label}) ${relative}: ${dropped} characters of output dropped`);
-    if (timedOut) {
-      failures.push({ relative, label: resolved.label, output: `${output}\n[killed after ${FILE_TIMEOUT_MS / 1000}s]` });
-      console.error(`TIMEOUT (${resolved.label}) ${relative}`);
-    } else if (code === 0) {
-      passed += 1;
-    } else {
-      failures.push({ relative, label: resolved.label, output });
-      console.error(`FAIL (${resolved.label}) ${relative}`);
-    }
+    files.push(...collect(resolved));
   }
+  files.sort();
+
+  const failures = [];
+  const unknown = [];
+  let passed = 0;
+  let next = 0;
+
+  const worker = async () => {
+    while (next < files.length) {
+      const file = files[next++];
+      const relative = path.relative(process.cwd(), file);
+      const resolved = resolveCommand(file);
+      if (!resolved) {
+        unknown.push(relative);
+        continue;
+      }
+      const { code, output, dropped, timedOut } = await run(resolved);
+      if (dropped > 0) console.error(`NOISY (${resolved.label}) ${relative}: ${dropped} characters of output dropped`);
+      if (timedOut) {
+        failures.push({ relative, label: resolved.label, output: `${output}\n[killed after ${FILE_TIMEOUT_MS / 1000}s]` });
+        console.error(`TIMEOUT (${resolved.label}) ${relative}`);
+      } else if (code === 0) {
+        passed += 1;
+      } else {
+        failures.push({ relative, label: resolved.label, output });
+        console.error(`FAIL (${resolved.label}) ${relative}`);
+      }
+    }
+  };
+
+  await Promise.all(Array.from({ length: Math.min(MAX_PARALLEL, files.length) }, worker));
+
+  for (const failure of failures) {
+    console.error(`\n===== ${failure.relative} (${failure.label}) =====\n${failure.output}`);
+  }
+
+  for (const file of unknown) {
+    console.error(`UNKNOWN RUNNER ${file}: imports neither bun:test nor node:test`);
+  }
+
+  console.log(`\n${passed}/${files.length} test files passed${failures.length ? `, ${failures.length} failed` : ''}${unknown.length ? `, ${unknown.length} with no known runner` : ''}`);
+
+  process.exit(failures.length > 0 || unknown.length > 0 ? 1 : 0);
 };
 
-await Promise.all(Array.from({ length: Math.min(MAX_PARALLEL, files.length) }, worker));
-
-for (const failure of failures) {
-  console.error(`\n===== ${failure.relative} (${failure.label}) =====\n${failure.output}`);
-}
-
-for (const file of unknown) {
-  console.error(`UNKNOWN RUNNER ${file}: imports neither bun:test nor node:test`);
-}
-
-console.log(`\n${passed}/${files.length} test files passed${failures.length ? `, ${failures.length} failed` : ''}${unknown.length ? `, ${unknown.length} with no known runner` : ''}`);
-
-process.exit(failures.length > 0 || unknown.length > 0 ? 1 : 0);
+if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();
