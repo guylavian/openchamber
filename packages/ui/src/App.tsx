@@ -79,6 +79,20 @@ const OnboardingScreen = lazyWithChunkRecovery(() =>
   import('@/components/onboarding/OnboardingScreen').then((m) => ({ default: m.OnboardingScreen })),
 );
 
+// Development-only RTL / BiDi inspection fixture, opened with `?rtlFixture=1`.
+// Both the flag and the component are behind `import.meta.env.DEV`, which the
+// bundler replaces with `false` for a production build — the branch and its
+// dynamic import are dropped, so the fixture never reaches a shipped bundle.
+const RTL_FIXTURE_PARAM = 'rtlFixture';
+const RtlTextFixture = import.meta.env.DEV
+  ? lazyWithChunkRecovery(() =>
+      import('@/components/dev/RtlTextFixture').then((m) => ({ default: m.RtlTextFixture })),
+    )
+  : null;
+
+const isRtlFixtureRequested = (search: string): boolean =>
+  import.meta.env.DEV && new URLSearchParams(search).get(RTL_FIXTURE_PARAM) === '1';
+
 const AboutDialogWrapper: React.FC = () => {
   const isAboutDialogOpen = useUIStore((s) => s.isAboutDialogOpen);
   const setAboutDialogOpen = useUIStore((s) => s.setAboutDialogOpen);
@@ -288,6 +302,9 @@ function App({ apis }: AppProps) {
   const setDirectory = useDirectoryStore((state) => state.setDirectory);
   const isSwitchingDirectory = useDirectoryStore((state) => state.isSwitchingDirectory);
   const [showMemoryDebug, setShowMemoryDebug] = React.useState(false);
+  // Read once at mount: the router normalises the address bar, so a later read
+  // of `window.location.search` would no longer carry the param.
+  const [rtlFixtureActive] = React.useState(() => isRtlFixtureRequested(window.location.search));
   const refreshGitHubAuthStatus = useGitHubAuthStore((state) => state.refreshStatus);
   const refreshLinearAuthStatus = useLinearAuthStore((state) => state.refreshStatus);
   const [isVSCodeRuntime, setIsVSCodeRuntime] = React.useState<boolean>(() => apis.runtime.isVSCode);
@@ -986,7 +1003,13 @@ function App({ apis }: AppProps) {
                   <SyncAppEffects embeddedBackgroundWorkEnabled={embeddedBackgroundWorkEnabled} />
                   <OpenCodeUpdateToast />
                   <ProjectConfigErrorToast />
-                  <MainLayout />
+                  {rtlFixtureActive && RtlTextFixture ? (
+                    <React.Suspense fallback={<div className="h-full" />}>
+                      <RtlTextFixture />
+                    </React.Suspense>
+                  ) : (
+                    <MainLayout />
+                  )}
                   <AppStartupOverlay ready={isInitialized && (!isDesktopRuntime || (bootOutcomeKnown && bootViewIsMain))} />
                   <Toaster />
                   <AppLinkConfirmDialog />

@@ -694,6 +694,34 @@ const MERMAID_RENDER_CACHE = new Map<string, MermaidRender>();
 const MERMAID_RENDER_CACHE_MAX = 100;
 const MARKDOWN_DECORATION_ID_ATTR = 'data-md-decoration-id';
 
+/**
+ * The wrapper the renderer puts around one rendered markdown block. Every block
+ * — first paint, cached paint, async paint, replacement — is created here so
+ * the two attributes that make the pipeline work cannot drift apart.
+ *
+ * `display: contents` keeps the wrapper out of layout, so the block's own
+ * top-level element is the only box; `dir` is inherited by that element.
+ *
+ * `dir="auto"` is what makes mixed-direction content work, and it is scoped to
+ * one block on purpose. The browser resolves it from the first strong character
+ * of this block alone, so a Hebrew paragraph, heading, or list reads
+ * right-to-left while an English block in the same message stays
+ * left-to-right, and the surrounding application chrome never flips.
+ *
+ * The attribute deliberately lives on the wrapper rather than on the tags
+ * marked emits. A container in the auto state ignores the text of descendants
+ * that are themselves in the auto state, so stamping `dir="auto"` on `<p>` and
+ * `<ol>` as well would leave a loose list — whose items are wrapped in `<p>` —
+ * resolving to LTR. One attribute per block keeps the mechanism in one place.
+ */
+const createMarkdownBlockElement = (): HTMLDivElement => {
+  const element = document.createElement('div');
+  element.setAttribute('data-md-block', '');
+  element.setAttribute('dir', 'auto');
+  element.style.display = 'contents';
+  return element;
+};
+
 // True when the container already holds exactly these settled blocks with the
 // current decoration. The first paint of a remounted message is served from
 // the block cache; when that paint is already final, the async render would
@@ -957,9 +985,7 @@ const useMorphdomMarkdown = ({
       if (cachedBlocks) {
         let hasMermaidBlock = false;
         for (const cachedBlock of cachedBlocks) {
-          const block = document.createElement('div');
-          block.setAttribute('data-md-block', '');
-          block.style.display = 'contents';
+          const block = createMarkdownBlockElement();
           block.innerHTML = cachedBlock.html;
           decorateMarkdown(block, ctx);
           block.setAttribute('data-md-id', cachedBlock.id);
@@ -972,9 +998,7 @@ const useMorphdomMarkdown = ({
         if (!streaming && !releaseRevealHoldRef.current) {
           releaseRevealHoldRef.current = revealGate?.hold() ?? null;
         }
-        const block = document.createElement('div');
-        block.setAttribute('data-md-block', '');
-        block.style.display = 'contents';
+        const block = createMarkdownBlockElement();
         block.innerHTML = renderMarkdownSync(text, imageMode);
         decorateMarkdown(block, ctx);
         block.setAttribute(MARKDOWN_DECORATION_ID_ATTR, decorationId);
@@ -1033,9 +1057,7 @@ const useMorphdomMarkdown = ({
         let el = existing[index];
         let isNewBlock = false;
         if (!el) {
-          el = document.createElement('div');
-          el.setAttribute('data-md-block', '');
-          el.style.display = 'contents';
+          el = createMarkdownBlockElement();
           target.appendChild(el);
           isNewBlock = true;
         }
@@ -1046,9 +1068,7 @@ const useMorphdomMarkdown = ({
               mermaidViewerRef.current?.cleanup();
               mermaidViewerRef.current = null;
             }
-            const replacement = document.createElement('div');
-            replacement.setAttribute('data-md-block', '');
-            replacement.style.display = 'contents';
+            const replacement = createMarkdownBlockElement();
             replacement.innerHTML = block.html;
             decorateMarkdown(replacement, ctx);
             replacement.setAttribute('data-md-id', block.id);

@@ -279,6 +279,13 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
                     isCollapsed && "line-clamp-2",
                     collapsibleUserMessages && isTruncated && !effectiveExpanded && "cursor-pointer"
                 )}
+                // `auto` lets the browser pick the direction from the message's
+                // own first strong character, so a Hebrew message aligns and
+                // reads right-to-left inside the otherwise LTR chat surface
+                // while an English message is untouched. Set here as well as on
+                // the markdown blocks because this branch is the plain-text
+                // path and produces no blocks of its own.
+                dir="auto"
                 ref={textRef}
                 onClick={handleClick}
             >

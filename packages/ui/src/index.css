@@ -1209,6 +1209,33 @@ html:not(.dark) .chat-scroll {
   font-size: var(--text-code);
 }
 
+/* Content direction. Markdown blocks are stamped `dir="auto"` — on the block
+   wrapper by the renderer, and on each top-level element by the decoration
+   pass — so a Hebrew paragraph, heading, or list reads right-to-left and an
+   English one stays left-to-right, without the application chrome ever
+   flipping. Code is the one surface that opts out: a fence, a command, or a
+   monospaced identifier is read left-to-right by definition, and inheriting the
+   block's RTL base direction would also drag the line-number gutter to the
+   wrong edge. */
+.markdown-content pre,
+.markdown-content [data-md-code-body] {
+  direction: ltr;
+  text-align: left;
+}
+
+/* Inline code — which is also what a recognised file path renders as, so this
+   covers the two markup paths the app has for a technical token — is an LTR
+   island inside RTL text. `isolate` is what makes it an island: without it the
+   chip's leading and trailing punctuation are neutrals that the surrounding
+   Hebrew sentence resolves, so a token like `../shared/types.ts` or
+   `(after 30s)` renders with its characters in reversed visual order.
+   `direction: ltr` then gives the isolated run a base direction, so the token
+   reads in logical order. */
+.markdown-content code[data-markdown="inline-code"] {
+  unicode-bidi: isolate;
+  direction: ltr;
+}
+
 /* Inline code sits inside a sentence: the theme's code colour over its own
    quiet chip. The colour keeps the theme's value with a touch of transparency,
    and the chip fades into the background further, so neither shouts like the
@@ -1262,10 +1289,12 @@ html:not(.dark) .chat-scroll {
   color: var(--primary);
 }
 
-/* Markdown blockquote - use theme colors */
+/* Markdown blockquote - use theme colors.
+   Inline (logical) sides so the bar follows the quote's own direction: on the
+   left in an English quote, on the right in a Hebrew one. */
 .markdown-content blockquote {
-  border-left: 2px solid var(--markdown-blockquote-border, var(--border));
-  padding-left: 0.8rem;
+  border-inline-start: 2px solid var(--markdown-blockquote-border, var(--border));
+  padding-inline-start: 0.8rem;
   color: var(--markdown-blockquote, var(--muted-foreground));
 }
 

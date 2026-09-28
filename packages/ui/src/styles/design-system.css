@@ -198,10 +198,12 @@
 
   /* Restore list styling inside markdown content - override Tailwind preflight.
      Native markers with a compact gutter; nesting cycles the marker shape so
-     depth stays readable without extra indentation. */
+     depth stays readable without extra indentation. The indent is a logical
+     side, so markers and text sit on the inline end of the list — right in a
+     Hebrew list, left in an English one. */
   .markdown-content ul,
   .markdown-content ol {
-    padding-left: 1.25rem !important;
+    padding-inline-start: 1.25rem !important;
   }
 
   .markdown-content ul {
@@ -250,8 +252,12 @@
     list-style-type: none !important;
   }
 
+  /* The checkbox hangs in the marker gutter, so the negative margin points at
+     the inline end of the list and follows its direction. */
   .markdown-content li > input[type="checkbox"]:first-child {
-    margin: 0 0.35em 0.15em -1.25rem;
+    margin-block: 0 0.15em;
+    margin-inline-end: 0.35em;
+    margin-inline-start: -1.25rem;
     vertical-align: middle;
   }
 

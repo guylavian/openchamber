@@ -35,7 +35,10 @@ const MobileMarkdownFallback = (props: { content?: unknown; className?: unknown;
   }
 
   return (
-    <div className={cn('break-words w-full min-w-0 whitespace-pre-wrap', fallbackContentClassName(props.variant), typeof props.className === 'string' ? props.className : undefined)}>
+    // Same per-content direction rule as the rendered blocks: this fallback
+    // shows the raw source until the lazy module arrives, so a Hebrew message
+    // must not read left-to-right for the frames it is on screen.
+    <div dir="auto" className={cn('break-words w-full min-w-0 whitespace-pre-wrap', fallbackContentClassName(props.variant), typeof props.className === 'string' ? props.className : undefined)}>
       {props.content}
     </div>
   );

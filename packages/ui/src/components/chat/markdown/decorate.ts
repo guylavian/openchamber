@@ -652,6 +652,39 @@ export const decorateMarkdown = (root: HTMLElement, ctx: DecorateContext): void 
   decorateCodeBlocks(root, ctx);
   decorateTables(root, ctx.labels);
   decorateLinks(root, ctx);
+  decorateBlockDirection(root);
+};
+
+/**
+ * Stamp `dir="auto"` on the block's top-level elements.
+ *
+ * The renderer already stamps the block wrapper, but a settled message is a
+ * single block, so the wrapper alone would resolve the whole message from its
+ * first strong character: a reply that opens with a Latin token such as
+ * `Task` would lay out a mostly-Hebrew paragraph left-aligned. Tagging the
+ * top-level elements gives each paragraph, heading, list, and quote its own
+ * resolution, which is the granularity authors actually switch language at.
+ *
+ * Only direct children are tagged, and only when they carry no `dir` yet.
+ * Nesting is the reason for both. A container in the auto state ignores the
+ * text of descendants that are themselves in the auto state, so also tagging
+ * the `<p>` inside a blockquote or a loose list item would leave the quote, or
+ * the list, with no strong characters of its own and resolving to LTR. Leaving
+ * nested elements untagged keeps their text in the parent's resolution.
+ *
+ * Code is skipped because CSS already forces fences left-to-right, and a
+ * Hebrew comment inside one must not flip the surrounding chrome.
+ *
+ * Runs last so the code and mermaid wrappers it skips already exist, and before
+ * the result reaches morphdom so the attribute is part of the DOM morphdom
+ * compares rather than a post-insert mutation.
+ */
+const decorateBlockDirection = (root: HTMLElement): void => {
+  for (const child of root.children) {
+    if (child.hasAttribute('dir')) continue;
+    if (child.tagName === 'PRE' || child.querySelector('pre')) continue;
+    child.setAttribute('dir', 'auto');
+  }
 };
 
 // ---------------------------------------------------------------------------
