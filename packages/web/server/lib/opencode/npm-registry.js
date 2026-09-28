@@ -1,8 +1,7 @@
 import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
 
 import { resolveNpmRegistryRequest } from './npm-registry-config.js';
+import { PACKAGE_JSON_PATH } from '../package-root.js';
 
 const NPM_CACHE_TTL_MS = 3_600_000;
 const NPM_FETCH_TIMEOUT_MS = 5_000;
@@ -33,9 +32,10 @@ const _inFlight = new Map();
 /** @type {string | null} */
 let _userAgent = null;
 
+// The @openchamber/web manifest. Counting `..` from here reached the monorepo
+// root in a checkout and the consumer's own package.json once installed.
 function _getPackageJsonPath() {
-  const __dirname = path.dirname(fileURLToPath(import.meta.url));
-  return path.resolve(__dirname, '..', '..', '..', '..', '..', 'package.json');
+  return PACKAGE_JSON_PATH;
 }
 
 function _getUserAgent() {

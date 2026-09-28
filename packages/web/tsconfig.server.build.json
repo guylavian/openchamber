@@ -1,0 +1,19 @@
+{
+  // Emits dist-node/{server,bin}: the portable JavaScript every shipping target
+  // runs (npm, CLI, Electron, Docker). Run through `bun run build:server`, which
+  // also copies the non-code assets and verifies the output.
+  "extends": "./tsconfig.server.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "noEmitOnError": true,
+    "rootDir": ".",
+    "outDir": "dist-node",
+    "declaration": false,
+    "sourceMap": false,
+    "newLine": "lf"
+  },
+  "include": ["server", "bin"],
+  // Copied verbatim by scripts/build-server.mjs instead: hand-written .d.ts
+  // sidecars, and .cjs programs that are read as text and run elsewhere.
+  "exclude": ["server/built-in-extensions", "**/*.test.*", "**/*.d.ts", "**/*.cjs"]
+}

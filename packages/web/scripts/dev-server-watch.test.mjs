@@ -52,7 +52,7 @@ describe('createDevServerWatchCommand', () => {
       '--watch',
       'server',
       '--ext',
-      'js',
+      'js,ts,json',
       '--exec',
       'bun server/index.js --port 4200',
     ]);

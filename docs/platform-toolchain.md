@@ -44,6 +44,7 @@ What still needs the 6.0 API, and why:
 No repository script imports `typescript`. Anything new that needs to parse or
 inspect TypeScript should use `tsc` output, Bun's `Bun.Transpiler`, or the 6.0
 API through `require('typescript')`; never pin a second compiler version.
+TypeScript 7 exports an `unstable/*` API; nothing here depends on it.
 
 ### What moving to TypeScript 7 changed
 
@@ -65,3 +66,38 @@ TypeScript 7.1+, and confirm `bun run lint` still runs typed rules.
 `packages/vscode/webview/tsconfig.json` is an editor-only config (no script
 type-checks it); it reported 10 errors under TypeScript 5.9 already and still
 does.
+
+## Server build
+
+The server (`packages/web/server`) and CLI (`packages/web/bin`) are written in
+JavaScript and TypeScript side by side and shipped as JavaScript only.
+
+```
+server/**, bin/**  (.js and .ts, `.js` import specifiers)
+        │  bun run build:server  (packages/web/scripts/build-server.mjs)
+        ▼
+dist-node/server/**, dist-node/bin/**  (portable ESM; runs on Node 24 and Bun)
+```
+
+- `bun run build:server` (root or `packages/web`) is the only command that
+  produces `dist-node`. It builds the built-in extensions, compiles with
+  `tsc -p tsconfig.server.build.json` (TypeScript 7, about 0.3 s), copies the
+  files that are not code (hand-written `.d.ts` sidecars, runtime `.json`,
+  `.cjs` programs read as text, `server/built-in-extensions`), and fails when a
+  source module has no compiled module, when a file is neither code,
+  documentation nor a known asset kind, or when TypeScript reaches the output.
+  It rebuilds from scratch every time; `dist-node` is not committed.
+- `packages/web` `build` and `prepack` run it, so the UI build, `bun pm pack`
+  and everything built from them carry a current `dist-node`.
+- Import specifiers are `.js` in every source file, TypeScript included.
+  Renaming `store.js` to `store.ts` needs no change in any importer: Bun,
+  Vitest and `tsc` (NodeNext) all resolve `./store.js` to `store.ts`.
+- `tsconfig.server.json` type-checks: TypeScript strictly (`strict`,
+  `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`), JavaScript not at
+  all (`checkJs: false`). `bun run type-check` in `packages/web` runs it.
+- Files that need a package-level path (`package.json`, the UI `dist`) resolve
+  it from `server/lib/package-root.js`, which finds the package directory by
+  name, so the same code works from `server/` and from `dist-node/server/`.
+- Development runs the sources directly with Bun (`bun run dev`); the watcher
+  restarts on `.js`, `.ts` and `.json` changes. Nothing in production executes
+  TypeScript.

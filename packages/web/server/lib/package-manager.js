@@ -3,11 +3,8 @@ import crypto from 'crypto';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import { fetchUpdateNotes } from './changelog/update-notes.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import { PACKAGE_JSON_PATH, PACKAGE_ROOT } from './package-root.js';
 
 const PACKAGE_NAME = '@openchamber/web';
 const PACKAGE_PATH_SEGMENTS = PACKAGE_NAME.split('/');
@@ -220,7 +217,7 @@ function pathSetContains(a, b) {
 }
 
 function getCurrentPackagePath() {
-  return path.resolve(__dirname, '..', '..');
+  return PACKAGE_ROOT;
 }
 
 function getPackagePathForGlobalRoot(rootPath) {
@@ -673,8 +670,7 @@ export function getUpdateCommand(pm = detectPackageManager()) {
  */
 export function getCurrentVersion() {
   try {
-    const pkgPath = path.resolve(__dirname, '..', '..', 'package.json');
-    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+    const pkg = JSON.parse(fs.readFileSync(PACKAGE_JSON_PATH, 'utf8'));
     return pkg.version || 'unknown';
   } catch {
     return 'unknown';

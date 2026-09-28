@@ -5,7 +5,7 @@ export const createStaticRoutesRuntime = (dependencies) => {
     fs,
     path,
     process,
-    __dirname,
+    packageRoot,
     express,
     resolveProjectDirectory,
     buildOpenCodeUrl,
@@ -20,7 +20,7 @@ export const createStaticRoutesRuntime = (dependencies) => {
     if (env) {
       return path.resolve(env);
     }
-    return path.join(__dirname, '..', 'dist');
+    return path.join(packageRoot, 'dist');
   };
 
   const registerStaticRoutes = (app) => {

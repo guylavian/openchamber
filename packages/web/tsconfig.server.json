@@ -1,0 +1,31 @@
+{
+  // Type-checks the server and CLI (server/, bin/). JavaScript is compiled but
+  // not type-checked (checkJs: false); TypeScript is checked strictly. Tests are
+  // included so TypeScript tests are checked too. The emit configuration is
+  // tsconfig.server.build.json; see docs/platform-toolchain.md, "Server build".
+  "compilerOptions": {
+    "target": "ES2024",
+    "lib": ["ES2024"],
+    "types": ["node"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "allowJs": true,
+    "checkJs": false,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "useUnknownInCatchVariables": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "rewriteRelativeImportExtensions": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["server", "bin"],
+  // JavaScript tests are not type-checked (checkJs: false), and some import UI
+  // sources to test the relay protocol end to end; including them would check
+  // those UI files under the server's options. TypeScript tests stay included.
+  "exclude": ["server/built-in-extensions", "**/*.test.js", "**/*.test.mjs"]
+}

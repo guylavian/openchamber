@@ -73,6 +73,7 @@ import {
   logStatus,
 } from './cli-output.js';
 import { applyConnectAttemptTimeout } from '../server/lib/network-defaults.js';
+import { PACKAGE_JSON_PATH } from '../server/lib/package-root.js';
 
 // The CLI process performs provider fetches (quota/usage, update notes) under
 // Node/undici, whose happy-eyeballs default aborts each connect attempt after
@@ -83,7 +84,7 @@ applyConnectAttemptTimeout();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const PACKAGE_JSON = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+const PACKAGE_JSON = JSON.parse(fs.readFileSync(PACKAGE_JSON_PATH, 'utf8'));
 
 let onCancelCleanup = null;
 let activeCommandOptions = null;

@@ -54,6 +54,7 @@ import { createFsSearchRuntime as createFsSearchRuntimeFactory } from './lib/fs/
 import { createOpenCodeLifecycleRuntime } from './lib/opencode/lifecycle.js';
 import { createOpenCodeEnvRuntime } from './lib/opencode/env-runtime.js';
 import { providedLoginShellEnvSnapshot } from './lib/opencode/login-shell-env.js';
+import { PACKAGE_JSON_PATH, PACKAGE_ROOT } from './lib/package-root.js';
 import { resolveOpenCodeEnvConfig } from './lib/opencode/env-config.js';
 import { createHmrStateRuntime } from './lib/opencode/hmr-state-runtime.js';
 import { createOpenCodeNetworkRuntime } from './lib/opencode/network-runtime.js';
@@ -225,8 +226,7 @@ function shouldSkipCompression(req, res) {
 
 const OPENCHAMBER_VERSION = (() => {
   try {
-    const packagePath = path.resolve(__dirname, '..', 'package.json');
-    const raw = fs.readFileSync(packagePath, 'utf8');
+    const raw = fs.readFileSync(PACKAGE_JSON_PATH, 'utf8');
     const pkg = JSON.parse(raw);
     if (pkg && typeof pkg.version === 'string' && pkg.version.trim().length > 0) {
       return pkg.version.trim();
@@ -1215,7 +1215,7 @@ const staticRoutesRuntime = createStaticRoutesRuntime({
   fs,
   path,
   process,
-  __dirname,
+  packageRoot: PACKAGE_ROOT,
   express,
   resolveProjectDirectory,
   buildOpenCodeUrl,

@@ -7,7 +7,7 @@ const createRuntime = () => createStaticRoutesRuntime({
   fs: { existsSync: () => false },
   path: { join: (...parts) => parts.join('/'), resolve: (value) => value, sep: '/' },
   process: { env: {} },
-  __dirname: '/server',
+  packageRoot: '',
   express,
   resolveProjectDirectory: () => '',
   buildOpenCodeUrl: () => '',

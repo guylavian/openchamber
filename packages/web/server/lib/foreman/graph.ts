@@ -26,9 +26,9 @@
  * of that dependency releases it without anything else changing.
  */
 
-import type { JobStatus, RunStatus, Task, TaskStatus } from '../../../../ui/src/lib/foreman/model.js';
+import type { JobStatus, RunStatus, TaskStatus } from './types.js';
 
-type GraphTask = Pick<Task, 'id' | 'jobId' | 'title' | 'dependsOn'>;
+type GraphTask = { id: string; jobId: string; title: string; dependsOn: string[] };
 type GraphRun = { id: string; taskId: string; status: RunStatus };
 type GraphJob = { id: string; status: JobStatus; startMode?: string };
 type GraphState = { jobs: GraphJob[]; tasks: GraphTask[]; runs: GraphRun[] };
