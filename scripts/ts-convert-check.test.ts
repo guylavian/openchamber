@@ -1,15 +1,25 @@
 import { expect, test } from 'bun:test';
-import { budgetFindings } from './ts-convert-check.ts';
+import { forbiddenIn } from './ts-convert-check.ts';
 
-test('new assertions are listed for the checked files only; directive comments anywhere', () => {
-  const output = [
-    '[assertion-budget] new assertion (2) in packages/web/server/a.ts: value as number',
-    '[assertion-budget] new assertion (1) in packages/web/server/other.ts: x!',
-    '[assertion-budget] ESLint directive comment in packages/web/server/b.ts: eslint-disable-next-line',
-    '[assertion-budget] 79 assertions, all in the reviewed baseline',
+test('forbidden syntax is found whatever the lint coverage', () => {
+  const text = [
+    'const a: any = 1;',
+    'const b = a as unknown;',
+    'const c = (a as string) as number;',
+    'const d = <string>a;',
+    'const e: Function = () => 1;',
+    '// @ts-expect-error',
+    '// eslint-disable-next-line no-console',
+    'const ok = a as string;',
   ].join('\n');
-  expect(budgetFindings(output, new Set(['packages/web/server/a.ts']))).toEqual({
-    assertions: ['packages/web/server/a.ts (2x): value as number'],
-    directives: ['packages/web/server/b.ts: eslint-disable-next-line'],
-  });
+  expect(forbiddenIn('x.ts', text)).toEqual([
+    'line 1: any',
+    'line 2: as unknown',
+    'line 3: double assertion',
+    'line 4: <T>x cast',
+    'line 5: Function type',
+    '@ts-ignore / @ts-expect-error / @ts-nocheck comment',
+    'ESLint directive comment: eslint-disable-next-line no-console',
+  ]);
+  expect(forbiddenIn('y.ts', 'const s: string = String(1);\nconst n = value!;\nconst t = x as Settings;\n')).toEqual([]);
 });
