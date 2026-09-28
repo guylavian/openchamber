@@ -36,6 +36,10 @@ export default tseslint.config([
     // - no-deprecated and no-confusing-void-expression are off: they would
     //   rewrite calls the JavaScript makes (Zod's no-op `.finite()`, an arrow
     //   that returns `console.warn(...)`).
+    // - require-await is off: dropping `async` from a function without `await`
+    //   changes what it returns (a value instead of a promise).
+    // - no-useless-default-assignment is off: `= undefined` defaults are the
+    //   JavaScript's own text.
     // Uses the TypeScript 6 API (see docs/platform-toolchain.md).
     // Patterns are relative to the directory ESLint runs in: the repo root, or
     // packages/web when its `lint` script passes --config.
@@ -70,6 +74,8 @@ export default tseslint.config([
       '@typescript-eslint/restrict-template-expressions': 'off',
       '@typescript-eslint/no-deprecated': 'off',
       '@typescript-eslint/no-confusing-void-expression': 'off',
+      '@typescript-eslint/require-await': 'off',
+      '@typescript-eslint/no-useless-default-assignment': 'off',
     },
   },
 ])

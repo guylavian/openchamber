@@ -37,25 +37,99 @@
 import { z } from 'zod';
 
 import { ForemanStoreError } from './store.js';
+import type { ExecutionChange, ForemanStore, Memory, Run } from './store.js';
 import { createExecutionTruthProbe } from './execution-truth.js';
+import type { ExecutionTruth } from './execution-truth.js';
 import { createForemanScheduler } from './scheduler.js';
+import type { TaskWorkspaceManager } from './task-workspaces.js';
+import type { Attention, RunId, SessionId } from './types.js';
+
+/* ──► Contracts: the shapes this module has always read, described, not checked. */
+
+type Maybe<Value> = Value | null | undefined;
+type RunError = NonNullable<Run['error']>;
+
+/** One translated server event (see `event-stream/translate-v2.js`). */
+export interface EventPayload {
+  type?: unknown;
+  properties?: Maybe<EventProperties>;
+}
+interface EventProperties {
+  sessionID?: unknown;
+  status?: Maybe<{ type?: unknown }>;
+  aborted?: unknown;
+  error?: Maybe<{ message?: unknown; name?: unknown }>;
+  message?: unknown;
+  action?: unknown;
+  form?: Maybe<{ title?: unknown }>;
+}
+
+/** Every field an event change can carry; each member of the union below
+ * names its own and leaves the rest absent, so they read as undefined. */
+interface ChangeFields {
+  status?: never;
+  unlessWaiting?: never;
+  unlessChildrenWork?: never;
+  error?: never;
+  attention?: never;
+  onlyWhileAttention?: never;
+  sessionDeleted?: never;
+}
+type Only<Fields> = Omit<ChangeFields, keyof Fields> & Fields;
+/** What one event does to the runs of its session. */
+export type EventRunChange = { sessionID: string } & (
+  | Only<{ status: 'running'; unlessWaiting: true }>
+  | Only<{ status: 'cancelled' }>
+  | Only<{ status: 'completed'; unlessChildrenWork: true }>
+  | Only<{ status: 'failed'; error: RunError }>
+  | Only<{ status: 'waiting_for_user'; attention: Attention }>
+  | Only<{ status: 'running'; onlyWhileAttention: 'permission' | 'question' }>
+  | Only<{ sessionDeleted: true }>
+);
+
+/** What `validateDirectoryPath` answers. */
+export type DirectoryValidation = { ok: true; directory: string; error?: undefined } | { ok: false; directory?: undefined; error?: string };
+
+export interface ForemanSessionService {
+  create: (request: { directory: string; title: string }) => Promise<Maybe<{ sessionId?: unknown; directory?: unknown }>>;
+  send: (sessionId: string, request: { prompt: string; directory: string }) => Promise<Maybe<{ promptDispatched?: unknown; promptError?: unknown }>>;
+  interrupt: (sessionId: string, request: { directory: string }) => Promise<Maybe<{ missing?: unknown }>>;
+}
+export interface ForemanActivityProbe {
+  fetchActiveSessionStatuses: () => Promise<Maybe<Record<string, unknown>>>;
+  hasWorkingChildren: (sessionId: string, statuses: Record<string, unknown>) => Promise<Maybe<boolean>>;
+}
+export interface ForemanExecutionOptions {
+  store: ForemanStore;
+  sessionService: ForemanSessionService;
+  validateDirectoryPath: (directory: string) => Promise<Maybe<DirectoryValidation>>;
+  activityProbe: ForemanActivityProbe;
+  taskWorkspaceManager?: Pick<TaskWorkspaceManager, 'prepare'>;
+  scheduler?: ReturnType<typeof createForemanScheduler> | undefined;
+  globalConcurrency?: number | undefined;
+  readSessionOutcome: (sessionId: string, directory: string) => Promise<string>;
+  executionTruthProbe?: ReturnType<typeof createExecutionTruthProbe> | undefined;
+  broadcast?: (event: { type: string; properties: { runId: string } }) => void;
+  warn?: (message: string) => void;
+  now?: () => number;
+}
 
 const EXECUTION_TYPE = 'opencode-session';
 
 /* ──► Event → run change mapping (see `event-stream/translate-v2.js`). */
 
 const textField = z.string().trim().catch('');
-const trimmed = (value) => textField.parse(value);
-const errorMessage = (error, fallback) => error instanceof Error ? error.message : trimmed(error) || fallback;
+const trimmed = (value: unknown): string => textField.parse(value);
+const errorMessage = (error: unknown, fallback: string): string => error instanceof Error ? error.message : trimmed(error) || fallback;
 
-const conflict = (message) => new ForemanStoreError('conflict', message);
+const conflict = (message: string): ForemanStoreError => new ForemanStoreError('conflict', message);
 const CODE_INTELLIGENCE_INSTRUCTION = 'For code work, use available LSP/language-server or other structured code-intelligence tools first. If none are available, search for and read only files relevant to this task. Use shell for execution, tests, builds, Git, and runtime commands. Do not start with repository-wide discovery.';
 /** A Run-only prompt context. Ordinary OpenChamber session prompts never pass here. */
-export const taskPrompt = (task, memories = []) => {
+export const taskPrompt = (task: { title: string; instructions?: string | undefined }, memories: readonly Memory[] = []): string => {
   const request = trimmed(task.instructions) || trimmed(task.title);
   const workspace = memories.filter((entry) => entry.scope === 'workspace').slice(0, 6);
   const job = memories.filter((entry) => entry.scope === 'job').slice(0, 6);
-  const section = [];
+  const section: string[] = [];
   if (workspace.length) section.push('Workspace memory:', ...workspace.map((entry) => `- [${entry.type}] ${entry.content.slice(0, 700)}`));
   if (job.length) section.push('Job memory:', ...job.map((entry) => `- [${entry.type}] ${entry.content.slice(0, 700)}`));
   if (section.length) section.push('Treat memory as a hint. Verify it against the current repository; current code wins.');
@@ -67,9 +141,9 @@ export const taskPrompt = (task, memories = []) => {
  * the change it makes to a run, or null when it says nothing about one.
  * Exported for tests; pure.
  */
-export const runChangeForEvent = (payload) => {
+export const runChangeForEvent = (payload: Maybe<EventPayload>): EventRunChange | null => {
   const type = payload?.type;
-  const properties = payload?.properties ?? {};
+  const properties: EventProperties = payload?.properties ?? {};
   const sessionID = trimmed(properties.sessionID);
   if (!sessionID) return null;
 
@@ -95,7 +169,7 @@ export const runChangeForEvent = (payload) => {
         },
       };
     case 'permission.asked': {
-      const attention = { type: 'permission' };
+      const attention: Attention = { type: 'permission' };
       const message = trimmed(properties.message) || trimmed(properties.action);
       if (message) attention.message = message;
       return { sessionID, status: 'waiting_for_user', attention };
@@ -103,7 +177,7 @@ export const runChangeForEvent = (payload) => {
     case 'permission.replied':
       return { sessionID, status: 'running', onlyWhileAttention: 'permission' };
     case 'form.created': {
-      const attention = { type: 'question' };
+      const attention: Attention = { type: 'question' };
       const title = trimmed(properties.form?.title);
       if (title) attention.message = title;
       return { sessionID, status: 'waiting_for_user', attention };
@@ -132,17 +206,17 @@ export const createForemanExecution = ({
   broadcast = () => {},
   warn = (message) => console.warn(message),
   now = Date.now,
-}) => {
+}: ForemanExecutionOptions) => {
   const taskScheduler = scheduler ?? createForemanScheduler({ store, ...(globalConcurrency ? { globalLimit: globalConcurrency } : {}) });
-  const truthProbe = executionTruthProbe ?? { readExecutionTruth: async () => ({ verdict: 'idle' }) };
+  const truthProbe = executionTruthProbe ?? { readExecutionTruth: async () => ({ verdict: 'idle' }) as ExecutionTruth };
   /** runId → the start in progress, so a second request joins it. */
-  const starting = new Map();
+  const starting = new Map<string, Promise<{ run: Run; alreadyStarted: boolean }>>();
   /** runId → the stop in progress, likewise. */
-  const stopping = new Map();
+  const stopping = new Map<string, Promise<{ run: Run; stopped: boolean }>>();
   /** sessionId → the tail of its event chain; events for one session apply in order. */
-  const sessionQueues = new Map();
+  const sessionQueues = new Map<string, Promise<void>>();
 
-  const announce = (runId) => {
+  const announce = (runId: string): void => {
     try {
       broadcast({ type: 'openchamber:foreman-changed', properties: { runId } });
     } catch {
@@ -150,19 +224,19 @@ export const createForemanExecution = ({
     }
   };
 
-  const change = async (runId, fn) => {
+  const change = async (runId: RunId, fn: (run: Run) => ExecutionChange | null): Promise<Run> => {
     const result = await store.applyExecutionChange(runId, fn);
     if (result.changed) announce(runId);
     return result.run;
   };
 
-  const recordActivity = async (runId, type, message, metadata) => {
+  const recordActivity = async (runId: RunId, type: 'run_started' | 'session_created', message: string, metadata?: Record<string, string | number | boolean>) => {
     const event = await store.addRunActivity(runId, { type, message, ...(metadata ? { metadata } : {}) });
     if (event) announce(runId);
     return event;
   };
 
-  const performStart = async (runId) => {
+  const performStart = async (runId: RunId): Promise<{ run: Run; alreadyStarted: boolean }> => {
     const { run, task, job } = await store.runContext(runId);
     if (run.execution?.id) return { run, alreadyStarted: true };
     if (run.status !== 'queued') throw conflict(`A ${run.status} run cannot be started; start a new run`);
@@ -242,11 +316,11 @@ export const createForemanExecution = ({
     // The link is saved before the task is sent: whatever happens next, the
     // run knows its session and never makes another one.
     await change(runId, (current) => ({
-      execution: { type: EXECUTION_TYPE, id: sessionId, directory, createdAt: current.execution?.createdAt ?? now() },
+      execution: { type: EXECUTION_TYPE, id: sessionId as SessionId, directory, createdAt: current.execution?.createdAt ?? now() },
     }));
     await recordActivity(runId, 'session_created', 'OpenCode session created');
 
-    let dispatchError = null;
+    let dispatchError: string | null = null;
     try {
       const sent = await sessionService.send(sessionId, { prompt, directory });
       if (!sent?.promptDispatched) dispatchError = trimmed(sent?.promptError) || 'OpenCode did not queue the task';
@@ -273,9 +347,9 @@ export const createForemanExecution = ({
    * still says what carried it out; an unfinished run cannot go on without
    * it, and one that already finished keeps its outcome.
    */
-  const sessionGone = (current, message) => {
+  const sessionGone = (current: Run, message: string): ExecutionChange | null => {
     if (!current.execution || current.execution.deletedAt) return null;
-    const next = { execution: { ...current.execution, deletedAt: now() } };
+    const next: ExecutionChange = { execution: { ...current.execution, deletedAt: now() } };
     if (!['completed', 'failed', 'cancelled'].includes(current.status)) {
       next.status = 'failed';
       next.error = { stage: 'execution', message };
@@ -285,7 +359,7 @@ export const createForemanExecution = ({
   };
 
   /** Starts a queued run. Idempotent: a run that has a session never gets another. */
-  const startRun = (runId) => {
+  const startRun = (runId: RunId): Promise<{ run: Run; alreadyStarted: boolean }> => {
     const inFlight = starting.get(runId);
     if (inFlight) return inFlight.then((result) => ({ ...result, alreadyStarted: true }));
     const promise = performStart(runId).finally(() => starting.delete(runId));
@@ -296,14 +370,14 @@ export const createForemanExecution = ({
   const TERMINAL = ['completed', 'failed', 'cancelled'];
   const ACTIVE = ['running', 'waiting_for_user'];
 
-  const performStop = async (runId) => {
+  const performStop = async (runId: RunId): Promise<{ run: Run; stopped: boolean }> => {
     const { run } = await store.runContext(runId);
     // Finished runs are left exactly as they are: nothing to interrupt.
     if (TERMINAL.includes(run.status)) return { run, stopped: false };
     if (!ACTIVE.includes(run.status) || !run.execution?.id) {
       throw conflict('This run has not started; there is nothing to stop');
     }
-    const cancel = (extra = {}) => change(runId, (current) => (TERMINAL.includes(current.status)
+    const cancel = (extra: ExecutionChange = {}): Promise<Run> => change(runId, (current) => (TERMINAL.includes(current.status)
       ? null
       : { status: 'cancelled', stoppedAt: now(), ...extra }));
 
@@ -330,7 +404,7 @@ export const createForemanExecution = ({
    * concurrent stops share one interrupt, and a run that is no longer active
    * answers with itself.
    */
-  const stopRun = (runId) => {
+  const stopRun = (runId: RunId): Promise<{ run: Run; stopped: boolean }> => {
     const inFlight = stopping.get(runId);
     if (inFlight) return inFlight;
     const promise = performStop(runId).finally(() => stopping.delete(runId));
@@ -338,8 +412,8 @@ export const createForemanExecution = ({
     return promise;
   };
 
-  const applyEventChange = async (eventChange) => {
-    const runs = await store.runsForExecution(EXECUTION_TYPE, eventChange.sessionID);
+  const applyEventChange = async (eventChange: EventRunChange): Promise<void> => {
+    const runs = await store.runsForExecution(EXECUTION_TYPE, eventChange.sessionID as SessionId);
     if (runs.length === 0) return;
 
       if (eventChange.sessionDeleted) {
@@ -367,7 +441,7 @@ export const createForemanExecution = ({
         if (eventChange.onlyWhileAttention && current.attention?.type !== eventChange.onlyWhileAttention) return null;
         if (eventChange.unlessWaiting && current.status === 'waiting_for_user') return null;
         if (current.status === status && !eventChange.attention && !eventChange.error) return null;
-        const next = { status };
+        const next: ExecutionChange = { status };
         if (eventChange.attention) next.attention = eventChange.attention;
         if (eventChange.error) next.error = eventChange.error;
         return next;
@@ -376,14 +450,14 @@ export const createForemanExecution = ({
   };
 
   /** Feeds one translated server event. Events of one session apply in order. */
-  const processPayload = (payload) => {
+  const processPayload = (payload: EventPayload): void => {
     const eventChange = runChangeForEvent(payload);
     if (!eventChange) return;
     const key = eventChange.sessionID;
     const previous = sessionQueues.get(key) ?? Promise.resolve();
     const next = previous
       .then(() => applyEventChange(eventChange))
-      .catch((error) => warn(`[foreman] could not apply ${payload.type} to its run: ${errorMessage(error, 'unknown error')}`));
+      .catch((error: unknown) => warn(`[foreman] could not apply ${payload.type} to its run: ${errorMessage(error, 'unknown error')}`));
     sessionQueues.set(key, next);
     void next.finally(() => {
       if (sessionQueues.get(key) === next) sessionQueues.delete(key);
@@ -400,7 +474,7 @@ export const createForemanExecution = ({
    * permission is still waiting. If so, the run stays `waiting_for_user`;
    * if not, it may become `completed`.
    */
-  const reconcile = async () => {
+  const reconcile = async (): Promise<void> => {
     const runs = await store.activeExecutions();
     if (runs.length === 0) return;
 
@@ -408,18 +482,18 @@ export const createForemanExecution = ({
     const statuses = await activityProbe.fetchActiveSessionStatuses();
     if (statuses) {
       for (const run of runs) {
-        const sessionId = run.execution.id;
+        const sessionId = run.execution!.id!;
         if (statuses[sessionId]) {
           if (run.status === 'queued') await change(run.id, () => ({ status: 'running' }));
           continue;
         }
         const children = await activityProbe.hasWorkingChildren(sessionId, statuses);
         if (children !== false) continue;
-        const outcome = await readSessionOutcome(sessionId, run.execution.directory ?? '').catch(() => 'unknown');
+        const outcome = await readSessionOutcome(sessionId, run.execution!.directory ?? '').catch(() => 'unknown');
         if (outcome === 'succeeded') {
           await change(run.id, () => ({ status: 'completed' }));
         } else if (outcome === 'missing') {
-          await change(run.id, () => ({ status: 'failed', error: { stage: 'execution', message: 'The OpenCode session no longer exists' }, execution: { ...run.execution, deletedAt: now() } }));
+          await change(run.id, () => ({ status: 'failed', error: { stage: 'execution', message: 'The OpenCode session no longer exists' }, execution: { ...run.execution!, deletedAt: now() } }));
         } else if (outcome === 'failed') {
           await change(run.id, () => ({ status: 'failed', error: { stage: 'execution', message: 'The agent run failed' } }));
         }
@@ -428,8 +502,8 @@ export const createForemanExecution = ({
 
     // Step 2: per-run truth-probe verification.
     for (const run of runs) {
-      const sessionId = run.execution.id;
-      const directory = run.execution.directory ?? '';
+      const sessionId = run.execution!.id!;
+      const directory = run.execution!.directory ?? '';
       // Only probe sessions whose model provider is a gateway we understand.
       const { execution: exec } = run;
       if (!exec?.id) continue;
@@ -438,7 +512,7 @@ export const createForemanExecution = ({
       const truthResult = await truthProbe.readExecutionTruth({
         sessionId,
         directory,
-      }).catch(() => ({ verdict: 'unknown', source: 'reconcile', resolvable: false, reason: 'could not read execution truth' }));
+      }).catch((): ExecutionTruth => ({ verdict: 'unknown', source: 'reconcile', resolvable: false, reason: 'could not read execution truth' }));
       if (!executionTruthProbe) continue;
       if (truthResult.verdict === 'idle' && statuses?.[sessionId]) continue;
       if (truthResult.verdict === 'idle' && !statuses) continue;
@@ -469,7 +543,7 @@ export const createForemanExecution = ({
           if (!children || await activityProbe.hasWorkingChildren(sessionId, children) !== false) continue;
           await change(run.id, (currentRun) => currentRun.status === 'running' ? { status: 'completed' } : null);
         } else if (outcome === 'missing') {
-          await change(run.id, () => ({ status: 'failed', error: { stage: 'execution', message: 'The OpenCode session no longer exists' }, execution: { ...run.execution, deletedAt: now() } }));
+          await change(run.id, () => ({ status: 'failed', error: { stage: 'execution', message: 'The OpenCode session no longer exists' }, execution: { ...run.execution!, deletedAt: now() } }));
         } else if (outcome === 'failed') {
           await change(run.id, () => ({ status: 'failed', error: { stage: 'execution', message: 'The agent run failed' } }));
         }
