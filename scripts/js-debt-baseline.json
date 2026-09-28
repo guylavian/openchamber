@@ -546,7 +546,6 @@
   "packages/web/server/lib/relay/tunnel-host.js": 647,
   "packages/web/server/lib/relay/tunnel-host.test.js": 173,
   "packages/web/server/lib/routing/classifier.js": 55,
-  "packages/web/server/lib/routing/defaults.js": 129,
   "packages/web/server/lib/routing/history.js": 34,
   "packages/web/server/lib/routing/jev.js": 96,
   "packages/web/server/lib/routing/routes.http.test.js": 138,

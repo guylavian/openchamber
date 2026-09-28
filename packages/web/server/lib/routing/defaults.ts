@@ -1,14 +1,3 @@
-/**
- * Built-in routing configuration. Everything here is the shipped default; the
- * user's `routing.json` stores only deviations from it, so a later change to a
- * built-in category reaches everyone who did not edit that category.
- *
- * Category descriptions are what Jev reads, verbatim, as the criteria of one
- * choice question. Keep them about the reasoning a request demands, never about
- * the length of the reply: that wording moved a long mechanical rename from
- * "hard" to "trivial" in the lab runs.
- */
-
 import { z } from 'zod';
 
 const AUTO_PROVIDER_ID = 'openchamber';
@@ -19,7 +8,7 @@ const AUTO_MODEL_ID = 'auto';
 const autoModelSchema = z.object({ providerID: z.literal(AUTO_PROVIDER_ID), id: z.literal(AUTO_MODEL_ID) });
 const autoStoredModelSchema = z.object({ providerID: z.literal(AUTO_PROVIDER_ID), modelID: z.literal(AUTO_MODEL_ID) });
 
-export const isAutoModel = (model) => autoModelSchema.safeParse(model).success
+export const isAutoModel = (model: unknown): boolean => autoModelSchema.safeParse(model).success
   || autoStoredModelSchema.safeParse(model).success;
 
 /** The sentinel itself, in the v2 `Model.Ref` shape. */
