@@ -167,7 +167,8 @@
     "@codemirror/lint": "6.9.7",
     "@codemirror/search": "6.7.1",
     "@codemirror/state": "6.7.1",
-    "@codemirror/view": "6.43.9"
+    "@codemirror/view": "6.43.9",
+    "uuid": "11.1.1"
   },
   "devDependencies": {
     "@clack/prompts": "^1.8.1",
