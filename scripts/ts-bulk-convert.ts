@@ -8,8 +8,10 @@
 //      import specifiers are not touched (`./x.js` resolves to x.ts);
 //   3. type-checks every affected project strictly;
 //   4. checks runtime parity for each file (scripts/ts-parity.ts, against HEAD);
-//   5. lints the renamed files (typed server rules included) and runs the
-//      assertion budget, which must pass unchanged: no new assertion;
+//   5. lints the renamed files (typed server rules included); on failure it
+//      names each failing file and writes the others to <list>.lint-pass, so
+//      the retry is deterministic; then the assertion budget must pass
+//      unchanged: no new assertion;
 //   6. rebuilds dist-node when server or CLI sources moved;
 //   7. with --test, runs the renamed tests and the tests that import renamed
 //      modules;
@@ -26,6 +28,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { importEdges } from './check-js-debt.ts';
+import { runnerFor } from './run-isolated-tests.mjs';
 import { census, renamed } from './ts-census.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -48,6 +51,19 @@ const run = ({ label, command, args, cwd }: Step): boolean => {
 const tscBin = (): string => {
   const pkg = spawnSync(process.execPath, ['-p', "require.resolve('@typescript/native/package.json')"], { cwd: ROOT, encoding: 'utf8' }).stdout.trim();
   return path.join(path.dirname(pkg), 'bin', 'tsc');
+};
+
+interface LintResult {
+  filePath: string;
+  errorCount: number;
+  fatalErrorCount: number;
+}
+
+/** Renamed files ESLint reports errors in (repo-relative). */
+const lintFailuresOf = (files: readonly string[]): string[] => {
+  const result = spawnSync('bunx', ['eslint', '--config', 'eslint.config.js', '--format', 'json', ...files], { cwd: ROOT, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
+  const report = JSON.parse(result.stdout) as LintResult[];
+  return report.filter((entry) => entry.errorCount + entry.fatalErrorCount > 0).map((entry) => path.relative(ROOT, entry.filePath).split(path.sep).join('/'));
 };
 
 const typecheckSteps = (targets: readonly string[]): Step[] => {
@@ -76,8 +92,9 @@ const testSteps = (targets: readonly string[]): Step[] => {
   const steps: Step[] = [];
   if (web.length > 0) steps.push({ label: `vitest: ${String(web.length)} affected web test file(s)`, command: 'bunx', args: ['vitest', 'run', ...web], cwd: path.join(ROOT, 'packages/web') });
   for (const file of rest) {
-    const node = /\.[cm]?js$/.test(file) && /['"]node:test['"]/.test(fs.readFileSync(path.join(ROOT, file), 'utf8'));
-    steps.push(node ? { label: `node --test ${file}`, command: process.execPath, args: ['--test', file] } : { label: `bun test ${file}`, command: 'bun', args: ['test', `./${file}`] });
+    // The runner run-isolated-tests would pick, so a converted node:test file is tested on Node.
+    const runner: unknown = runnerFor(file, fs.readFileSync(path.join(ROOT, file), 'utf8'));
+    steps.push(runner === 'node' ? { label: `node --test ${file}`, command: process.execPath, args: ['--test', file] } : { label: `bun test ${file}`, command: 'bun', args: ['test', `./${file}`] });
   }
   return steps;
 };
@@ -128,12 +145,30 @@ const main = (): void => {
   const steps: Step[] = [
     ...typecheckSteps(targets),
     { label: `runtime parity (${String(targets.length)} file(s) against HEAD)`, command: process.execPath, args: ['scripts/ts-parity.ts', ...targets] },
-    ...(linted.length > 0 ? [{ label: `eslint on ${String(linted.length)} renamed file(s) in linted trees`, command: 'bunx', args: ['eslint', '--config', 'eslint.config.js', ...linted] }] : []),
     { label: 'assertion budget unchanged (no new assertion)', command: process.execPath, args: ['scripts/check-assertion-budget.mjs'] },
     ...(targets.some((file) => /^packages\/web\/(server|bin)\//.test(file)) ? [{ label: 'server build (dist-node) and artifact check', command: 'bun', args: ['run', 'build:server'], cwd: path.join(ROOT, 'packages/web') }] : []),
     ...(args.includes('--test') ? testSteps(targets) : []),
   ];
-  for (const step of steps) {
+  const [checks, rest] = [steps.slice(0, steps.findIndex((step) => step.label.startsWith('runtime parity')) + 1), steps.slice(steps.findIndex((step) => step.label.startsWith('runtime parity')) + 1)];
+  for (const step of checks) {
+    if (!run(step)) {
+      revert();
+      process.exit(1);
+    }
+  }
+  const lintFailures = linted.length > 0 ? lintFailuresOf(linted) : [];
+  if (lintFailures.length > 0) {
+    const failed = new Set(lintFailures);
+    const passing = moves.filter(([, to]) => !failed.has(to)).map(([from]) => from);
+    fs.writeFileSync(`${listFile}.lint-pass`, `${passing.join('\n')}\n`);
+    console.log(`[bulk] FAIL eslint: ${String(lintFailures.length)} of ${String(linted.length)} linted file(s)`);
+    for (const file of lintFailures) console.log(`[bulk]   ${file}`);
+    console.log(`[bulk] the ${String(passing.length)} other file(s) are in ${listFile}.lint-pass`);
+    revert();
+    process.exit(1);
+  }
+  console.log(`[bulk] ok   eslint on ${String(linted.length)} renamed file(s) in linted trees`);
+  for (const step of rest) {
     if (!run(step)) {
       revert();
       process.exit(1);
