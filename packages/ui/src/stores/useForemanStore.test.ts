@@ -304,6 +304,7 @@ describe('useForemanStore', () => {
     const afterRuns = store.getState().runs;
     // Original run should still exist with its status
     const originalRun = afterRuns.find((r) => r.id === run.id);
+    expect(originalRun).toEqual(beforeRuns.find((r) => r.id === run.id));
     expect(originalRun?.status).toBe('cancelled');
     // New run should be queued
     const newRun = afterRuns.find((r) => r.requestId?.startsWith('retry-'));
