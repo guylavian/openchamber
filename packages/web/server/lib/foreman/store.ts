@@ -23,25 +23,27 @@ import pathDefault from 'node:path';
 import cryptoDefault from 'node:crypto';
 import { z } from 'zod';
 
+import type { Attention, ForemanErrorCode, JobId, MemoryId, RunId, SessionId, TaskId } from './types.js';
+
 export const FOREMAN_FILE_NAME = 'foreman.json';
 const FOREMAN_STATE_VERSION = 5;
 const FOREMAN_PUBLIC_STATE_VERSION = 2;
 
-const JOB_STATUSES = ['pending', 'running', 'waiting', 'completed', 'failed', 'cancelled'];
-const TASK_STATUSES = ['pending', 'ready', 'running', 'waiting', 'blocked', 'completed', 'failed', 'cancelled'];
-const RUN_STATUSES = ['queued', 'running', 'waiting_for_user', 'failed', 'completed', 'cancelled'];
-const ATTENTION_TYPES = ['permission', 'question', 'conflict'];
-const ACTIVITY_TYPES = ['run_started', 'session_created', 'status_changed', 'attention_required', 'attention_resolved', 'progress', 'validation', 'run_completed', 'run_failed', 'run_cancelled'];
+const JOB_STATUSES = ['pending', 'running', 'waiting', 'completed', 'failed', 'cancelled'] as const;
+const TASK_STATUSES = ['pending', 'ready', 'running', 'waiting', 'blocked', 'completed', 'failed', 'cancelled'] as const;
+const RUN_STATUSES = ['queued', 'running', 'waiting_for_user', 'failed', 'completed', 'cancelled'] as const;
+const ATTENTION_TYPES = ['permission', 'question', 'conflict'] as const;
+const ACTIVITY_TYPES = ['run_started', 'session_created', 'status_changed', 'attention_required', 'attention_resolved', 'progress', 'validation', 'run_completed', 'run_failed', 'run_cancelled'] as const;
 
-const RUN_TERMINAL_STATUSES = new Set(['failed', 'completed', 'cancelled']);
-const MEMORY_SCOPES = ['workspace', 'job'];
-const MEMORY_TYPES = ['architecture', 'decision', 'convention', 'important_file', 'known_issue', 'fact'];
+const RUN_TERMINAL_STATUSES = new Set<string>(['failed', 'completed', 'cancelled']);
+const MEMORY_SCOPES = ['workspace', 'job'] as const;
+const MEMORY_TYPES = ['architecture', 'decision', 'convention', 'important_file', 'known_issue', 'fact'] as const;
 /** Where a Run's attempt went wrong: finding the workspace, making the
  * session, handing it the task, or during the work itself. */
-const RUN_ERROR_STAGES = ['workspace', 'session', 'dispatch', 'execution'];
+const RUN_ERROR_STAGES = ['workspace', 'session', 'dispatch', 'execution'] as const;
 /** The only execution kind today. A Run is an attempt; an OpenCode session is
  * one way to carry it out, so the reference names its kind. */
-const EXECUTION_TYPES = ['opencode-session'];
+const EXECUTION_TYPES = ['opencode-session'] as const;
 
 const MAX_TITLE_LENGTH = 200;
 const MAX_TEXT_LENGTH = 20_000;
@@ -53,11 +55,15 @@ const DEFAULT_JOB_PARALLELISM = 3;
 const MAX_JOB_PARALLELISM = 10;
 
 export class ForemanStoreError extends Error {
+  // Declared, not a class field: no emitted field, so the instance's own keys
+  // stay in the JavaScript order (message, name, code).
+  declare code: ForemanErrorCode;
+
   /**
    * @param {'invalid_input' | 'not_found' | 'unsupported_version' | 'conflict' | 'abort_failed'} code
    * @param {string} message
    */
-  constructor(code, message) {
+  constructor(code: ForemanErrorCode, message: string) {
     super(message);
     this.name = 'ForemanStoreError';
     this.code = code;
@@ -78,7 +84,7 @@ const attentionSchema = z.object({
 
 const createJobSchema = z.object({ title, goal: optionalText, directory: optionalText, maxParallelTasks: z.number().int().min(1).max(MAX_JOB_PARALLELISM).default(DEFAULT_JOB_PARALLELISM) }).strict();
 const jobPatchSchema = z.object({ title: title.optional(), goal: clearableText, status: z.enum(JOB_STATUSES).optional(), maxParallelTasks: z.number().int().min(1).max(MAX_JOB_PARALLELISM).optional() }).strict();
-const dependencyIds = z.array(z.string().trim().min(1)).max(100).default([]).refine((ids) => new Set(ids).size === ids.length, 'dependencies must not contain duplicates');
+const dependencyIds = z.array(z.string().trim().min(1).brand<'TaskId'>()).max(100).default([]).refine((ids) => new Set(ids).size === ids.length, 'dependencies must not contain duplicates');
 const createTaskSchema = z.object({ title, instructions: optionalText, dependsOn: dependencyIds }).strict();
 const taskPatchSchema = z.object({
   title: title.optional(),
@@ -96,7 +102,7 @@ const runPatchSchema = z.object({
 }).strict();
 const activityEventSchema = z.object({
   id: z.string().min(1),
-  runId: z.string().min(1),
+  runId: z.string().min(1).brand<'RunId'>(),
   type: z.enum(ACTIVITY_TYPES),
   message: z.string().trim().min(1).max(MAX_ACTIVITY_MESSAGE_LENGTH),
   timestamp: z.number().finite(),
@@ -106,10 +112,10 @@ const createActivitySchema = activityEventSchema.omit({ id: true, runId: true, t
 const memoryTags = z.array(z.string().trim().min(1).max(100)).max(MAX_MEMORY_TAGS)
   .transform((tags) => [...new Set(tags)]);
 const memorySchema = z.object({
-  id: z.string().min(1),
+  id: z.string().min(1).brand<'MemoryId'>(),
   scope: z.enum(MEMORY_SCOPES),
   workspaceId: z.string().trim().min(1).max(4_096),
-  jobId: z.string().min(1).optional(),
+  jobId: z.string().min(1).brand<'JobId'>().optional(),
   type: z.enum(MEMORY_TYPES),
   content: z.string().trim().min(1).max(MAX_MEMORY_CONTENT_LENGTH),
   tags: memoryTags,
@@ -142,7 +148,7 @@ const updateMemorySchema = z.object({
   confidence: z.number().finite().min(0).max(1).optional(),
 }).strict().refine((patch) => Object.keys(patch).length > 0, 'at least one memory field is required');
 
-const parse = (schema, value) => {
+const parse = <Schema extends z.ZodType>(schema: Schema, value: unknown): z.output<Schema> => {
   const result = schema.safeParse(value);
   if (result.success) return result.data;
   const issue = result.error.issues[0];
@@ -154,7 +160,7 @@ const parse = (schema, value) => {
 // the store does not guess at partial data.
 const timestamp = z.number().finite();
 const storedJobSchema = z.object({
-  id: z.string(),
+  id: z.string().brand<'JobId'>(),
   title: z.string(),
   goal: z.string().optional(),
   directory: z.string().optional(),
@@ -164,8 +170,8 @@ const storedJobSchema = z.object({
   updatedAt: timestamp,
 });
 const storedTaskSchema = z.object({
-  id: z.string(),
-  jobId: z.string(),
+  id: z.string().brand<'TaskId'>(),
+  jobId: z.string().brand<'JobId'>(),
   title: z.string(),
   instructions: z.string().optional(),
   dependsOn: dependencyIds,
@@ -177,7 +183,7 @@ const storedTaskSchema = z.object({
 const executionSchema = z.object({
   type: z.enum(EXECUTION_TYPES),
   /** Absent while the session is being created: a start is in progress. */
-  id: z.string().min(1).optional(),
+  id: z.string().min(1).brand<'SessionId'>().optional(),
   directory: z.string().optional(),
   createdAt: timestamp,
   /** Set when OpenCode no longer has the session; the reference stays for the record. */
@@ -185,8 +191,8 @@ const executionSchema = z.object({
 });
 const runErrorSchema = z.object({ stage: z.enum(RUN_ERROR_STAGES), message: z.string() });
 const storedRunSchema = z.object({
-  id: z.string(),
-  taskId: z.string(),
+  id: z.string().brand<'RunId'>(),
+  taskId: z.string().brand<'TaskId'>(),
   status: z.enum(RUN_STATUSES),
   attention: attentionSchema.optional(),
   error: runErrorSchema.optional(),
@@ -212,7 +218,7 @@ export const foremanFileSchema = z.object({
  * execution reference; nothing else changed.
  */
 const storedRunV1Schema = storedRunSchema.omit({ error: true, execution: true, requestId: true }).extend({
-  sessionId: z.string().optional(),
+  sessionId: z.string().brand<'SessionId'>().optional(),
 });
 const foremanFileV1Schema = z.object({
   version: z.literal(1),
@@ -240,24 +246,46 @@ const foremanFileV4Schema = z.object({
   runs: z.array(storedRunSchema),
   memories: z.array(memorySchema),
 });
-const upgradeTasks = (tasks) => tasks.map((task) => ({ ...task, dependsOn: [], workspace: undefined }));
-const migrateV1 = (v1) => ({
+export type ForemanState = z.output<typeof foremanFileSchema>;
+/** What the execution side asks `applyExecutionChange` to set on a run. */
+export interface ExecutionChange {
+  status?: Run['status'];
+  attention?: Attention;
+  error?: NonNullable<Run['error']>;
+  execution?: NonNullable<Run['execution']> | null;
+  stoppedAt?: number;
+  activityEvent?: { type: Run['activity'][number]['type']; message: string; metadata?: Run['activity'][number]['metadata'] };
+}
+export type Job = ForemanState['jobs'][number];
+export type Task = ForemanState['tasks'][number];
+export type Run = ForemanState['runs'][number];
+export type Memory = ForemanState['memories'][number];
+export type ActivityEvent = Run['activity'][number];
+export type TaskWorkspace = NonNullable<Task['workspace']>;
+export type RunStatus = Run['status'];
+export type TaskStatus = Task['status'];
+type ActivityType = ActivityEvent['type'];
+type ActivityMetadata = ActivityEvent['metadata'];
+type StoredTaskV1 = z.output<typeof foremanFileV1Schema>['tasks'][number];
+
+const upgradeTasks = (tasks: StoredTaskV1[]): Task[] => tasks.map((task) => ({ ...task, dependsOn: [], workspace: undefined }));
+const migrateV1 = (v1: z.output<typeof foremanFileV1Schema>): ForemanState => ({
   version: FOREMAN_STATE_VERSION,
   jobs: v1.jobs.map((job) => ({ ...job, maxParallelTasks: DEFAULT_JOB_PARALLELISM })),
   tasks: upgradeTasks(v1.tasks),
   runs: v1.runs.map(({ sessionId, ...run }) => (sessionId
-    ? { ...run, execution: { type: 'opencode-session', id: sessionId, createdAt: run.createdAt } }
+    ? { ...run, execution: { type: 'opencode-session' as const, id: sessionId, createdAt: run.createdAt } }
     : run)).map((run) => ({ ...run, activity: [] })),
   memories: [],
 });
-const migrateV2 = (v2) => ({ ...v2, version: FOREMAN_STATE_VERSION, jobs: v2.jobs.map((job) => ({ ...job, maxParallelTasks: DEFAULT_JOB_PARALLELISM })), tasks: upgradeTasks(v2.tasks), runs: v2.runs.map((run) => ({ ...run, activity: [] })), memories: [] });
-const migrateV3 = (v3) => ({ ...v3, version: FOREMAN_STATE_VERSION, tasks: upgradeTasks(v3.tasks), runs: v3.runs.map((run) => ({ ...run, activity: [] })), jobs: v3.jobs.map((job) => ({ ...job, maxParallelTasks: DEFAULT_JOB_PARALLELISM })) });
-const migrateV4 = (v4) => ({ ...v4, version: FOREMAN_STATE_VERSION, tasks: upgradeTasks(v4.tasks), jobs: v4.jobs.map((job) => ({ ...job, maxParallelTasks: job.maxParallelTasks ?? DEFAULT_JOB_PARALLELISM })) });
+const migrateV2 = (v2: z.output<typeof foremanFileV2Schema>): ForemanState => ({ ...v2, version: FOREMAN_STATE_VERSION, jobs: v2.jobs.map((job) => ({ ...job, maxParallelTasks: DEFAULT_JOB_PARALLELISM })), tasks: upgradeTasks(v2.tasks), runs: v2.runs.map((run) => ({ ...run, activity: [] })), memories: [] });
+const migrateV3 = (v3: z.output<typeof foremanFileV3Schema>): ForemanState => ({ ...v3, version: FOREMAN_STATE_VERSION, tasks: upgradeTasks(v3.tasks), runs: v3.runs.map((run) => ({ ...run, activity: [] })), jobs: v3.jobs.map((job) => ({ ...job, maxParallelTasks: DEFAULT_JOB_PARALLELISM })) });
+const migrateV4 = (v4: z.output<typeof foremanFileV4Schema>): ForemanState => ({ ...v4, version: FOREMAN_STATE_VERSION, tasks: upgradeTasks(v4.tasks), jobs: v4.jobs.map((job) => ({ ...job, maxParallelTasks: job.maxParallelTasks ?? DEFAULT_JOB_PARALLELISM })) });
 /** Only the version, to tell "written by a newer OpenChamber" from "unreadable". */
 const versionedFileSchema = z.object({ version: z.number().finite() });
 
-const emptyState = () => ({ version: FOREMAN_STATE_VERSION, jobs: [], tasks: [], runs: [], memories: [] });
-const activityMessageForStatus = (status, detail) => {
+const emptyState = (): ForemanState => ({ version: FOREMAN_STATE_VERSION, jobs: [], tasks: [], runs: [], memories: [] });
+const activityMessageForStatus = (status: string, detail?: { type?: string; message?: string | undefined } | null): string => {
   if (status === 'running') return 'Run is running';
   if (status === 'waiting_for_user') return detail?.type === 'permission' ? 'Waiting for permission' : 'Waiting for your response';
   if (status === 'completed') return 'Run completed';
@@ -265,32 +293,32 @@ const activityMessageForStatus = (status, detail) => {
   if (status === 'cancelled') return 'Run cancelled';
   return `Run status changed to ${status}`;
 };
-const appendActivity = (run, type, message, timestamp, metadata) => {
+const appendActivity = (run: Run, type: ActivityType, message: string, timestamp: number, metadata?: ActivityMetadata): ActivityEvent | null => {
   run.activity ??= [];
   const duplicate = type === 'run_started'
     ? run.activity.some((entry) => entry.type === type)
     : run.activity[run.activity.length - 1]?.type === type && run.activity[run.activity.length - 1]?.message === message;
   if (duplicate) return null;
-  const event = { id: cryptoDefault.randomUUID(), runId: run.id, type, message, timestamp };
+  const event: ActivityEvent = { id: cryptoDefault.randomUUID(), runId: run.id, type, message, timestamp };
   if (metadata && Object.keys(metadata).length > 0) event.metadata = metadata;
   if (run.activity.length >= MAX_ACTIVITY_PER_RUN) run.activity.shift();
   run.activity.push(event);
   return event;
 };
-const appendStatusActivity = (run, status, message, timestamp) => {
+const appendStatusActivity = (run: Run, status: string, message: string, timestamp: number): ActivityEvent | null => {
   const previous = run.activity[run.activity.length - 1];
   if (status === 'running' && previous?.type === 'session_created') return null;
   if (status === 'running' && previous?.type === 'attention_resolved') return null;
   return appendActivity(run, 'status_changed', message, timestamp);
 };
-const latestRunByTask = (runs) => {
-  const latest = new Map();
+const latestRunByTask = (runs: readonly Run[]): Map<string, Run> => {
+  const latest = new Map<string, Run>();
   for (const run of runs) latest.set(run.taskId, run);
   return latest;
 };
-const derivedTasks = (tasks, runs) => {
+const derivedTasks = (tasks: readonly Task[], runs: readonly Run[]) => {
   const latestRuns = latestRunByTask(runs);
-  const base = new Map(tasks.map((task) => {
+  const base = new Map(tasks.map((task): [string, { status: string; run: Run | undefined }] => {
     const run = latestRuns.get(task.id);
     const status = run
       ? run.status === 'waiting_for_user' ? 'waiting'
@@ -301,29 +329,29 @@ const derivedTasks = (tasks, runs) => {
     return [task.id, { status, run }];
   }));
   return tasks.map((task) => {
-    const current = base.get(task.id);
+    const current = base.get(task.id)!;
     if (current.status === 'running' || current.status === 'waiting' || current.status === 'completed' || current.status === 'failed' || current.status === 'cancelled') {
-      return { ...task, status: current.status, currentRunId: current.run?.id };
+      return { ...task, status: current.status as TaskStatus, currentRunId: current.run?.id };
     }
     const blockedByTaskIds = task.dependsOn.filter((id) => base.get(id)?.status !== 'completed');
     if (blockedByTaskIds.length) {
-      const failedDependency = blockedByTaskIds.some((id) => ['failed', 'cancelled'].includes(base.get(id)?.status));
-      return { ...task, status: 'blocked', blockedByTaskIds, blockingReason: failedDependency ? 'dependency_failed' : 'dependency_incomplete', currentRunId: current.run?.id };
+      const failedDependency = blockedByTaskIds.some((id) => (['failed', 'cancelled'] as (string | undefined)[]).includes(base.get(id)?.status));
+      return { ...task, status: 'blocked' as const, blockedByTaskIds, blockingReason: failedDependency ? 'dependency_failed' as const : 'dependency_incomplete' as const, currentRunId: current.run?.id };
     }
-    return { ...task, status: 'ready', currentRunId: current.run?.id };
+    return { ...task, status: 'ready' as const, currentRunId: current.run?.id };
   });
 };
-const validateDependencies = (tasks, taskId, jobId, dependsOn) => {
-  const allById = new Map(tasks.map((task) => [task.id, task]));
+const validateDependencies = (tasks: readonly Task[], taskId: string, jobId: string, dependsOn: readonly string[]): void => {
+  const allById = new Map(tasks.map((task): [string, Task] => [task.id, task]));
   for (const dependencyId of dependsOn) {
     const dependency = allById.get(dependencyId);
     if (dependencyId === taskId) throw new ForemanStoreError('invalid_input', 'A task cannot depend on itself');
     if (!dependency || dependency.jobId !== jobId) throw new ForemanStoreError('invalid_input', `Dependency task ${dependencyId} does not exist in this Job`);
   }
-  const edges = new Map(tasks.map((task) => [task.id, task.id === taskId ? dependsOn : task.dependsOn]));
-  const visiting = new Set();
-  const visited = new Set();
-  const visit = (id) => {
+  const edges = new Map(tasks.map((task): [string, readonly string[]] => [task.id, task.id === taskId ? dependsOn : task.dependsOn]));
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+  const visit = (id: string): void => {
     if (visiting.has(id)) throw new ForemanStoreError('invalid_input', 'Task dependencies cannot contain a cycle');
     if (visited.has(id)) return;
     visiting.add(id);
@@ -334,10 +362,10 @@ const validateDependencies = (tasks, taskId, jobId, dependsOn) => {
   for (const id of edges.keys()) visit(id);
 };
 const MEMORY_STOP_WORDS = new Set(['about', 'after', 'again', 'also', 'and', 'are', 'because', 'before', 'been', 'being', 'but', 'can', 'could', 'does', 'from', 'have', 'into', 'more', 'only', 'other', 'should', 'some', 'such', 'that', 'their', 'then', 'there', 'these', 'they', 'this', 'those', 'through', 'under', 'using', 'was', 'were', 'what', 'when', 'where', 'which', 'while', 'with', 'would']);
-const memoryTerms = (value) => new Set(
+const memoryTerms = (value: string): Set<string> => new Set(
   value.toLowerCase().split(/[^a-z0-9_./-]+/).filter((term) => term.length >= 3 && !MEMORY_STOP_WORDS.has(term)),
 );
-const scoreMemory = (entry, query, queryTerms) => {
+const scoreMemory = (entry: Memory, query: string, queryTerms: ReadonlySet<string>): number => {
   const content = entry.content.toLowerCase();
   const tags = entry.tags.map((tag) => tag.toLowerCase());
   let score = 0;
@@ -351,6 +379,16 @@ const scoreMemory = (entry, query, queryTerms) => {
   }
   return score;
 };
+
+export interface ForemanStoreOptions {
+  dataDir: string;
+  globalConcurrency?: number;
+  fsPromises?: typeof fsDefault.promises;
+  path?: typeof pathDefault;
+  now?: () => number;
+  randomUUID?: () => string;
+  warn?: (message: string) => void;
+}
 
 /**
  * @param {object} options
@@ -370,33 +408,33 @@ export const createForemanStore = ({
   now = Date.now,
   randomUUID = () => cryptoDefault.randomUUID(),
   warn = (message) => console.warn(message),
-}) => {
+}: ForemanStoreOptions) => {
   const filePath = path.join(dataDir, FOREMAN_FILE_NAME);
 
   /** @type {{ version: number, jobs: object[], tasks: object[], runs: object[], memories: object[] } | null} */
-  let state = null;
+  let state: ForemanState | null = null;
   /** Set when the file on disk was written by a newer OpenChamber. */
-  let unsupportedVersion = null;
-  let loadPromise = null;
+  let unsupportedVersion: number | null = null;
+  let loadPromise: Promise<void> | null = null;
   /** One mutation at a time, so two writes cannot interleave their renames. */
-  let queue = Promise.resolve();
+  let queue: Promise<unknown> = Promise.resolve();
 
-  const readFile = async () => {
+  const readFile = async (): Promise<string | null> => {
     try {
       return await fsPromises.readFile(filePath, 'utf8');
     } catch (error) {
-      if (error && error.code === 'ENOENT') return null;
+      if (error && (error as { code?: unknown }).code === 'ENOENT') return null;
       throw error;
     }
   };
 
-  const load = async () => {
+  const load = async (): Promise<void> => {
     const raw = await readFile();
     if (raw === null) {
       state = emptyState();
       return;
     }
-    let parsed;
+    let parsed: unknown;
     try {
       parsed = JSON.parse(raw);
     } catch {
@@ -443,10 +481,10 @@ export const createForemanStore = ({
     state = emptyState();
   };
 
-  const ensureLoaded = async () => {
+  const ensureLoaded = async (): Promise<void> => {
     if (state) return;
     if (!loadPromise) {
-      loadPromise = load().catch((error) => {
+      loadPromise = load().catch((error: unknown) => {
         loadPromise = null;
         throw error;
       });
@@ -454,7 +492,7 @@ export const createForemanStore = ({
     await loadPromise;
   };
 
-  const assertWritable = () => {
+  const assertWritable = (): void => {
     if (unsupportedVersion !== null) {
       throw new ForemanStoreError(
         'unsupported_version',
@@ -463,7 +501,7 @@ export const createForemanStore = ({
     }
   };
 
-  const persist = async () => {
+  const persist = async (): Promise<void> => {
     await fsPromises.mkdir(dataDir, { recursive: true });
     const tmpPath = `${filePath}.${process.pid}.tmp`;
     try {
@@ -480,11 +518,11 @@ export const createForemanStore = ({
    * A failed write restores the previous state, so memory never claims what
    * disk does not hold.
    */
-  const mutate = (change) => {
-    const run = async () => {
+  const mutate = <Result>(change: (draft: ForemanState) => Result | Promise<Result>): Promise<Result> => {
+    const run = async (): Promise<Result> => {
       await ensureLoaded();
       assertWritable();
-      const previous = state;
+      const previous = state!;
       state = { ...previous, jobs: [...previous.jobs], tasks: [...previous.tasks], runs: [...previous.runs], memories: [...previous.memories] };
       try {
         const result = await change(state);
@@ -500,14 +538,14 @@ export const createForemanStore = ({
     return pending;
   };
 
-  const clone = (value) => JSON.parse(JSON.stringify(value));
+  const clone = <Value>(value: Value): Value => JSON.parse(JSON.stringify(value)) as Value;
 
   /**
    * A run's status and everything that must agree with it. Attention exists
    * only while waiting for a person, an error only while failed, a finish
    * time only while finished: leaving the state clears what described it.
    */
-  const applyRunStatus = (run, status, at) => {
+  const applyRunStatus = (run: Run, status: RunStatus, at: number): void => {
     run.status = status;
     if (status === 'running' && run.startedAt === undefined) run.startedAt = at;
     if (RUN_TERMINAL_STATUSES.has(status)) {
@@ -519,7 +557,7 @@ export const createForemanStore = ({
     if (status !== 'failed') delete run.error;
   };
 
-  const findOrThrow = (list, id, kind) => {
+  const findOrThrow = (list: readonly { id: string }[], id: string, kind: string): number => {
     const index = list.findIndex((entry) => entry.id === id);
     if (index < 0) throw new ForemanStoreError('not_found', `${kind} ${id} does not exist`);
     return index;
@@ -530,27 +568,27 @@ export const createForemanStore = ({
     async snapshot() {
       await ensureLoaded();
       assertWritable();
-      return clone({ version: FOREMAN_PUBLIC_STATE_VERSION, globalConcurrency, jobs: state.jobs, tasks: derivedTasks(state.tasks, state.runs), runs: state.runs });
+      return clone({ version: FOREMAN_PUBLIC_STATE_VERSION, globalConcurrency, jobs: state!.jobs, tasks: derivedTasks(state!.tasks, state!.runs), runs: state!.runs });
     },
 
-    async jobContext(jobId) {
+    async jobContext(jobId: JobId) {
       await ensureLoaded();
       assertWritable();
-      const job = state.jobs.find((entry) => entry.id === jobId);
+      const job = state!.jobs.find((entry) => entry.id === jobId);
       if (!job) throw new ForemanStoreError('not_found', `job ${jobId} does not exist`);
       return clone({ job });
     },
 
-    async listMemoriesForJob(jobId, workspaceId) {
+    async listMemoriesForJob(jobId: JobId, workspaceId: string) {
       await ensureLoaded();
       assertWritable();
-      const job = state.jobs.find((entry) => entry.id === jobId);
+      const job = state!.jobs.find((entry) => entry.id === jobId);
       if (!job) throw new ForemanStoreError('not_found', `job ${jobId} does not exist`);
-      return clone(state.memories.filter((entry) => entry.workspaceId === workspaceId
+      return clone(state!.memories.filter((entry) => entry.workspaceId === workspaceId
         && (entry.scope === 'workspace' || (entry.scope === 'job' && entry.jobId === jobId))));
     },
 
-    async createMemory(jobId, workspaceId, input) {
+    async createMemory(jobId: JobId, workspaceId: string, input: unknown) {
       const parsed = parse(createMemorySchema, input);
       return mutate((draft) => {
         const job = draft.jobs.find((entry) => entry.id === jobId);
@@ -558,8 +596,8 @@ export const createForemanStore = ({
         if (!job.directory) throw new ForemanStoreError('invalid_input', 'This job has no workspace directory');
         if (job.directory !== workspaceId) throw new ForemanStoreError('invalid_input', 'Workspace does not match the job directory');
         const at = now();
-        const entry = {
-          id: randomUUID(),
+        const entry: Memory = {
+          id: randomUUID() as MemoryId,
           scope: parsed.scope,
           workspaceId,
           ...(parsed.scope === 'job' ? { jobId } : {}),
@@ -577,18 +615,18 @@ export const createForemanStore = ({
       });
     },
 
-    async updateMemory(memoryId, patch) {
+    async updateMemory(memoryId: MemoryId, patch: unknown) {
       const parsed = parse(updateMemorySchema, patch);
       return mutate((draft) => {
         const index = findOrThrow(draft.memories, memoryId, 'memory');
         const at = now();
-        const entry = { ...draft.memories[index], ...parsed, updatedAt: at, lastVerifiedAt: at };
+        const entry = { ...draft.memories[index]!, ...parsed, updatedAt: at, lastVerifiedAt: at } as Memory;
         draft.memories[index] = entry;
         return clone(entry);
       });
     },
 
-    async deleteRun(runId) {
+    async deleteRun(runId: RunId) {
       return mutate((draft) => {
         const index = findOrThrow(draft.runs, runId, 'run');
         const [run] = draft.runs.splice(index, 1);
@@ -596,7 +634,7 @@ export const createForemanStore = ({
       });
     },
 
-    async deleteMemory(memoryId) {
+    async deleteMemory(memoryId: MemoryId) {
       return mutate((draft) => {
         const index = findOrThrow(draft.memories, memoryId, 'memory');
         const [entry] = draft.memories.splice(index, 1);
@@ -604,14 +642,14 @@ export const createForemanStore = ({
       });
     },
 
-    async relevantMemories({ jobId, workspaceId, query, limit = 8 }) {
+    async relevantMemories({ jobId, workspaceId, query, limit = 8 }: { jobId: JobId; workspaceId: string; query: unknown; limit?: number }) {
       await ensureLoaded();
       assertWritable();
       const queryText = typeof query === 'string' ? query.toLowerCase() : '';
       const queryTerms = memoryTerms(queryText);
       if (queryTerms.size === 0) return [];
       const boundedLimit = Math.max(0, Math.min(12, Math.floor(limit)));
-      const ranked = state.memories
+      const ranked = state!.memories
         .filter((entry) => entry.workspaceId === workspaceId
           && (entry.scope === 'workspace' || (entry.scope === 'job' && entry.jobId === jobId)))
         .map((entry) => ({ entry, score: scoreMemory(entry, queryText, queryTerms) }))
@@ -622,11 +660,11 @@ export const createForemanStore = ({
       return clone(ranked.slice(0, boundedLimit).map(({ entry }) => entry));
     },
 
-    async createJob(input) {
+    async createJob(input: unknown) {
       const { title, goal, directory, maxParallelTasks } = parse(createJobSchema, input);
       return mutate((draft) => {
         const at = now();
-        const job = { id: randomUUID(), title, status: 'pending', maxParallelTasks, createdAt: at, updatedAt: at };
+        const job: Job = { id: randomUUID() as JobId, title, status: 'pending', maxParallelTasks, createdAt: at, updatedAt: at };
         if (goal) job.goal = goal;
         if (directory) job.directory = directory;
         draft.jobs.push(job);
@@ -634,11 +672,11 @@ export const createForemanStore = ({
       });
     },
 
-    async updateJob(jobId, patch) {
+    async updateJob(jobId: JobId, patch: unknown) {
       const { title, goal, status, maxParallelTasks } = parse(jobPatchSchema, patch);
       return mutate((draft) => {
         const index = findOrThrow(draft.jobs, jobId, 'job');
-        const job = { ...draft.jobs[index], updatedAt: now() };
+        const job = { ...draft.jobs[index]!, updatedAt: now() };
         if (title !== undefined) job.title = title;
         if (goal === null) delete job.goal;
         else if (goal !== undefined) job.goal = goal;
@@ -649,13 +687,13 @@ export const createForemanStore = ({
       });
     },
 
-    async deleteTask(taskId, cleanupWorkspace = async () => {}) {
+    async deleteTask(taskId: TaskId, cleanupWorkspace: (task: Task) => Promise<void> = async () => {}) {
       return mutate(async (draft) => {
         const index = findOrThrow(draft.tasks, taskId, 'task');
         if (draft.runs.some((run) => run.taskId === taskId && ['queued', 'running', 'waiting_for_user'].includes(run.status))) {
           throw new ForemanStoreError('conflict', 'Stop the active Run before deleting this Task');
         }
-        await cleanupWorkspace(clone(draft.tasks[index]));
+        await cleanupWorkspace(clone(draft.tasks[index]!));
         const [task] = draft.tasks.splice(index, 1);
         draft.runs = draft.runs.filter((run) => run.taskId !== taskId);
         for (const dependent of draft.tasks) {
@@ -665,7 +703,7 @@ export const createForemanStore = ({
       });
     },
 
-    async deleteJob(jobId, cleanupWorkspace = async () => {}) {
+    async deleteJob(jobId: JobId, cleanupWorkspace: (task: Task) => Promise<void> = async () => {}) {
       return mutate(async (draft) => {
         const index = findOrThrow(draft.jobs, jobId, 'job');
         const tasks = draft.tasks.filter((task) => task.jobId === jobId);
@@ -683,12 +721,12 @@ export const createForemanStore = ({
       });
     },
 
-    async createTask(jobId, input) {
+    async createTask(jobId: JobId, input: unknown) {
       const { title, instructions, dependsOn } = parse(createTaskSchema, input);
       return mutate((draft) => {
         findOrThrow(draft.jobs, jobId, 'job');
         const at = now();
-        const task = { id: randomUUID(), jobId, title, status: 'pending', createdAt: at, updatedAt: at };
+        const task = { id: randomUUID() as TaskId, jobId, title, status: 'pending', createdAt: at, updatedAt: at } as Task;
         if (instructions) task.instructions = instructions;
         task.dependsOn = dependsOn;
         validateDependencies(draft.tasks, task.id, jobId, dependsOn);
@@ -697,11 +735,11 @@ export const createForemanStore = ({
       });
     },
 
-    async updateTask(taskId, patch) {
+    async updateTask(taskId: TaskId, patch: unknown) {
         const { title, instructions, dependsOn } = parse(taskPatchSchema, patch);
       return mutate((draft) => {
         const index = findOrThrow(draft.tasks, taskId, 'task');
-        const task = { ...draft.tasks[index], updatedAt: now() };
+        const task = { ...draft.tasks[index]!, updatedAt: now() };
         if (dependsOn !== undefined) validateDependencies(draft.tasks, taskId, task.jobId, dependsOn);
         if (title !== undefined) task.title = title;
         if (instructions === null) delete task.instructions;
@@ -712,7 +750,7 @@ export const createForemanStore = ({
       });
     },
 
-    async createRun(taskId, input = {}) {
+    async createRun(taskId: TaskId, input: unknown = {}) {
       const { requestId } = parse(createRunSchema, input);
       return mutate((draft) => {
         findOrThrow(draft.tasks, taskId, 'task');
@@ -724,7 +762,7 @@ export const createForemanStore = ({
           throw new ForemanStoreError('conflict', 'This Task already has an active Run');
         }
         const dependencyStates = derivedTasks(draft.tasks, draft.runs);
-        const dependenciesReady = draft.tasks.find((entry) => entry.id === taskId).dependsOn
+        const dependenciesReady = draft.tasks.find((entry) => entry.id === taskId)!.dependsOn
           .every((dependencyId) => dependencyStates.find((entry) => entry.id === dependencyId)?.status === 'completed');
         if (!dependenciesReady) throw new ForemanStoreError('conflict', 'This Task is waiting for its dependencies');
         const completedRuns = draft.runs.filter((entry) => entry.taskId === taskId && entry.status === 'completed');
@@ -734,7 +772,7 @@ export const createForemanStore = ({
           throw new ForemanStoreError('conflict', 'This Task is already completed');
         }
         const at = now();
-        const run = { id: randomUUID(), taskId, status: 'queued', createdAt: at, updatedAt: at };
+        const run = { id: randomUUID() as RunId, taskId, status: 'queued', createdAt: at, updatedAt: at } as Run;
         if (requestId) run.requestId = requestId;
         draft.runs.push(run);
         return clone(run);
@@ -742,59 +780,59 @@ export const createForemanStore = ({
     },
 
     /** The run, its task and its job, read together. */
-    async runContext(runId) {
+    async runContext(runId: RunId) {
       await ensureLoaded();
       assertWritable();
-      const run = state.runs.find((entry) => entry.id === runId);
+      const run = state!.runs.find((entry) => entry.id === runId);
       if (!run) throw new ForemanStoreError('not_found', `run ${runId} does not exist`);
-      const task = derivedTasks(state.tasks, state.runs).find((entry) => entry.id === run.taskId) ?? null;
-      const job = task ? state.jobs.find((entry) => entry.id === task.jobId) ?? null : null;
+      const task = derivedTasks(state!.tasks, state!.runs).find((entry) => entry.id === run.taskId) ?? null;
+      const job = task ? state!.jobs.find((entry) => entry.id === task.jobId) ?? null : null;
       return clone({ run, task, job });
     },
 
-    async taskContext(taskId) {
+    async taskContext(taskId: TaskId) {
       await ensureLoaded();
       assertWritable();
-      const task = state.tasks.find((entry) => entry.id === taskId);
+      const task = state!.tasks.find((entry) => entry.id === taskId);
       if (!task) throw new ForemanStoreError('not_found', `task ${taskId} does not exist`);
-      const job = state.jobs.find((entry) => entry.id === task.jobId) ?? null;
-      const latestRun = latestRunByTask(state.runs).get(taskId) ?? null;
-      return clone({ task: derivedTasks(state.tasks, state.runs).find((entry) => entry.id === taskId), job, latestRun });
+      const job = state!.jobs.find((entry) => entry.id === task.jobId) ?? null;
+      const latestRun = latestRunByTask(state!.runs).get(taskId) ?? null;
+      return clone({ task: derivedTasks(state!.tasks, state!.runs).find((entry) => entry.id === taskId), job, latestRun });
     },
 
-    async setTaskWorkspace(taskId, workspace) {
+    async setTaskWorkspace(taskId: TaskId, workspace: TaskWorkspace) {
       return mutate((draft) => {
         const index = findOrThrow(draft.tasks, taskId, 'task');
-        const existing = draft.tasks[index].workspace;
+        const existing = draft.tasks[index]!.workspace;
         if (existing) {
           if (existing.kind !== workspace.kind || existing.directory !== workspace.directory) throw new ForemanStoreError('conflict', 'This Task already has a different workspace');
           return clone(draft.tasks[index]);
         }
-        draft.tasks[index] = { ...draft.tasks[index], workspace, updatedAt: now() };
+        draft.tasks[index] = { ...draft.tasks[index]!, workspace, updatedAt: now() };
         return clone(draft.tasks[index]);
       });
     },
 
-    async activityForRun(runId) {
+    async activityForRun(runId: RunId) {
       await ensureLoaded();
       assertWritable();
-      const run = state.runs.find((entry) => entry.id === runId);
+      const run = state!.runs.find((entry) => entry.id === runId);
       if (!run) throw new ForemanStoreError('not_found', `run ${runId} does not exist`);
       return clone(run.activity ?? []);
     },
 
     /** Runs whose execution is the given session. */
-    async runsForExecution(type, id) {
+    async runsForExecution(type: string, id: SessionId) {
       await ensureLoaded();
       if (unsupportedVersion !== null) return [];
-      return clone(state.runs.filter((run) => run.execution?.type === type && run.execution.id === id));
+      return clone(state!.runs.filter((run) => run.execution?.type === type && run.execution.id === id));
     },
 
     /** Runs that own an execution and have not finished, for reconciliation. */
     async activeExecutions() {
       await ensureLoaded();
       if (unsupportedVersion !== null) return [];
-      return clone(state.runs.filter((run) => run.execution?.id && !RUN_TERMINAL_STATUSES.has(run.status)));
+      return clone(state!.runs.filter((run) => run.execution?.id && !RUN_TERMINAL_STATUSES.has(run.status)));
     },
 
     /**
@@ -803,10 +841,10 @@ export const createForemanStore = ({
      * `execution`, `stoppedAt`), or null to leave the run alone. Everything the status
      * implies is applied by `applyRunStatus`, so the invariants hold here too.
      */
-    async applyExecutionChange(runId, change) {
+    async applyExecutionChange(runId: RunId, change: (run: Run) => ExecutionChange | null | undefined | false) {
       return mutate((draft) => {
         const index = findOrThrow(draft.runs, runId, 'run');
-        const current = draft.runs[index];
+        const current = draft.runs[index]!;
         const next = change(clone(current));
         if (!next) return { run: clone(current), changed: false };
         const at = now();
@@ -847,11 +885,11 @@ export const createForemanStore = ({
       });
     },
 
-    async addRunActivity(runId, input) {
+    async addRunActivity(runId: RunId, input: unknown) {
       const parsed = parse(createActivitySchema, input);
       return mutate((draft) => {
         const index = findOrThrow(draft.runs, runId, 'run');
-        const run = { ...draft.runs[index], activity: [...(draft.runs[index].activity ?? [])] };
+        const run = { ...draft.runs[index]!, activity: [...(draft.runs[index]!.activity ?? [])] };
         const event = appendActivity(run, parsed.type, parsed.message, now(), parsed.metadata);
         if (event === null) return null;
         run.updatedAt = event.timestamp;
@@ -860,17 +898,17 @@ export const createForemanStore = ({
       });
     },
 
-    async updateRun(runId, patch) {
+    async updateRun(runId: RunId, patch: unknown) {
       const { status, attention } = parse(runPatchSchema, patch);
       return mutate((draft) => {
         const index = findOrThrow(draft.runs, runId, 'run');
         // Once a run owns an execution, its status follows that execution;
         // a hand-written status would be contradicted by the next event.
-        if (draft.runs[index].execution) {
+        if (draft.runs[index]!.execution) {
           throw new ForemanStoreError('conflict', 'This run is executing; its status follows the session');
         }
         const at = now();
-        const run = { ...draft.runs[index], updatedAt: at };
+        const run = { ...draft.runs[index]!, updatedAt: at };
         run.activity = [...(run.activity ?? [])];
         if (status !== undefined) {
           const previousStatus = run.status;
