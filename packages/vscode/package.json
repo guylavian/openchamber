@@ -279,13 +279,13 @@
   "devDependencies": {
     "@types/adm-zip": "^0.5.8",
     "@types/vscode": "^1.85.0",
-    "@vitejs/plugin-react": "^5.2.0",
+    "@vitejs/plugin-react": "^6.1.1",
     "@vscode/vsce": "^4.0.0",
     "concurrently": "^10.0.5",
     "esbuild": "^0.28.2",
     "@typescript/native": "npm:typescript@7.0.2",
     "typescript": "npm:@typescript/typescript6@6.0.2",
-    "vite": "^7.3.6"
+    "vite": "^8.3.1"
   },
   "dependencies": {
     "@openchamber/ui": "workspace:*",

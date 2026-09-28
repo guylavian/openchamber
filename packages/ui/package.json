@@ -97,7 +97,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@remixicon/react": "^4.9.0",
-    "@vitejs/plugin-react": "^5.2.0",
+    "@vitejs/plugin-react": "^6.1.1",
     "autoprefixer": "^10.6.1",
     "concurrently": "^10.0.5",
     "cors": "^2.8.6",
@@ -113,6 +113,6 @@
     "@typescript/native": "npm:typescript@7.0.2",
     "typescript": "npm:@typescript/typescript6@6.0.2",
     "typescript-eslint": "^8.70.1",
-    "vite": "^7.3.6"
+    "vite": "^8.3.1"
   }
 }

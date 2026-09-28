@@ -24,8 +24,19 @@ export default defineConfig({
     global: 'globalThis',
   },
   build: {
+    // Vite 7's default target, kept explicitly across the Vite 8 upgrade so the
+    // emitted syntax does not change with the version (Vite 8's default is
+    // chrome111/edge111/firefox114/safari16.4/ios16.4).
+    target: ['chrome107', 'edge107', 'firefox104', 'safari16'],
+    // esbuild minifies JS and CSS as it did under Vite 7. Vite 8's defaults
+    // (Oxc for JS, Lightning CSS for CSS) change the output: Lightning CSS merges
+    // selectors into :is() (which changes specificity) and polyfills a
+    // dependency's light-dark() through CSS color-scheme, which this app mostly
+    // sets from JS. Moving to them is a separate, measured change.
+    minify: 'esbuild',
+    cssMinify: 'esbuild',
     chunkSizeWarningLimit: 1200,
-    rollupOptions: {
+    rolldownOptions: {
       external: ['node:child_process', 'node:fs', 'node:path', 'node:url'],
       output: {
         manualChunks(id) {
