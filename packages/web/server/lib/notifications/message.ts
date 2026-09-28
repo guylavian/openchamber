@@ -1,13 +1,13 @@
 const DEFAULT_NOTIFICATION_MESSAGE_MAX_LENGTH = 250;
 
-const resolvePositiveNumber = (value, fallback) => {
+const resolvePositiveNumber = (value: unknown, fallback: number): number => {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
     return fallback;
   }
   return value;
 };
 
-const normalizeNotificationPlainText = (text) => {
+const normalizeNotificationPlainText = (text: unknown): string => {
   if (typeof text !== 'string') {
     return '';
   }
@@ -27,7 +27,7 @@ const normalizeNotificationPlainText = (text) => {
     .trim();
 };
 
-export const truncateNotificationText = (text, maxLength = DEFAULT_NOTIFICATION_MESSAGE_MAX_LENGTH) => {
+export const truncateNotificationText = (text: unknown, maxLength: number = DEFAULT_NOTIFICATION_MESSAGE_MAX_LENGTH): string => {
   if (typeof text !== 'string') {
     return '';
   }
@@ -40,7 +40,7 @@ export const truncateNotificationText = (text, maxLength = DEFAULT_NOTIFICATION_
   return `${text.slice(0, safeMaxLength)}...`;
 };
 
-export const prepareNotificationLastMessage = async ({ message, settings }) => {
+export const prepareNotificationLastMessage = async ({ message, settings }: { message: unknown; settings?: Record<string, unknown> }): Promise<string> => {
   const originalMessage = typeof message === 'string' ? message : '';
   if (!originalMessage) {
     return '';
