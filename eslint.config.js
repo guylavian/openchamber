@@ -21,6 +21,14 @@ export default tseslint.config([
     },
   },
   {
+    // Fast refresh concerns modules the dev server hot-reloads in the browser;
+    // tests and their fixtures never are.
+    files: ['**/*.test.{ts,tsx}', '**/*.fixture.{ts,tsx}'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
+  {
     // Server TypeScript: typed lint, zero `any` and nothing that defeats the
     // checker. No `any` (explicit, flowing in, or `as any`), no `as unknown`
     // or double assertions, no angle-bracket assertions, no @ts- directives,

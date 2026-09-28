@@ -177,17 +177,36 @@ const runFixture = async (rendererCount: number): Promise<FixtureMetrics> => {
   return counts;
 };
 
-// Test-only happy-dom fidelity workaround; production sanitizing is untouched.
-// happy-dom's NodeIterator (18.0.1, still so in 20.14.5) is a TreeWalker
-// without the DOM standard's pre-removing steps, so when DOMPurify removes the
-// current node the walk ends and every later sibling goes unsanitized: markup a
-// browser sanitizes away is kept. Re-implement the iterator as specified
-// (https://dom.spec.whatwg.org/#interface-nodeiterator); forward walking is all
-// DOMPurify uses, and it is the only NodeIterator user in the UI. The sanitizer
-// test below proves dangerous markup is removed.
+// Test-only happy-dom fidelity workarounds; production sanitizing is untouched.
+// DOMPurify walks and prunes the DOM through two standard behaviours happy-dom
+// (18.0.1, still so in 20.14.5) does not implement. Without both it keeps
+// markup a browser sanitizes away; the sanitizer test below proves they hold.
+//
+// 1. `nodeName`: happy-dom defines it on each node class and its
+//    `Node.prototype` getter answers "" for every node; in a browser that getter
+//    answers for any node. DOMPurify 3.4+ reads node names through the
+//    `Node.prototype` getter (its realm-independence hardening,
+//    GHSA-4w3q-35jp-p934), so it stops recognising any element. Dispatch the
+//    getter to the node's own class.
+// 2. NodeIterator: happy-dom's is a TreeWalker without the DOM standard's
+//    pre-removing steps, so removing the current node ends the walk and every
+//    later sibling goes unsanitized. Re-implement the iterator as specified
+//    (https://dom.spec.whatwg.org/#interface-nodeiterator); forward walking is
+//    all DOMPurify uses, and it is the only NodeIterator user in the UI.
 // Call once the window's DOM globals are installed.
 const matchBrowserDom = (): void => {
   const base = Node.prototype;
+  Object.defineProperty(base, 'nodeName', {
+    configurable: true,
+    get(this: object): string {
+      for (let proto: object | null = Object.getPrototypeOf(this); proto && proto !== base; proto = Object.getPrototypeOf(proto)) {
+        const own = Object.getOwnPropertyDescriptor(proto, 'nodeName');
+        if (own?.get) return String(own.get.call(this));
+      }
+      return '';
+    },
+  });
+
   type Iterator = { root: Node; reference: Node; beforeReference: boolean };
   const live = new Set<Iterator>();
   const following = (node: Node, root: Node): Node | null => {
