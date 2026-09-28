@@ -80,6 +80,20 @@ High-value anchors:
 - Mobile: `packages/mobile/README.md`
 - SDK: `packages/sdk/DOCUMENTATION.md`
 
+## Persistent Repository Orientation
+
+These rules prevent agents from repeatedly starting tasks with broad repository exploration:
+
+- **Do not explore the repository from scratch for every task.** Read `docs/agent-repo-map.md` first to establish context.
+- **Read `docs/agent-repo-map.md` before broad searching.** The map provides the monorepo structure, main packages, entry points, and architectural boundaries.
+- **Read the relevant module `DOCUMENTATION.md` before broad scanning.** Prefer `packages/*/DOCUMENTATION.md` over recursive `grep` or `find` when working within a package.
+- **Avoid broad recursive scans unless the map is clearly stale or the task genuinely requires discovery.** If you must explore, check the map first and document any new findings.
+- **Prefer targeted reads/searches of relevant modules.** Use package-specific scripts, logs, and focused grep patterns instead of repository-wide discovery.
+- **Reuse architectural knowledge from previous work.** The map and module documentation are intended to persist across tasks and agents.
+- **If the map becomes stale, update it as part of the change.** New packages, moved entry points, major architecture changes, and new persistent domains (such as Foreman) all require map updates.
+
+These rules do not prevent necessary inspection. Agents may still inspect relevant files to verify implementation details. The goal is to eliminate repeated repository orientation, not to make agents blindly trust documentation.
+
 ## Project Skills
 
 Project skills live under `.agents/skills/*/SKILL.md`. You **MUST** load every
