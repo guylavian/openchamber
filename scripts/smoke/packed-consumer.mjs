@@ -8,12 +8,16 @@
  * Node and under Bun. Nothing here reads the workspace sources, so a package
  * that only works because the repository is next to it fails.
  *
- *   node scripts/smoke/packed-consumer.mjs [--bun <path>] [--keep]
+ *   node scripts/smoke/packed-consumer.mjs [--bun <path>] [--electron <path>] [--keep]
  *
- * Node is the one running this script. Exit code 1 on any failed check.
+ * Node is the one running this script. The import is also run by Electron's
+ * own Node (ELECTRON_RUN_AS_NODE), which is what the desktop app loads the
+ * server with; the Electron binary defaults to the workspace's. Exit code 1 on
+ * any failed check.
  */
 import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
@@ -27,6 +31,15 @@ const option = (name, fallback) => {
 };
 const bunBinary = option('--bun', process.env.BUN_BINARY || 'bun');
 const keep = argv.includes('--keep');
+const resolveWorkspaceElectron = () => {
+  try {
+    // The electron package's main export is the path of its binary.
+    return createRequire(path.join(repoRoot, 'packages/electron/package.json'))('electron');
+  } catch {
+    return null;
+  }
+};
+const electronBinary = option('--electron', resolveWorkspaceElectron());
 const nodeBinary = process.execPath;
 const npmBinary = path.join(path.dirname(nodeBinary), process.platform === 'win32' ? 'npm.cmd' : 'npm');
 
@@ -150,9 +163,13 @@ try {
     // Importing the server starts its background work, which keeps the event loop alive.
     'process.exit(0);',
   ].join('\n'));
-  for (const [label, runtime] of [['node', nodeBinary], ['bun', bunBinary]]) {
+  for (const [label, runtime, extraEnv] of [['node', nodeBinary, {}], ['bun', bunBinary, {}], ['electron-as-node', electronBinary, { ELECTRON_RUN_AS_NODE: '1' }]]) {
+    if (!runtime) {
+      record(`${label}: import @openchamber/web`, false, 'no Electron binary (run bun install, or pass --electron <path>)');
+      continue;
+    }
     try {
-      const out = execFileSync(runtime, ['check-import.mjs'], { cwd: work, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 60_000 });
+      const out = execFileSync(runtime, ['check-import.mjs'], { cwd: work, env: { ...env, ...extraEnv }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 60_000 });
       record(`${label}: import @openchamber/web`, out.trim().endsWith('ok'));
     } catch (error) {
       record(`${label}: import @openchamber/web`, false, String(error.stderr || error.message).split('\n').slice(0, 3).join(' | '));

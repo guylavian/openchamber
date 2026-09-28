@@ -44,3 +44,22 @@ jobs:
           bun run test:architecture
           bun run test:updater
           bun run type-check
+
+      # `bun run build` already built and verified the server artifact
+      # (build:server). This installs the packed npm tarballs into an empty
+      # project and runs them under Node 24 and Bun.
+      - name: Packed npm package smoke
+        run: node scripts/smoke/packed-consumer.mjs
+
+  docker-smoke:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build image
+        run: docker build -t openchamber:smoke .
+
+      - name: Smoke test the image
+        run: scripts/smoke/docker.sh openchamber:smoke

@@ -23,7 +23,7 @@
     "dev": "bun run build:watch",
     "dev:server": "bun ../../scripts/build-builtin-extensions.mjs && OPENCHAMBER_RELAY_HOST=${OPENCHAMBER_RELAY_HOST:-off} bun server/index.js --port ${OPENCHAMBER_PORT:-3001}",
     "dev:server:watch": "bun ../../scripts/build-builtin-extensions.mjs && node ./scripts/dev-server-watch.mjs",
-    "build:server": "node ./scripts/build-server.mjs",
+    "build:server": "node ./scripts/build-server.mjs && bun ./scripts/verify-server-artifact.mjs",
     "build": "bun run build:server && vite build",
     "build:watch": "bun ../../scripts/build-builtin-extensions.mjs && vite build --watch",
     "prepack": "bun run build:server",

@@ -101,3 +101,30 @@ dist-node/server/**, dist-node/bin/**  (portable ESM; runs on Node 24 and Bun)
 - Development runs the sources directly with Bun (`bun run dev`); the watcher
   restarts on `.js`, `.ts` and `.json` changes. Nothing in production executes
   TypeScript.
+
+## Server artifact gates
+
+Every shipping target runs `dist-node`, never the sources, so these checks run
+against the artifact and the packages built from it. "Build" means
+`bun run build:server`, which fails the build.
+
+| Gate | Checked by | Runs in |
+|---|---|---|
+| Every source module has a compiled module | `packages/web/scripts/build-server.mjs` | build |
+| Every non-code asset is classified and copied | `build-server.mjs` | build |
+| No TypeScript source in `dist-node` | `build-server.mjs` | build |
+| Every relative import in `dist-node` exists and none names a `.ts` file (AST scan) | `packages/web/scripts/verify-server-artifact.mjs` | build |
+| Every `@openchamber/web/...` import Electron uses resolves through `exports` into `dist-node` | `verify-server-artifact.mjs` | build |
+| Packed npm tarball has no TypeScript sources | `scripts/smoke/packed-consumer.mjs` | PR CI |
+| Packed package imports under Node 24, Bun and Electron-as-Node | `packed-consumer.mjs` | PR CI |
+| CLI `--version`; `serve` answers `/health`, serves the UI, loads the extension registry under Node and Bun | `packed-consumer.mjs` | PR CI |
+| Docker image: Node 24, `/health`, OpenCode ready, UI, API requires auth | `scripts/smoke/docker.sh` | PR CI (`docker-smoke` job) |
+| Packaged Desktop: server and OpenCode start, preload bridge, no Node globals in the renderer, React mounts, `/health`, UI, extensions, filesystem, node-pty terminal, clean `main.log` | `packages/electron` `bun run smoke:packaged` | desktop release smoke (macOS arm64) |
+
+Locally, after `bun run build` (and `bun run electron:build` for the desktop gate):
+
+```bash
+node scripts/smoke/packed-consumer.mjs
+docker build -t openchamber:smoke . && scripts/smoke/docker.sh openchamber:smoke
+bun run --cwd packages/electron smoke:packaged
+```

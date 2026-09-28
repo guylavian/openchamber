@@ -130,6 +130,14 @@ jobs:
           bunx electron-builder --mac --${{ matrix.arch }} --publish=never
           bun run verify:opencode-cli:packaged
 
+      # Launches the packaged app in an isolated home and checks the server,
+      # OpenCode, the preload bridge, a native PTY terminal and main.log. Only
+      # on the runner's own architecture (the runner is arm64).
+      - name: Packaged app smoke
+        if: ${{ matrix.arch == 'arm64' }}
+        working-directory: packages/electron
+        run: bun run smoke:packaged -- --app dist/mac-arm64/OpenChamber.app
+
       - name: Verify signature + entitlements + notarization
         run: |
           set -euo pipefail
