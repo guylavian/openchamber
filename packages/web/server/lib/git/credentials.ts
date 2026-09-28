@@ -4,8 +4,13 @@ import os from 'os';
 
 const GIT_CREDENTIALS_PATH = path.join(os.homedir(), '.git-credentials');
 
-export function discoverGitCredentials() {
-  const credentials = [];
+interface Credential {
+  host: string;
+  username: string;
+}
+
+export function discoverGitCredentials(): Credential[] {
+  const credentials: Credential[] = [];
 
   if (!fs.existsSync(GIT_CREDENTIALS_PATH)) {
     return credentials;

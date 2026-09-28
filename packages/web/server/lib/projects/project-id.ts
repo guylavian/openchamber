@@ -6,12 +6,12 @@ import crypto from 'node:crypto';
 const MAX_PROJECT_CONFIG_FILE_STEM_LENGTH = 200;
 const HASHED_PROJECT_CONFIG_FILE_STEM_PREFIX = 'path_sha256_';
 
-const normalizeProjectPathForId = (value) => {
+const normalizeProjectPathForId = (value: unknown): string => {
   if (typeof value !== 'string') return '';
   return value.replace(/\\/g, '/').replace(/\/+$/g, '') || value;
 };
 
-export const createProjectIdFromPath = (projectPath) => {
+export const createProjectIdFromPath = (projectPath: unknown): string => {
   const normalized = normalizeProjectPathForId(projectPath).trim();
   if (!normalized) {
     return '';
@@ -26,7 +26,7 @@ export const createProjectIdFromPath = (projectPath) => {
  * find the project's checkout (and the shared config inside it) from the id
  * alone.
  */
-export const projectPathFromId = (projectId) => {
+export const projectPathFromId = (projectId: unknown): string => {
   if (typeof projectId !== 'string' || !projectId.startsWith('path_')) return '';
   const encoded = projectId.slice('path_'.length);
   if (!encoded || !/^[A-Za-z0-9_-]+$/.test(encoded)) return '';
@@ -49,7 +49,7 @@ export const projectPathFromId = (projectId) => {
  * random-id era. The VS Code extension host applies the same rule
  * (`packages/vscode/src/bridge-project-setup-runtime.ts`); keep the two in sync.
  */
-export const projectConfigFileStemOf = (projectId) => {
+export const projectConfigFileStemOf = (projectId: string): string => {
   if (projectId.length <= MAX_PROJECT_CONFIG_FILE_STEM_LENGTH) return projectId;
   const digest = crypto.createHash('sha256').update(projectId, 'utf8').digest('hex');
   return `${HASHED_PROJECT_CONFIG_FILE_STEM_PREFIX}${digest}`;
