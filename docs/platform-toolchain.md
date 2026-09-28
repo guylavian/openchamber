@@ -140,7 +140,6 @@ not upgraded, and why:
 |---|---|---|---|---|
 | `node-addon-api` | root, exact `7.1.1` | Held at 7 (8.x is current) | `node-pty` 1.2.0-beta.15 declares `node-addon-api ^7.1.0`, and the Windows native rebuild (`packages/electron/scripts/rebuild-native.mjs`) copies the root copy into `node-pty`, so 8 would break that declared range. | `node-pty` moves to `node-addon-api` 8. |
 | `@types/vscode` | `packages/vscode`, `^1.85.0` | Range held at the engine floor (resolves to the latest 1.x) | `vsce` refuses to package when the `@types/vscode` range exceeds `engines.vscode`, and higher typings would admit APIs older supported VS Code lacks. | `engines.vscode` is raised. |
-| `cross-env` | root, `packages/ui`, `packages/web`, `^10.1.0` | Current, unused | Nothing invokes it. | Dependency cleanup. |
 
 `@xenova/transformers` was removed: nothing imported it after the local WASM
 speech-to-text was dropped, and it brought `protobufjs` 6, `sharp` 0.32 and
