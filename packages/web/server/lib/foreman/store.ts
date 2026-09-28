@@ -265,6 +265,12 @@ export type TaskWorkspace = NonNullable<Task['workspace']>;
 export type RunStatus = Run['status'];
 export type TaskStatus = Task['status'];
 type ActivityType = ActivityEvent['type'];
+/** A task as the client sees it: its status derived from its runs and dependencies. */
+export type DerivedTask = Task & {
+  currentRunId: RunId | undefined;
+  blockedByTaskIds?: string[];
+  blockingReason?: 'dependency_failed' | 'dependency_incomplete';
+};
 type ActivityMetadata = ActivityEvent['metadata'];
 type StoredTaskV1 = z.output<typeof foremanFileV1Schema>['tasks'][number];
 
@@ -316,7 +322,7 @@ const latestRunByTask = (runs: readonly Run[]): Map<string, Run> => {
   for (const run of runs) latest.set(run.taskId, run);
   return latest;
 };
-const derivedTasks = (tasks: readonly Task[], runs: readonly Run[]) => {
+const derivedTasks = (tasks: readonly Task[], runs: readonly Run[]): DerivedTask[] => {
   const latestRuns = latestRunByTask(runs);
   const base = new Map(tasks.map((task): [string, { status: string; run: Run | undefined }] => {
     const run = latestRuns.get(task.id);
@@ -935,3 +941,5 @@ export const createForemanStore = ({
     },
   };
 };
+
+export type ForemanStore = ReturnType<typeof createForemanStore>;

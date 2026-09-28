@@ -1,17 +1,21 @@
 import { ForemanStoreError } from './store.js';
+import type { ForemanStore } from './store.js';
+import type { JobId, RunId, TaskId } from './types.js';
 
 export const GLOBAL_TASK_CONCURRENCY = 3;
-export const foremanGlobalConcurrency = (configuredValue) => {
+export const foremanGlobalConcurrency = (configuredValue: string | undefined): number => {
   if (configuredValue === undefined || configuredValue.trim() === '') return GLOBAL_TASK_CONCURRENCY;
   const parsed = Number(configuredValue);
   return Number.isInteger(parsed) && parsed >= 1 && parsed <= 32 ? parsed : GLOBAL_TASK_CONCURRENCY;
 };
-const occupiesCapacity = (run) => run.status === 'running' || run.status === 'waiting_for_user' || (run.status === 'queued' && Boolean(run.execution));
+const occupiesCapacity = (run: { status: string; execution?: unknown }): boolean => run.status === 'running' || run.status === 'waiting_for_user' || (run.status === 'queued' && Boolean(run.execution));
 
 /** Deterministic capacity and dependency gate for manual Task starts. */
-export const createForemanScheduler = ({ store, globalLimit = GLOBAL_TASK_CONCURRENCY }) => {
-  const reservations = new Map();
-  let reconcilePromise = null;
+interface Reservation { jobId: JobId; taskId: TaskId; baseDirectory: string | undefined }
+
+export const createForemanScheduler = ({ store, globalLimit = GLOBAL_TASK_CONCURRENCY }: { store: Pick<ForemanStore, 'snapshot'>; globalLimit?: number }) => {
+  const reservations = new Map<string, Reservation>();
+  let reconcilePromise: Promise<{ release: () => void } | null> | null = null;
   return {
     async reconcile() {
       if (reconcilePromise) return reconcilePromise;
@@ -30,7 +34,7 @@ export const createForemanScheduler = ({ store, globalLimit = GLOBAL_TASK_CONCUR
       })().finally(() => { reconcilePromise = null; });
       return reconcilePromise;
     },
-    async reserve(runId) {
+    async reserve(runId: RunId): Promise<{ release: () => void }> {
       const state = await store.snapshot();
       const run = state.runs.find((entry) => entry.id === runId);
       const task = run && state.tasks.find((entry) => entry.id === run.taskId);
@@ -52,11 +56,11 @@ export const createForemanScheduler = ({ store, globalLimit = GLOBAL_TASK_CONCUR
       if ((!task.workspace || task.workspace.kind === 'shared-directory') && job.directory) {
         const sharing = active.some((entry) => {
           const activeTask = state.tasks.find((candidate) => candidate.id === entry.taskId);
-          return activeTask?.id !== task.id && activeTask?.workspace?.directory === job.directory && activeTask.workspace.kind === 'shared-directory';
+          return activeTask?.id !== task.id && activeTask?.workspace?.directory === job.directory && activeTask!.workspace!.kind === 'shared-directory';
         }) || reserved.some((entry) => entry.baseDirectory === job.directory && entry.taskId !== task.id);
         if (sharing) throw new ForemanStoreError('conflict', 'This workspace is not a Git repository; only one Task can run in it at a time');
       }
-      const reservation = { jobId: job.id, taskId: task.id, baseDirectory: job.directory };
+      const reservation: Reservation = { jobId: job.id, taskId: task.id, baseDirectory: job.directory };
       reservations.set(runId, reservation);
       let released = false;
       return { release: () => { if (!released) { released = true; reservations.delete(runId); } } };
