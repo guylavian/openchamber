@@ -17,7 +17,7 @@
  * hides the attempt from the only party who can judge it.
  */
 
-const PATTERNS = [
+const PATTERNS: RegExp[] = [
   // Trying to displace instructions already in play.
   /\bignore\s+(?:all\s+|any\s+)?(?:previous|prior|earlier|above)\s+(?:instructions?|prompts?|rules?|context)\b/i,
   /\bdisregard\s+(?:all\s+|any\s+)?(?:previous|prior|earlier|above)\s+(?:instructions?|prompts?|rules?)\b/i,
@@ -48,7 +48,7 @@ const PATTERNS = [
  * a boolean so the panel can tell the user what was matched instead of leaving
  * them with an unexplained warning.
  */
-export const findThreatPattern = (value) => {
+export const findThreatPattern = (value: unknown): string | null => {
   if (typeof value !== 'string' || value.length === 0) {
     return null;
   }
@@ -56,6 +56,6 @@ export const findThreatPattern = (value) => {
   return match ? match.source.slice(0, 80) : null;
 };
 
-export const looksLikeInjection = (...values) => (
+export const looksLikeInjection = (...values: unknown[]): boolean => (
   values.some((value) => findThreatPattern(value) !== null)
 );

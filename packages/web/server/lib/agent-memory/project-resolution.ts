@@ -17,17 +17,23 @@ import path from 'node:path';
 
 import { createProjectIdFromPath } from '../projects/project-id.js';
 
-const normalize = (value) => {
+const normalize = (value: unknown): string => {
   if (typeof value !== 'string') return '';
   const trimmed = value.trim();
   return trimmed ? path.resolve(trimmed) : '';
 };
 
-export const createMemoryProjectResolver = (dependencies) => {
+interface MemoryProjectResolverDeps {
+  listProjectPaths: () => Promise<string[] | null | undefined>;
+  resolvePrimaryWorktreeRoot: (dir: string) => Promise<{ root: string } | null | undefined>;
+  managedProjectRoots?: string[];
+}
+
+export const createMemoryProjectResolver = (dependencies: MemoryProjectResolverDeps) => {
   const { listProjectPaths, resolvePrimaryWorktreeRoot, managedProjectRoots = [] } = dependencies;
   const managedRoots = managedProjectRoots.map(normalize).filter(Boolean);
 
-  return async (directory) => {
+  return async (directory: string): Promise<string> => {
     const resolved = normalize(directory);
     if (!resolved) {
       return '';
@@ -41,7 +47,7 @@ export const createMemoryProjectResolver = (dependencies) => {
       return createProjectIdFromPath(managedRoot);
     }
 
-    let configured = [];
+    let configured: string[] = [];
     try {
       configured = ((await listProjectPaths()) || []).map(normalize).filter(Boolean);
     } catch {
