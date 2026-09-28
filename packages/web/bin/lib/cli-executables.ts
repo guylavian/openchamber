@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 
-const WINDOWS_EXTENSIONS = process.platform === 'win32'
+const WINDOWS_EXTENSIONS: string[] = process.platform === 'win32'
   ? (process.env.PATHEXT || '.EXE;.CMD;.BAT;.COM')
       .split(';')
       .map((ext) => ext.trim().toLowerCase())
@@ -9,7 +9,7 @@ const WINDOWS_EXTENSIONS = process.platform === 'win32'
       .map((ext) => (ext.startsWith('.') ? ext : `.${ext}`))
   : [''];
 
-function isExecutable(filePath) {
+function isExecutable(filePath: string): boolean {
   try {
     const stats = fs.statSync(filePath);
     if (!stats.isFile()) {
@@ -25,7 +25,7 @@ function isExecutable(filePath) {
   }
 }
 
-function resolveExplicitBinary(candidate) {
+function resolveExplicitBinary(candidate: string | undefined | null): string | null {
   if (!candidate) {
     return null;
   }
@@ -36,7 +36,7 @@ function resolveExplicitBinary(candidate) {
   return null;
 }
 
-function searchPathFor(command) {
+function searchPathFor(command: string): string | null {
   const pathValue = process.env.PATH || '';
   const segments = pathValue.split(path.delimiter).filter(Boolean);
   for (const dir of segments) {

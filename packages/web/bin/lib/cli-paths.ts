@@ -6,22 +6,22 @@ const TUNNEL_PROFILES_FILE_NAME = 'tunnel-profiles.json';
 const LEGACY_CLOUDFLARE_MANAGED_REMOTE_FILE_NAME = 'cloudflare-managed-remote-tunnels.json';
 const TUNNEL_CLI_STATE_FILE_NAME = 'tunnel-cli-state.json';
 
-function getDataDir() {
+function getDataDir(): string {
   if (typeof process.env.OPENCHAMBER_DATA_DIR === 'string' && process.env.OPENCHAMBER_DATA_DIR.trim().length > 0) {
     return path.resolve(process.env.OPENCHAMBER_DATA_DIR.trim());
   }
   return path.join(os.homedir(), '.config', 'openchamber');
 }
 
-function getLogsDir() {
+function getLogsDir(): string {
   return path.join(getDataDir(), 'logs');
 }
 
-function getSettingsFilePath() {
+function getSettingsFilePath(): string {
   return path.join(getDataDir(), 'settings.json');
 }
 
-function readDesktopLocalPortFromSettings() {
+function readDesktopLocalPortFromSettings(): number | null {
   try {
     const raw = fs.readFileSync(getSettingsFilePath(), 'utf8');
     const parsed = JSON.parse(raw);
@@ -35,7 +35,7 @@ function readDesktopLocalPortFromSettings() {
   }
 }
 
-function readDesktopLocalClientTokenFromSettings() {
+function readDesktopLocalClientTokenFromSettings(): string {
   try {
     const raw = fs.readFileSync(getSettingsFilePath(), 'utf8');
     const parsed = JSON.parse(raw);
@@ -46,27 +46,27 @@ function readDesktopLocalClientTokenFromSettings() {
   }
 }
 
-function ensureLogsDir() {
+function ensureLogsDir(): void {
   fs.mkdirSync(getLogsDir(), { recursive: true });
 }
 
-function getLogFilePath(port) {
+function getLogFilePath(port: string | number): string {
   return path.join(getLogsDir(), `openchamber-${port}.log`);
 }
 
-function getTunnelProfilesFilePath() {
+function getTunnelProfilesFilePath(): string {
   return path.join(getDataDir(), TUNNEL_PROFILES_FILE_NAME);
 }
 
-function getLegacyCloudflareManagedRemoteFilePath() {
+function getLegacyCloudflareManagedRemoteFilePath(): string {
   return path.join(getDataDir(), LEGACY_CLOUDFLARE_MANAGED_REMOTE_FILE_NAME);
 }
 
-function getTunnelCliStateFilePath() {
+function getTunnelCliStateFilePath(): string {
   return path.join(getDataDir(), TUNNEL_CLI_STATE_FILE_NAME);
 }
 
-function readTunnelCliState() {
+function readTunnelCliState(): Record<string, unknown> {
   const filePath = getTunnelCliStateFilePath();
   try {
     const raw = fs.readFileSync(filePath, 'utf8');
@@ -80,7 +80,7 @@ function readTunnelCliState() {
   }
 }
 
-function readLastManagedLocalConfigPath() {
+function readLastManagedLocalConfigPath(): string {
   const state = readTunnelCliState();
   if (typeof state.lastManagedLocalConfigPath !== 'string') {
     return '';
@@ -88,7 +88,7 @@ function readLastManagedLocalConfigPath() {
   return state.lastManagedLocalConfigPath.trim();
 }
 
-function writeLastManagedLocalConfigPath(configPath) {
+function writeLastManagedLocalConfigPath(configPath: string): void {
   if (typeof configPath !== 'string' || configPath.trim().length === 0) {
     return;
   }
@@ -104,7 +104,7 @@ function writeLastManagedLocalConfigPath(configPath) {
 }
 
 
-function getRunDir() {
+function getRunDir(): string {
   const dir = path.join(getDataDir(), 'run');
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   return dir;

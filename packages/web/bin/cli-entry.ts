@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 
-function normalizeCliEntryPath(filePath, realpath = fs.realpathSync) {
+function normalizeCliEntryPath(filePath: string, realpath: (p: string) => string = fs.realpathSync): string | null {
   if (typeof filePath !== 'string' || filePath.trim().length === 0) {
     return null;
   }
@@ -16,11 +16,11 @@ function normalizeCliEntryPath(filePath, realpath = fs.realpathSync) {
 }
 
 function isModuleCliExecution(
-  entryPath = process.argv[1],
-  moduleUrl,
-  realpath = fs.realpathSync,
-  expectedBinName,
-) {
+  entryPath: string | undefined = process.argv[1],
+  moduleUrl: string,
+  realpath: (p: string) => string = fs.realpathSync,
+  expectedBinName?: string,
+): boolean {
   if (typeof entryPath !== 'string' || entryPath.trim().length === 0) {
     return false;
   }

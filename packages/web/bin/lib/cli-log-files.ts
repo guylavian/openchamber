@@ -4,7 +4,7 @@ const DEFAULT_TAIL_LINES = 200;
 const LOG_ROTATE_MAX_BYTES = 10 * 1024 * 1024;
 const LOG_ROTATE_KEEP = 5;
 
-function rotateLogFile(logPath) {
+function rotateLogFile(logPath: string): void {
   try {
     const stats = fs.statSync(logPath);
     if (stats.size < LOG_ROTATE_MAX_BYTES) {
@@ -34,7 +34,7 @@ function rotateLogFile(logPath) {
 }
 
 
-function readTailLines(filePath, lineCount = DEFAULT_TAIL_LINES) {
+function readTailLines(filePath: string, lineCount: number = DEFAULT_TAIL_LINES): string[] {
   if (!fs.existsSync(filePath)) {
     return [];
   }
@@ -46,7 +46,7 @@ function readTailLines(filePath, lineCount = DEFAULT_TAIL_LINES) {
   return lines.slice(Math.max(0, lines.length - lineCount));
 }
 
-function followFile(filePath, onLine) {
+function followFile(filePath: string, onLine: (line: string) => void): () => void {
   let position = 0;
   try {
     position = fs.statSync(filePath).size;
