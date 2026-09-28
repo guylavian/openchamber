@@ -182,7 +182,7 @@
     "@vitejs/plugin-react": "^5.2.0",
     "autoprefixer": "^10.6.1",
     "babel-plugin-react-compiler": "^1.0.0",
-    "concurrently": "^9.2.4",
+    "concurrently": "^10.0.5",
     "cors": "^2.8.6",
     "cross-env": "^7.0.3",
     "eslint": "^9.39.5",
