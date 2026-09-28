@@ -13,7 +13,7 @@
 
 const TRUTHY = new Set(['1', 'true', 'yes', 'on']);
 
-export const isAgentMemoryFeatureAvailable = () => {
+export const isAgentMemoryFeatureAvailable = (): boolean => {
   const raw = process.env.OPENCHAMBER_MEMORY_ENABLE;
   return typeof raw === 'string' && TRUTHY.has(raw.trim().toLowerCase());
 };

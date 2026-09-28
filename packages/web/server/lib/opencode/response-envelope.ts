@@ -8,7 +8,7 @@
  * Unwrapping only when `location` was present left record envelopes in place,
  * so a session's `parentID` and a message's `id` read as missing.
  */
-export const unwrapOpenCodeResponse = (body) => {
+export const unwrapOpenCodeResponse = (body: unknown): unknown => {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return body;
   return 'data' in body && !('cursor' in body) ? body.data : body;
 };

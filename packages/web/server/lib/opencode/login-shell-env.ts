@@ -16,12 +16,14 @@
  * process.env is inherited by every child the server spawns.
  */
 
-let provided;
+type EnvSnapshot = Record<string, string>;
+
+let provided: EnvSnapshot | null | undefined;
 
 // `snapshot` is the parsed `env -0` map, or null when the host's probe failed.
-export const provideLoginShellEnvSnapshot = (snapshot) => {
+export const provideLoginShellEnvSnapshot = (snapshot: EnvSnapshot | null | undefined): void => {
   provided = snapshot ? { ...snapshot } : null;
 };
 
 // `undefined` when no host provided one, so the server probes itself.
-export const providedLoginShellEnvSnapshot = () => provided;
+export const providedLoginShellEnvSnapshot = (): EnvSnapshot | null | undefined => provided;

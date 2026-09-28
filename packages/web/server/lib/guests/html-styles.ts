@@ -5,4 +5,4 @@ import { GUEST_SCROLLBAR_CSS, GUEST_SCROLLBAR_SCRIPT } from '@openchamber/sdk';
  * The script only marks scrolling elements so their scrollbars show while scrolling; an authored
  * CSP that blocks inline scripts leaves the hover-only behavior of the stylesheet.
  */
-export const injectGuestDocumentStyles = (html) => `${html}\n<style data-openchamber-guest-styles>${GUEST_SCROLLBAR_CSS}</style>\n<script data-openchamber-guest-scrollbar>${GUEST_SCROLLBAR_SCRIPT}</script>`;
+export const injectGuestDocumentStyles = (html: string): string => `${html}\n<style data-openchamber-guest-styles>${GUEST_SCROLLBAR_CSS}</style>\n<script data-openchamber-guest-scrollbar>${GUEST_SCROLLBAR_SCRIPT}</script>`;

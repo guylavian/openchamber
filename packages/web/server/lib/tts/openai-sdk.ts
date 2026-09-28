@@ -3,9 +3,11 @@
  * it is loaded on the first call rather than with the server.
  */
 
-let pending;
+type OpenAIClass = typeof import('openai').default;
 
-export const loadOpenAI = () => {
+let pending: Promise<OpenAIClass> | undefined;
+
+export const loadOpenAI = (): Promise<OpenAIClass> => {
   pending ??= import('openai').then((module) => module.default);
   return pending;
 };

@@ -38,5 +38,11 @@
   },
   "packages/web/server/lib/foreman/task-workspaces.ts": {
     "error as { code?: unknown } | null | undefined": 1
+  },
+  "packages/web/server/lib/opencode/input-history-scope.ts": {
+    "value as number": 2
+  },
+  "packages/web/server/lib/permission-auto-accept/modes.ts": {
+    "value as PermissionMode": 1
   }
 }

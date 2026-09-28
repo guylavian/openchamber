@@ -10,12 +10,14 @@
  * `ask`, and `true` meant auto-accept, which the old global safety-net switch
  * turned into `safety`. The caller supplies that answer as `legacyEnabledMode`.
  */
-export const PERMISSION_MODES = ['ask', 'safety', 'auto'];
+export const PERMISSION_MODES = ['ask', 'safety', 'auto'] as const;
+export type PermissionMode = (typeof PERMISSION_MODES)[number];
 
-export const isPermissionMode = (value) => PERMISSION_MODES.includes(value);
+// `value` is any stored or requested value; includes() compares it as is.
+export const isPermissionMode = (value: unknown): value is PermissionMode => PERMISSION_MODES.includes(value as PermissionMode);
 
 /** A stored or requested value as a mode, or null when it is neither a mode nor a legacy boolean. */
-export const toPermissionMode = (value, legacyEnabledMode = 'auto') => {
+export const toPermissionMode = (value: unknown, legacyEnabledMode: PermissionMode = 'auto'): PermissionMode | null => {
   if (isPermissionMode(value)) return value;
   if (value === true) return legacyEnabledMode;
   if (value === false) return 'ask';
@@ -23,4 +25,4 @@ export const toPermissionMode = (value, legacyEnabledMode = 'auto') => {
 };
 
 /** What clients that only know on/off see: anything but `ask` answers requests by itself. */
-export const isAutoAnsweringMode = (mode) => mode === 'safety' || mode === 'auto';
+export const isAutoAnsweringMode = (mode: unknown): boolean => mode === 'safety' || mode === 'auto';
