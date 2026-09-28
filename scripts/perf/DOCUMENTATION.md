@@ -370,6 +370,7 @@ be a measurement, never a disabled instrument.
 | File | Responsibility |
 |---|---|
 | `cdp.mjs` | Chrome launch, target discovery, minimal CDP client. Owns the anti-throttling launch flags. |
+| `desktop-app.mjs` | Launching a packaged Desktop build in isolation: build layout, isolated home and environment, `[startup-performance]` marks from `main.log`, process-tree cleanup. Shared by `profile:startup` and `packages/electron`'s `smoke:packaged`. |
 | `metrics.mjs` | Metric derivations shared by the profilers: growth rates, percentiles, long-task, trace-event and per-thread summaries. |
 | `process-cpu.mjs` | CPU per process from cumulative counters: Chrome through browser-level `SystemInfo`, the server and its OpenCode child through `ps`. Unresolved processes are reported as missing, never as zero. |
 | `fixture-provider.mjs` | Deterministic OpenAI-compatible provider: one fixed document at a rate chosen by model name. |

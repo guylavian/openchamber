@@ -169,6 +169,28 @@ Build output goes to `packages/electron/dist`.
 
 macOS builds produce `dmg` and `zip` artifacts. Windows builds produce an NSIS installer. Linux builds produce an AppImage for the native x64 or arm64 host.
 
+Electron is pinned to an exact stable release (`electron` in `package.json`); it
+owns the Chromium, V8 and Node versions the app runs. Electron 44 requires
+macOS 13, 64-bit Windows and 64-bit ARM or x64 Linux.
+
+### Packaged smoke test
+
+After packaging (`--dir` is enough), from `packages/electron`:
+
+```bash
+bun run smoke:packaged                   # default: dist/mac-<arch>/OpenChamber.app
+bun run smoke:packaged -- --app path/to/OpenChamber.app
+```
+
+It launches the build once in an isolated home (the same isolation as
+`bun run profile:startup`; the installed app, its settings and logs are never
+touched) and checks: the main process starts the server and OpenCode, the
+preload exposes `window.__OPENCHAMBER_DESKTOP__` while the renderer has no Node
+globals, React mounts, the embedded server answers `/health`, serves the UI,
+reads the extension registry and the filesystem, a terminal spawns through the
+rebuilt `node-pty`, and `main.log` holds no module-resolution or native-load
+error. Exit code 1 on any failed check.
+
 ## Platform Notes
 
 macOS packaging needs Xcode/build tools for notarized builds and icon asset compilation.
