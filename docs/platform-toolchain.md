@@ -120,6 +120,7 @@ against the artifact and the packages built from it. "Build" means
 | CLI `--version`; `serve` answers `/health`, serves the UI, loads the extension registry under Node and Bun | `packed-consumer.mjs` | PR CI |
 | Docker image: Node 24, `/health`, OpenCode ready, UI, API requires auth | `scripts/smoke/docker.sh` | PR CI (`docker-smoke` job) |
 | Packaged Desktop: server and OpenCode start, preload bridge, no Node globals in the renderer, React mounts, `/health`, UI, extensions, filesystem, node-pty terminal, clean `main.log` | `packages/electron` `bun run smoke:packaged` | desktop release smoke (macOS arm64) |
+| Server TypeScript: no `!` or `as T` beyond the frozen migration budget (`scripts/assertion-budget.json`), and no ESLint directive comments | `scripts/check-assertion-budget.mjs` (TypeScript AST and scanner) | `lint`, PR CI |
 
 Locally, after `bun run build` (and `bun run electron:build` for the desktop gate):
 

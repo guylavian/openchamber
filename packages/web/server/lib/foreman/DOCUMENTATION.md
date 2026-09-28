@@ -217,7 +217,12 @@ describe the contract the code already had; they add no run-time checks.
   `findOrThrow` found, an object finished field by field, a store query that
   only returns runs with a session), the code says so with `x!` or `x as T`.
   Both are erased, so behaviour stays the JavaScript's, including the error it
-  would throw if the invariant broke.
+  would throw if the invariant broke. These 76 are a frozen migration budget
+  (`scripts/assertion-budget.json`), checked by `scripts/check-assertion-budget.mjs`
+  as part of `lint`: a new `!` or `as T` anywhere in server TypeScript fails
+  unless it is reviewed into the baseline, and the baseline can only shrink.
+  New code narrows, parses with a schema, uses a discriminated union, or gives
+  the API better types instead.
 - **Rules that would change behaviour are off** for server TypeScript:
   no-unnecessary-condition (defensive `?.`, `??` and branches stay),
   restrict-template-expressions, require-await, no-deprecated,

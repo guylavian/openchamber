@@ -1,0 +1,42 @@
+{
+  "packages/web/server/lib/foreman/execution.ts": {
+    "({ verdict: 'idle' }) as ExecutionTruth": 1,
+    "eventChange.sessionID as SessionId": 1,
+    "run.execution!": 6,
+    "run.execution!.id!": 2,
+    "sessionId as SessionId": 1
+  },
+  "packages/web/server/lib/foreman/routes.ts": {
+    "req.params.jobId as JobId": 7,
+    "req.params.memoryId as MemoryId": 2,
+    "req.params.runId as RunId": 5,
+    "req.params.taskId as TaskId": 3
+  },
+  "packages/web/server/lib/foreman/scheduler.ts": {
+    "activeTask!": 1,
+    "activeTask!.workspace!": 1
+  },
+  "packages/web/server/lib/foreman/store.ts": {
+    "JSON.parse(JSON.stringify(value)) as Value": 1,
+    "['failed', 'cancelled'] as (string | undefined)[]": 1,
+    "base.get(task.id)!": 1,
+    "current.status as TaskStatus": 1,
+    "draft.jobs[index]!": 1,
+    "draft.memories[index]!": 1,
+    "draft.runs[index]!": 5,
+    "draft.tasks.find((entry) => entry.id === taskId)!": 1,
+    "draft.tasks[index]!": 4,
+    "error as { code?: unknown }": 1,
+    "randomUUID() as JobId": 1,
+    "randomUUID() as MemoryId": 1,
+    "randomUUID() as RunId": 1,
+    "randomUUID() as TaskId": 1,
+    "state!": 21,
+    "{ ...draft.memories[index]!, ...parsed, updatedAt: at, lastVerifiedAt: at } as Memory": 1,
+    "{ id: randomUUID() as RunId, taskId, status: 'queued', createdAt: at, updatedAt: at } as Run": 1,
+    "{ id: randomUUID() as TaskId, jobId, title, status: 'pending', createdAt: at, updatedAt: at } as Task": 1
+  },
+  "packages/web/server/lib/foreman/task-workspaces.ts": {
+    "error as { code?: unknown } | null | undefined": 1
+  }
+}

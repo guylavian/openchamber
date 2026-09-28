@@ -34,9 +34,13 @@ export default tseslint.config([
     // or double assertions, no angle-bracket assertions, no @ts- directives,
     // and no eslint-disable comments to switch any of it off.
     // Modules converted from JavaScript keep its runtime behaviour exactly, so:
-    // - `x as T` and `x!` are allowed. Both are erased; each marks a place the
-    //   JavaScript relies on an invariant the checker cannot see (state loaded,
-    //   an index found, an object finished field by field).
+    // - `x as T` and `x!` are allowed by lint. Both are erased; each marks a
+    //   place the JavaScript relies on an invariant the checker cannot see
+    //   (state loaded, an index found, an object finished field by field).
+    //   They are a migration allowance, not a style: the reviewed set is frozen
+    //   in scripts/assertion-budget.json and scripts/check-assertion-budget.mjs
+    //   (part of `lint`) fails on any new one, and on any ESLint directive
+    //   comment. New code narrows, parses with a schema, or improves the types.
     // - no-unnecessary-condition is off: it would delete defensive `?.`, `??`
     //   and branches the types call unreachable.
     // - restrict-template-expressions is off: it would replace `${value}` with
