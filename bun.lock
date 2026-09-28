@@ -337,7 +337,7 @@
       "name": "@openchamber/web",
       "version": "2.0.2",
       "bin": {
-        "openchamber": "./bin/cli.js",
+        "openchamber": "./dist-node/bin/cli.js",
       },
       "dependencies": {
         "@clack/prompts": "^1.1.0",
