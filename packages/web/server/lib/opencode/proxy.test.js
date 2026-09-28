@@ -172,12 +172,17 @@ describe('createOpenCodeProxyAgent', () => {
     expect(seen[1].remotePort).toBe(seen[0].remotePort);
   });
 
-  it('without an agent, http-proxy forces Connection: close and a new socket per request', async () => {
+  // Characterises the proxy engine, not our code. http-proxy-middleware 3
+  // (http-proxy) sent `Connection: close` and opened a socket per request when
+  // no agent was given; 4 (httpxy) falls back to Node's keep-alive global
+  // agent instead. The explicit agent stays: it picks https.Agent for https
+  // targets and keeps unbounded concurrency (see createOpenCodeProxyAgent).
+  it('without an agent, httpxy keeps the upstream connection alive', async () => {
     const seen = await proxyTwoRequests(null);
 
     expect(seen).toHaveLength(2);
-    expect(seen[0].connection).toBe('close');
-    expect(seen[1].remotePort).not.toBe(seen[0].remotePort);
+    expect(seen[0].connection).toBe('keep-alive');
+    expect(seen[1].remotePort).toBe(seen[0].remotePort);
   });
 
   // http-proxy dispatches through `https.request` when the target protocol is

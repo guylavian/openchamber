@@ -48,16 +48,16 @@ const isHttpsProxyTarget = (target) => {
 /**
  * Agent for proxied OpenCode API requests.
  *
- * When no agent is supplied, `http-proxy` falls back to `agent: false`, which
- * both disables connection pooling and forces `Connection: close` on every
- * proxied request (http-proxy/lib/http-proxy/common.js). That consumes one
- * ephemeral port per request, and sustained traffic can exhaust the host's
- * ephemeral port range — after which every process on the machine fails to
- * open outbound connections with EADDRNOTAVAIL.
+ * The agent was introduced because http-proxy (http-proxy-middleware 3) fell
+ * back to `agent: false` when none was supplied, forcing `Connection: close`
+ * and one ephemeral port per request; sustained traffic could exhaust the
+ * host's ephemeral port range (EADDRNOTAVAIL for every process). Since
+ * http-proxy-middleware 4 the engine is httpxy, which falls back to Node's
+ * keep-alive default agents instead; the explicit agent still gives one
+ * shared pool per scheme built from OPENCODE_AGENT_OPTIONS.
  *
- * The agent must match the target scheme: http-proxy dispatches through
- * `https.request` when `target.protocol === 'https:'`
- * (http-proxy/lib/http-proxy/passes/web-incoming.js), and an `http.Agent`
+ * The agent must match the target scheme: the engine dispatches through
+ * `https.request` when the target protocol is `https:`, and an `http.Agent`
  * would open a plaintext socket to a TLS port. External servers may be
  * configured over https via `OPENCODE_HOST` (see env-config.js), so derive the
  * agent class from the resolved target.
