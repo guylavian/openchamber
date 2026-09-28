@@ -21,7 +21,7 @@ describe('OpenChamberVisualSettings', () => {
   let initialAnimatedActivityIndicators: boolean;
   let globalDescriptors: Map<string, PropertyDescriptor | undefined>;
 
-  const globalNames = ['window', 'document', 'HTMLElement', 'Element', 'Node', 'localStorage', 'sessionStorage', 'IS_REACT_ACT_ENVIRONMENT'];
+  const globalNames = ['window', 'document', 'HTMLElement', 'Element', 'Node', 'Event', 'CustomEvent', 'localStorage', 'sessionStorage', 'requestAnimationFrame', 'cancelAnimationFrame', 'IS_REACT_ACT_ENVIRONMENT'];
 
   beforeEach(() => {
     windowInstance = new Window();
@@ -33,8 +33,12 @@ describe('OpenChamberVisualSettings', () => {
       HTMLElement: windowInstance.HTMLElement,
       Element: windowInstance.Element,
       Node: windowInstance.Node,
+      Event: windowInstance.Event,
+      CustomEvent: windowInstance.CustomEvent,
       localStorage: windowInstance.localStorage,
       sessionStorage: windowInstance.sessionStorage,
+      requestAnimationFrame: windowInstance.requestAnimationFrame.bind(windowInstance),
+      cancelAnimationFrame: windowInstance.cancelAnimationFrame.bind(windowInstance),
       IS_REACT_ACT_ENVIRONMENT: true,
     });
     host = document.createElement('div');

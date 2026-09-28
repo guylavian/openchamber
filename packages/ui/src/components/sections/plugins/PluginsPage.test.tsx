@@ -5,7 +5,7 @@ const browser = new Window({ url: 'http://localhost/' });
 Object.assign(globalThis, {
   window: browser, document: browser.document, navigator: browser.navigator,
   localStorage: browser.localStorage, sessionStorage: browser.sessionStorage,
-  Event: browser.Event, FocusEvent: browser.FocusEvent,
+  Event: browser.Event, CustomEvent: browser.CustomEvent, FocusEvent: browser.FocusEvent,
   Node: browser.Node, Element: browser.Element, HTMLElement: browser.HTMLElement,
   MutationObserver: browser.MutationObserver, ResizeObserver: browser.ResizeObserver,
   getComputedStyle: browser.getComputedStyle.bind(browser),

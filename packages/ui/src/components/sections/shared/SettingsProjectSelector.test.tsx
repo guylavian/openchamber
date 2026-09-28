@@ -10,7 +10,7 @@ import { SettingsProjectSelector } from './SettingsProjectSelector';
 
 test('mobile picker reaches every project and changes only the Settings directory', async () => {
   const win = new Window({ url: 'http://localhost' });
-  const values = { window: win, document: win.document, navigator: win.navigator, localStorage: win.localStorage, requestAnimationFrame: win.requestAnimationFrame.bind(win), cancelAnimationFrame: win.cancelAnimationFrame.bind(win), ResizeObserver: win.ResizeObserver, MutationObserver: win.MutationObserver, IS_REACT_ACT_ENVIRONMENT: true };
+  const values = { window: win, document: win.document, navigator: win.navigator, Event: win.Event, CustomEvent: win.CustomEvent, localStorage: win.localStorage, requestAnimationFrame: win.requestAnimationFrame.bind(win), cancelAnimationFrame: win.cancelAnimationFrame.bind(win), ResizeObserver: win.ResizeObserver, MutationObserver: win.MutationObserver, IS_REACT_ACT_ENVIRONMENT: true };
   const previous = new Map(Object.keys(values).map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
   for (const [key, value] of Object.entries(values)) Object.defineProperty(globalThis, key, { configurable: true, value });
   const projects = Array.from({ length: 55 }, (_, index) => ({ id: `project-${index}`, path: `/projects/${index}`, label: `Project ${String(index).padStart(2, '0')}` }));

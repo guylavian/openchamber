@@ -27,12 +27,12 @@ const assistant: AssistantMessage = {
   get tokens() { tokenReads += 1; return { input: 100, output: 20, reasoning: 10, cache: { read: 40, write: 0 } }; },
 };
 
-const DOM_GLOBAL_NAMES = ['window', 'document', 'navigator', 'Node', 'Element', 'HTMLElement', 'HTMLIFrameElement', 'localStorage', 'getComputedStyle', 'ResizeObserver', 'requestAnimationFrame', 'cancelAnimationFrame', 'IS_REACT_ACT_ENVIRONMENT'] as const;
+const DOM_GLOBAL_NAMES = ['window', 'document', 'navigator', 'Node', 'Element', 'HTMLElement', 'HTMLIFrameElement', 'Event', 'CustomEvent', 'MutationObserver', 'localStorage', 'getComputedStyle', 'ResizeObserver', 'requestAnimationFrame', 'cancelAnimationFrame', 'IS_REACT_ACT_ENVIRONMENT'] as const;
 const installDom = () => {
   const win = new Window({ url: 'http://localhost' });
   const previous = DOM_GLOBAL_NAMES.map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)] as const);
   const values = { window: win, document: win.document, navigator: win.navigator, Node: win.Node, Element: win.Element,
-    HTMLElement: win.HTMLElement, HTMLIFrameElement: win.HTMLIFrameElement, localStorage: win.localStorage,
+    HTMLElement: win.HTMLElement, HTMLIFrameElement: win.HTMLIFrameElement, Event: win.Event, CustomEvent: win.CustomEvent, MutationObserver: win.MutationObserver, localStorage: win.localStorage,
     getComputedStyle: win.getComputedStyle.bind(win), ResizeObserver: win.ResizeObserver,
     requestAnimationFrame: win.requestAnimationFrame.bind(win), cancelAnimationFrame: win.cancelAnimationFrame.bind(win), IS_REACT_ACT_ENVIRONMENT: true };
   for (const name of DOM_GLOBAL_NAMES) Object.defineProperty(globalThis, name, { value: values[name], configurable: true, writable: true });

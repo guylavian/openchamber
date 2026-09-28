@@ -48,7 +48,7 @@ let previousGlobals: Map<string, PropertyDescriptor | undefined>;
 beforeEach(() => {
   testWindow = new Window({ url: 'http://localhost' });
   previousGlobals = new Map(
-    ['window', 'document', 'navigator', 'HTMLElement', 'Element', 'Node', 'requestAnimationFrame', 'cancelAnimationFrame', 'IS_REACT_ACT_ENVIRONMENT']
+    ['window', 'document', 'navigator', 'HTMLElement', 'Element', 'Node', 'Event', 'CustomEvent', 'requestAnimationFrame', 'cancelAnimationFrame', 'IS_REACT_ACT_ENVIRONMENT']
       .map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)]),
   );
   Object.assign(globalThis, {
@@ -58,6 +58,8 @@ beforeEach(() => {
     HTMLElement: testWindow.HTMLElement,
     Element: testWindow.Element,
     Node: testWindow.Node,
+    Event: testWindow.Event,
+    CustomEvent: testWindow.CustomEvent,
     requestAnimationFrame: testWindow.requestAnimationFrame.bind(testWindow),
     cancelAnimationFrame: testWindow.cancelAnimationFrame.bind(testWindow),
     IS_REACT_ACT_ENVIRONMENT: true,

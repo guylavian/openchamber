@@ -24,7 +24,7 @@ afterEach(async () => {
 
 const load = async (name: string, script = 'main', folder = 'panel') => {
   const parent = new Window();
-  const window = new Window({ settings: { disableJavaScriptEvaluation: false } });
+  const window = new Window();
   windows.push(window, parent);
   Object.defineProperty(window, 'parent', { value: parent });
   window.document.body.innerHTML = '<div id="root"></div>';

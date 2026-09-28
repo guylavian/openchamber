@@ -161,15 +161,16 @@ describe('TerminalViewport integration', () => {
       Element: windowInstance.Element,
       Node: windowInstance.Node,
       Event: windowInstance.Event,
+      CustomEvent: windowInstance.CustomEvent,
+      MutationObserver: windowInstance.MutationObserver,
       MouseEvent: windowInstance.MouseEvent,
       KeyboardEvent: windowInstance.KeyboardEvent,
       DOMRect: windowInstance.DOMRect,
       getComputedStyle: windowInstance.getComputedStyle.bind(windowInstance),
-      requestAnimationFrame: (callback: FrameRequestCallback) => {
-        callback(0);
-        return 1;
-      },
-      cancelAnimationFrame: () => undefined,
+      // The window's own frame timing, as in a browser: Base UI (with
+      // happy-dom 20's getAnimations) waits a frame before closing a menu.
+      requestAnimationFrame: windowInstance.requestAnimationFrame.bind(windowInstance),
+      cancelAnimationFrame: windowInstance.cancelAnimationFrame.bind(windowInstance),
       IS_REACT_ACT_ENVIRONMENT: true,
     });
 

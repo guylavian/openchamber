@@ -6,7 +6,7 @@ Object.assign(globalThis, {
   window: browser, document: browser.document, navigator: browser.navigator,
   customElements: browser.customElements, localStorage: browser.localStorage, sessionStorage: browser.sessionStorage,
   HTMLTextAreaElement: browser.HTMLTextAreaElement, Text: browser.Text, NodeList: browser.NodeList,
-  Event: browser.Event, FocusEvent: browser.FocusEvent,
+  Event: browser.Event, CustomEvent: browser.CustomEvent, FocusEvent: browser.FocusEvent,
   Node: browser.Node, Element: browser.Element, HTMLElement: browser.HTMLElement,
   MutationObserver: browser.MutationObserver, ResizeObserver: browser.ResizeObserver,
   getComputedStyle: browser.getComputedStyle.bind(browser),
