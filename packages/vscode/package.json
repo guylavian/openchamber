@@ -280,7 +280,7 @@
     "@types/adm-zip": "^0.5.8",
     "@types/vscode": "^1.85.0",
     "@vitejs/plugin-react": "^5.2.0",
-    "@vscode/vsce": "^3.9.2",
+    "@vscode/vsce": "^4.0.0",
     "concurrently": "^10.0.5",
     "esbuild": "^0.28.2",
     "@typescript/native": "npm:typescript@7.0.2",
