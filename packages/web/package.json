@@ -28,7 +28,7 @@
     "build:watch": "bun ../../scripts/build-builtin-extensions.mjs && vite build --watch",
     "prepack": "bun run build:server",
     "type-check": "tsc --noEmit && tsc -p tsconfig.server.json",
-    "lint": "eslint \"./src/**/*.{ts,tsx}\" --config ../../eslint.config.js",
+    "lint": "eslint \"./src/**/*.{ts,tsx}\" \"./server/**/*.ts\" --config ../../eslint.config.js",
     "test": "vitest run",
     "start": "node dist-node/bin/cli.js serve"
   },

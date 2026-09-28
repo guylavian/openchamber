@@ -68,7 +68,7 @@ const labelOf = (task: Pick<GraphTask, 'title'> | null, fallbackId: string): str
  */
 const topologicalOrder = (tasks: readonly GraphTask[]): { order: GraphTask[]; cyclic: string[] } => {
   const tasksById = new Map(tasks.map((task) => [task.id, task]));
-  const state = new Map(); // taskId → 'visiting' | 'done'
+  const state = new Map<string, 'visiting' | 'done'>();
   const order: GraphTask[] = [];
   const cyclic = new Set<string>();
 
@@ -109,7 +109,7 @@ const blockersFor = (
 ): { failed: DependencyBlocker[]; incomplete: DependencyBlocker[] } => {
   const failed: DependencyBlocker[] = [];
   const incomplete: DependencyBlocker[] = [];
-  for (const dependencyId of task.dependsOn ?? []) {
+  for (const dependencyId of task.dependsOn) {
     const dependency = tasksById.get(dependencyId);
     const status = dependency ? statuses.get(dependencyId) : undefined;
     // The id travels with the task: a missing dependency has no title, and
@@ -214,7 +214,7 @@ export const computeJobGraph = ({ tasks, runs, executing }: {
     }
 
     statuses.set(task.id, status);
-    counts[status] = (counts[status] ?? 0) + 1;
+    counts[status] += 1;
     if (status === 'waiting') {
       const reason = waitReasonFor(task, tasksById, statuses, inCycle ? 'cycle' : null);
       if (reason) reasons.set(task.id, reason);
@@ -240,9 +240,6 @@ export const computeStateGraphs = (state: GraphState): Map<string, GraphResult> 
     if (list) list.push(task);
     else tasksByJob.set(task.jobId, [task]);
   }
-  const runsByTask = new Map(state.runs.map((run) => [run.id === run.taskId ? run.id : run.taskId, run]));
-  void runsByTask;
-
   const graphs = new Map<string, GraphResult>();
   for (const job of state.jobs) {
     const tasks = tasksByJob.get(job.id) ?? [];
@@ -264,7 +261,7 @@ export const findDependencyProblems = (tasks: readonly GraphTask[]): DependencyP
   const byId = new Set(tasks.map((task) => task.id));
   const problems: DependencyProblem[] = [];
   for (const task of tasks) {
-    for (const dependencyId of task.dependsOn ?? []) {
+    for (const dependencyId of task.dependsOn) {
       if (dependencyId === task.id) {
         problems.push({ taskId: task.id, dependencyId, kind: 'self' });
       } else if (!byId.has(dependencyId)) {
