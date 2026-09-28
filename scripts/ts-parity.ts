@@ -59,12 +59,18 @@ const diff = (left: string, right: string, label: string): string => {
   return result.stdout.replaceAll(a, `${label} (js)`).replaceAll(b, `${label} (ts)`);
 };
 
-const main = (): void => {
-  const args = process.argv.slice(2);
+/** `--rev <rev>` (default HEAD) and the files to check. */
+export const parseArgs = (args: readonly string[]): { rev: string; files: string[] } => {
   const revIndex = args.indexOf('--rev');
-  const rev = revIndex === -1 ? 'HEAD' : args[revIndex + 1];
+  if (revIndex === -1) return { rev: 'HEAD', files: [...args] };
+  const rev = args[revIndex + 1];
   if (rev === undefined) throw new Error('--rev needs a revision');
-  const files = args.filter((arg, index) => arg !== '--rev' && index !== revIndex + 1);
+  return { rev, files: args.filter((_, index) => index !== revIndex && index !== revIndex + 1) };
+};
+
+const main = (): void => {
+  const { rev, files } = parseArgs(process.argv.slice(2));
+  if (files.length === 0) throw new Error('no files to check');
   let failures = 0;
   for (const file of files) {
     const original = originalOf(file, rev);

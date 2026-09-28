@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { normalize } from './ts-parity.ts';
+import { normalize, parseArgs } from './ts-parity.ts';
 
 const js = (text: string): string => normalize(text, 'a.js');
 const tsx = (text: string): string => normalize(text, 'a.ts');
@@ -17,4 +17,10 @@ test('an import used only as a type but written as a value import is kept, as th
 test('a runtime change shows up', () => {
   expect(tsx('export const f = (x: number) => x ?? 2;\n')).not.toBe(js('export const f = (x) => x ?? 1;\n'));
   expect(tsx('export const f = (x: { a?: number }) => x.a!;\n')).toBe(js('export const f = (x) => x.a;\n'));
+});
+
+test('every file is checked, with or without --rev', () => {
+  expect(parseArgs(['a.ts', 'b.ts'])).toEqual({ rev: 'HEAD', files: ['a.ts', 'b.ts'] });
+  expect(parseArgs(['--rev', 'abc', 'a.ts'])).toEqual({ rev: 'abc', files: ['a.ts'] });
+  expect(parseArgs(['a.ts', '--rev', 'abc', 'b.ts'])).toEqual({ rev: 'abc', files: ['a.ts', 'b.ts'] });
 });
