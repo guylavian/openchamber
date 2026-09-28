@@ -13,7 +13,10 @@ import net from 'node:net';
 // are a no-op.
 export const CONNECT_ATTEMPT_TIMEOUT_MS = 5_000;
 
-export const applyConnectAttemptTimeout = (netModule = net) => {
+// Only the setter is used, so callers (tests) can pass a stand-in for node:net.
+type AutoSelectFamilyTimeoutSetter = Pick<typeof net, 'setDefaultAutoSelectFamilyAttemptTimeout'>;
+
+export const applyConnectAttemptTimeout = (netModule: AutoSelectFamilyTimeoutSetter = net): boolean => {
   try {
     netModule.setDefaultAutoSelectFamilyAttemptTimeout(CONNECT_ATTEMPT_TIMEOUT_MS);
     return true;

@@ -157,8 +157,15 @@ try {
   const cliPath = path.join(installed, typeof manifest.bin === 'string' ? manifest.bin : manifest.bin.openchamber);
 
   fs.writeFileSync(path.join(work, 'check-import.mjs'), [
+    "import net from 'node:net';",
+    "const isBun = typeof Bun !== 'undefined';",
+    "const family = net.getDefaultAutoSelectFamily?.();",
+    // Node caps each happy-eyeballs attempt at 250 ms; importing the server must raise it (network-defaults).
+    "if (!isBun) net.setDefaultAutoSelectFamilyAttemptTimeout(250);",
     "const server = await import('@openchamber/web');",
     "if (typeof server.startWebUiServer !== 'function') throw new Error('startWebUiServer is not exported');",
+    "if (!isBun && net.getDefaultAutoSelectFamilyAttemptTimeout() !== 5000) throw new Error('importing the server did not raise the connect attempt timeout');",
+    "if (!isBun && net.getDefaultAutoSelectFamily() !== family) throw new Error('importing the server changed family autoselection');",
     "console.log('ok');",
     // Importing the server starts its background work, which keeps the event loop alive.
     'process.exit(0);',
