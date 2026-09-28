@@ -4,7 +4,7 @@
 // never hidden: they are kept out of the model's input and shown in the
 // uncovered tail instead.
 
-const LOCKFILES = new Set([
+const LOCKFILES = new Set<string>([
   'bun.lock',
   'bun.lockb',
   'package-lock.json',
@@ -26,7 +26,7 @@ const LOCKFILES = new Set([
   'deno.lock',
 ]);
 
-const GENERATED_PATTERNS = [
+const GENERATED_PATTERNS: RegExp[] = [
   // Minified or bundled output committed to the repository.
   /\.min\.(js|css)$/i,
   /\.(js|css)\.map$/i,
@@ -50,7 +50,7 @@ const GENERATED_PATTERNS = [
  * the review, which is the failure this whole feature exists to prevent. Only
  * unambiguous, conventional names qualify.
  */
-export function isGeneratedArtifact(filePath) {
+export function isGeneratedArtifact(filePath: unknown): boolean {
   if (typeof filePath !== 'string' || !filePath) return false;
   const name = filePath.split('/').pop() || '';
   if (LOCKFILES.has(name)) return true;

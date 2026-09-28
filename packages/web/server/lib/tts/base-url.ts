@@ -5,14 +5,14 @@ const LOCAL_BASE_URL_HOSTS = new Set([
   'host.docker.internal',
 ]);
 
-const isEnvFlagEnabled = (value) => {
+const isEnvFlagEnabled = (value: unknown): boolean => {
   if (value === true || value === 1) return true;
   if (typeof value !== 'string') return false;
   const normalized = value.trim().toLowerCase();
   return normalized === '1' || normalized === 'true';
 };
 
-const normalizeHostname = (hostname) => {
+const normalizeHostname = (hostname: unknown): string => {
   if (typeof hostname !== 'string') return '';
   const trimmed = hostname.trim().toLowerCase();
   if (!trimmed) return '';
@@ -22,17 +22,17 @@ const normalizeHostname = (hostname) => {
   return trimmed;
 };
 
-const isAllowedLocalHost = (hostname) => {
+const isAllowedLocalHost = (hostname: unknown): boolean => {
   const normalized = normalizeHostname(hostname);
   return LOCAL_BASE_URL_HOSTS.has(normalized);
 };
 
-export const normalizeCustomOpenAIBaseURL = (value) => {
+export const normalizeCustomOpenAIBaseURL = (value: unknown): { value: undefined } | { error: string } | { value: string } => {
   if (typeof value !== 'string' || !value.trim()) {
     return { value: undefined };
   }
 
-  let parsed;
+  let parsed: URL;
   try {
     parsed = new URL(value.trim());
   } catch {
