@@ -82,7 +82,7 @@
         "eslint": "^9.39.5",
         "eslint-plugin-react-hooks": "^5.2.0",
         "eslint-plugin-react-refresh": "^0.5.7",
-        "globals": "^16.5.0",
+        "globals": "^17.12.0",
         "node-addon-api": "7.1.1",
         "nodemon": "^3.1.14",
         "oxlint": "1.78.0",
@@ -298,7 +298,7 @@
         "eslint": "^9.39.5",
         "eslint-plugin-react-hooks": "^5.2.0",
         "eslint-plugin-react-refresh": "^0.5.7",
-        "globals": "^16.5.0",
+        "globals": "^17.12.0",
         "happy-dom": "20.14.5",
         "nodemon": "^3.1.14",
         "tailwindcss": "^4.3.3",
@@ -399,7 +399,7 @@
         "eslint": "^9.39.5",
         "eslint-plugin-react-hooks": "^5.2.0",
         "eslint-plugin-react-refresh": "^0.5.7",
-        "globals": "^16.5.0",
+        "globals": "^17.12.0",
         "next-themes": "^0.4.6",
         "nodemon": "^3.1.14",
         "react": "^19.3.0",
@@ -2334,7 +2334,7 @@
 
     "global-agent": ["global-agent@3.0.0", "", { "dependencies": { "boolean": "^3.0.1", "es6-error": "^4.1.1", "matcher": "^3.0.0", "roarr": "^2.15.3", "semver": "^7.3.2", "serialize-error": "^7.0.1" } }, "sha512-PT6XReJ+D07JvGoxQMkT6qji/jVNfX/h364XHZOWeRzy64sSFr+xJ5OX7LI3b4MPQzdL4H8Y8M0xzPpsVMwA8Q=="],
 
-    "globals": ["globals@16.5.0", "", {}, "sha512-c/c15i26VrJ4IRt5Z89DnIzCGDn9EcebibhAOjw5ibqEHsE1wLUgkPn9RDmNcUKyU87GeaL633nyJ+pplFR2ZQ=="],
+    "globals": ["globals@17.12.0", "", {}, "sha512-cezEd/DTyyht9cvSSURyygXPfy04GtWO/5e6ZPvH7fCtjKz9PYOmuawphw1Ctd1f6C+5JypXfGD7ahNMXvevBA=="],
 
     "globalthis": ["globalthis@1.0.4", "", { "dependencies": { "define-properties": "^1.2.1", "gopd": "^1.0.1" } }, "sha512-DpLKbNU4WylpxJykQujfCcwYWiV/Jhm50Goo0wrVILAv5jOr9d+H+UR3PhSCD2rCCEIg0uc+G+muBTwD54JhDQ=="],
 
