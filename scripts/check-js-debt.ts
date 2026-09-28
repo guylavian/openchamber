@@ -115,6 +115,13 @@ const RUNTIME: Record<Category, string> = {
 
 const WAVE: Record<Category, string> = { server: '', cli: 'D4', electron: 'D5', tooling: 'D6', test: 'D7', config: 'D8', generated: '-', vendor: '-' };
 
+/** Relative import edges between first-party source files: importer -> resolved targets. */
+export const importEdges = (): Map<string, string[]> => {
+  const sources = gitFiles().filter((file) => SOURCE_FILE.test(file));
+  const known = new Set(sources);
+  return new Map(sources.map((file) => [file, [...new Set(resolveImports(file, fs.readFileSync(path.join(ROOT, file), 'utf8'), known))]]));
+};
+
 export const inventory = (): Entry[] => {
   const files = gitFiles();
   const sources = files.filter((file) => SOURCE_FILE.test(file));
