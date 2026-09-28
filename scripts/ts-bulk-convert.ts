@@ -53,13 +53,13 @@ const tscBin = (): string => {
 const typecheckSteps = (targets: readonly string[]): Step[] => {
   const tsc = tscBin();
   const steps: Step[] = [];
-  if (targets.some((file) => file.startsWith('packages/web/'))) steps.push({ label: 'type-check packages/web (server)', command: tsc, args: ['-p', 'packages/web/tsconfig.server.json', '--noEmit'] });
+  if (targets.some((file) => /^packages\/web\/(server|bin)\//.test(file))) steps.push({ label: 'type-check packages/web (server)', command: tsc, args: ['-p', 'packages/web/tsconfig.server.json', '--noEmit'] });
   for (const pkg of ['ui', 'vscode', 'electron']) {
     if (targets.some((file) => file.startsWith(`packages/${pkg}/`))) steps.push({ label: `type-check packages/${pkg}`, command: tsc, args: ['-p', `packages/${pkg}/tsconfig.json`, '--noEmit'] });
   }
-  const loose = targets.filter((file) => !/^packages\/(web|ui|vscode|electron)\//.test(file));
+  const loose = targets.filter((file) => !/^packages\/(web\/(server|bin)|ui|vscode|electron)\//.test(file));
   if (loose.length > 0) {
-    steps.push({ label: `type-check ${String(loose.length)} file(s) outside a project (strict Node settings)`, command: tsc, args: ['--ignoreConfig', '--noEmit', '--strict', '--noUncheckedIndexedAccess', '--exactOptionalPropertyTypes', '--module', 'nodenext', '--moduleResolution', 'nodenext', '--target', 'es2022', '--types', 'node', '--allowImportingTsExtensions', '--skipLibCheck', ...loose] });
+    steps.push({ label: `type-check ${String(loose.length)} file(s) outside a project (strict Node settings)`, command: tsc, args: ['--ignoreConfig', '--noEmit', '--strict', '--noUncheckedIndexedAccess', '--exactOptionalPropertyTypes', '--module', 'nodenext', '--moduleResolution', 'nodenext', '--target', 'es2022', '--types', 'node', '--allowImportingTsExtensions', '--verbatimModuleSyntax', '--erasableSyntaxOnly', '--allowJs', '--checkJs', 'false', '--skipLibCheck', ...loose] });
   }
   return steps;
 };

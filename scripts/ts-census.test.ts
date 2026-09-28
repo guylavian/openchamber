@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { independentSets, isolatedRunnerBoundary, renamed } from './ts-census.ts';
+import { NODE_RUN, independentSets, isolatedRunnerBoundary, renamed } from './ts-census.ts';
 
 test('renames keep the module kind and mark JSX', () => {
   expect(renamed('a/x.js', 'export const x = 1;')).toBe('a/x.ts');
@@ -26,4 +26,9 @@ test('no set holds a file and one of its imports, and every file is in exactly o
       if (set.includes(importer)) expect(targets.some((target) => set.includes(target))).toBe(false);
     }
   }
+});
+
+test('code Node runs from source is told apart from compiled and bundled code', () => {
+  for (const file of ['scripts/a.mjs', 'packages/web/scripts/a.mjs', 'packages/electron/main.mjs', 'packages/electron/scripts/b.mjs']) expect(NODE_RUN.test(file)).toBe(true);
+  for (const file of ['packages/web/server/a.js', 'packages/web/bin/cli.js', 'packages/ui/src/a.js', 'packages/vscode/src/a.js']) expect(NODE_RUN.test(file)).toBe(false);
 });

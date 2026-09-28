@@ -14,8 +14,10 @@
 //   B  mechanical: only diagnostics in the MECHANICAL set (annotation-only fixes)
 //   C  boundary: a .d.ts sidecar, an importer in another package, a runtime
 //      path reference (manifest, workflow, spawn), Electron main/preload run
-//      from source, a configuration file, or a test the isolated runner would
-//      drop or move from node:test to bun test
+//      from source, a configuration file, a test the isolated runner would
+//      drop or move from node:test to bun test, or a module Node runs from
+//      source that other files import (Node does not map ./x.js to x.ts, so
+//      each importer's specifier must change)
 //   D  semantic: any other diagnostic, or the emitted JavaScript would change
 //
 // Usage: node scripts/ts-census.ts [--json <file>] [--report <file.md>]
@@ -132,7 +134,7 @@ export const renamed = (file: string, text: string): string => {
 
 /** The project whose options would check a file once converted. */
 const contextOf = (file: string): string => {
-  if (file.startsWith('packages/web/')) return 'packages/web/tsconfig.server.json';
+  if (/^packages\/web\/(server|bin)\//.test(file)) return 'packages/web/tsconfig.server.json';
   if (file.startsWith('packages/ui/')) return 'packages/ui/tsconfig.json';
   if (file.startsWith('packages/vscode/')) return 'packages/vscode/tsconfig.json';
   if (file.startsWith('packages/electron/')) return 'packages/electron/tsconfig.json';
@@ -151,7 +153,17 @@ const NODE_STRICT: ts.CompilerOptions = {
   noEmit: true,
   allowImportingTsExtensions: true,
   resolveJsonModule: true,
+  // Node runs these from source by stripping types: only erasable syntax, and
+  // type-only imports written as such.
+  verbatimModuleSyntax: true,
+  erasableSyntaxOnly: true,
+  // As in the server project: JavaScript not converted yet is imported with its inferred types, not checked.
+  allowJs: true,
+  checkJs: false,
 };
+
+/** Run by Node (or Electron) straight from source, not compiled or bundled first. */
+export const NODE_RUN = /^(scripts\/|packages\/[^/]+\/scripts\/|packages\/electron\/)/;
 
 const optionsFor = (context: string): ts.CompilerOptions => {
   if (context === 'node-strict') return NODE_STRICT;
@@ -259,8 +271,10 @@ export const census = (infer = false): CensusEntry[] => {
   const crossPackage = new Map<string, string[]>();
   const debtFiles = new Set(debt.map((entry) => entry.file));
   const edges = importEdges();
+  const importedBy = new Map<string, string[]>();
   for (const [importer, targets] of edges) {
     for (const target of targets) {
+      importedBy.set(target, [...(importedBy.get(target) ?? []), importer]);
       if (debtFiles.has(target) && packageOf(importer) !== packageOf(target)) crossPackage.set(target, [...(crossPackage.get(target) ?? []), importer]);
     }
   }
@@ -319,7 +333,9 @@ export const census = (infer = false): CensusEntry[] => {
         if (fs.existsSync(abs(entry.file.replace(/\.[cm]?jsx?$/, '.d.ts')))) boundaries.push('d.ts sidecar');
         if (entry.category === 'electron') boundaries.push('Electron runs this source directly');
         if (entry.category === 'config') boundaries.push('configuration loaded by its tool');
-        const runnerBoundary = isolatedRunnerBoundary(entry.file, target, text);
+        const sourceImporters = importedBy.get(entry.file) ?? [];
+      if (NODE_RUN.test(entry.file) && sourceImporters.length > 0) boundaries.push(`Node runs it from source; importers must name ${path.posix.extname(target)}: ${sourceImporters.slice(0, 2).join(', ')}`);
+      const runnerBoundary = isolatedRunnerBoundary(entry.file, target, text);
         if (runnerBoundary !== null) boundaries.push(runnerBoundary);
         const importers = crossPackage.get(entry.file) ?? [];
         if (importers.length > 0) boundaries.push(`imported by another package: ${importers.slice(0, 2).join(', ')}`);
