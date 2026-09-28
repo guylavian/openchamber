@@ -33,18 +33,22 @@ import { census, renamed } from './ts-census.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-interface Step {
+/** The trees the package `lint` scripts cover; files elsewhere are not linted by the repository either. */
+export const LINTED = /^packages\/(web\/(src|server)|ui\/src)\//;
+
+export interface Step {
   label: string;
   command: string;
   args: string[];
   cwd?: string;
 }
 
-const run = ({ label, command, args, cwd }: Step): boolean => {
+/** Runs a step; on failure prints the last `tail` lines of its output. */
+export const run = ({ label, command, args, cwd }: Step, tail = 40): boolean => {
   const result = spawnSync(command, args, { cwd: cwd ?? ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   const ok = result.status === 0;
   console.log(`[bulk] ${ok ? 'ok  ' : 'FAIL'} ${label}`);
-  if (!ok) console.log(`${result.stdout}${result.stderr}`.split('\n').filter((line) => !/ExperimentalWarning|--trace-warnings/.test(line)).slice(-40).join('\n'));
+  if (!ok) console.log(`${result.stdout}${result.stderr}`.split('\n').filter((line) => !/ExperimentalWarning|--trace-warnings/.test(line)).slice(-tail).join('\n'));
   return ok;
 };
 
@@ -60,13 +64,13 @@ interface LintResult {
 }
 
 /** Renamed files ESLint reports errors in (repo-relative). */
-const lintFailuresOf = (files: readonly string[]): string[] => {
+export const lintFailuresOf = (files: readonly string[]): string[] => {
   const result = spawnSync('bunx', ['eslint', '--config', 'eslint.config.js', '--format', 'json', ...files], { cwd: ROOT, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
   const report = JSON.parse(result.stdout) as LintResult[];
   return report.filter((entry) => entry.errorCount + entry.fatalErrorCount > 0).map((entry) => path.relative(ROOT, entry.filePath).split(path.sep).join('/'));
 };
 
-const typecheckSteps = (targets: readonly string[]): Step[] => {
+export const typecheckSteps = (targets: readonly string[]): Step[] => {
   const tsc = tscBin();
   const steps: Step[] = [];
   if (targets.some((file) => /^packages\/web\/(server|bin)\//.test(file))) steps.push({ label: 'type-check packages/web (server)', command: tsc, args: ['-p', 'packages/web/tsconfig.server.json', '--noEmit'] });
@@ -80,7 +84,7 @@ const typecheckSteps = (targets: readonly string[]): Step[] => {
   return steps;
 };
 
-const testSteps = (targets: readonly string[]): Step[] => {
+export const testSteps = (targets: readonly string[]): Step[] => {
   const edges = importEdges();
   const targetSet = new Set(targets);
   const tests = new Set(targets.filter((file) => /\.test\.[cm]?tsx?$/.test(file)));
@@ -141,7 +145,7 @@ const main = (): void => {
   }
   const targets = moves.map(([, to]) => to);
   // ponytail: only the trees package `lint` scripts cover; others are not linted by the repo either.
-  const linted = targets.filter((file) => /^packages\/(web\/(src|server)|ui\/src)\//.test(file));
+  const linted = targets.filter((file) => LINTED.test(file));
   const steps: Step[] = [
     ...typecheckSteps(targets),
     { label: `runtime parity (${String(targets.length)} file(s) against HEAD)`, command: process.execPath, args: ['scripts/ts-parity.ts', ...targets] },
