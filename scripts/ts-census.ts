@@ -2,7 +2,7 @@
 // TypeScript convertibility census (Stage D).
 //
 // Checks every handwritten JavaScript file in the JS-debt baseline as if it
-// had been renamed to TypeScript, without touching the working tree: a
+// alone had been renamed to TypeScript, without touching the working tree: a
 // compiler host presents `x.js` as `x.ts` (`.mjs` -> `.ts`, `.cjs` -> `.cts`,
 // `.jsx` -> `.tsx`, and `.js` holding JSX -> `.tsx`) with the same text and
 // hides the original, so imports that name `./x.js` resolve to the renamed
@@ -158,7 +158,8 @@ const optionsFor = (context: string): ts.CompilerOptions => {
   const configPath = abs(context);
   const read = ts.readConfigFile(configPath, (file) => ts.sys.readFile(file));
   const parsed = ts.parseJsonConfigFileContent(read.config, ts.sys, path.dirname(configPath));
-  return { ...parsed.options, strict: true, noEmit: true, skipLibCheck: true, allowJs: false, checkJs: false };
+  // The project's own allowJs: a converted file keeps importing JavaScript that is not converted yet.
+  return { ...parsed.options, strict: true, noEmit: true, skipLibCheck: true, checkJs: false };
 };
 
 const emitOf = (text: string, fileName: string): string => ts.transpileModule(text, {
@@ -215,18 +216,45 @@ export const isolatedRunnerBoundary = (file: string, target: string, text: strin
   return null;
 };
 
+/**
+ * Splits files into sets with no import edge inside a set (greedy colouring,
+ * most-connected first), so that checking one set as TypeScript leaves every
+ * import of each renamed file as the JavaScript it will still be after a
+ * single `git mv`.
+ */
+export const independentSets = (files: readonly string[], edges: ReadonlyMap<string, readonly string[]>): string[][] => {
+  const inSet = new Set(files);
+  const adjacent = new Map<string, Set<string>>(files.map((file) => [file, new Set<string>()]));
+  for (const [importer, targets] of edges) {
+    for (const target of targets) {
+      if (importer !== target && inSet.has(importer) && inSet.has(target)) {
+        adjacent.get(importer)?.add(target);
+        adjacent.get(target)?.add(importer);
+      }
+    }
+  }
+  const colour = new Map<string, number>();
+  const sets: string[][] = [];
+  const order = [...files].sort((a, b) => (adjacent.get(b)?.size ?? 0) - (adjacent.get(a)?.size ?? 0) || a.localeCompare(b));
+  for (const file of order) {
+    const taken = new Set([...(adjacent.get(file) ?? [])].map((other) => colour.get(other)));
+    let index = 0;
+    while (taken.has(index)) index += 1;
+    colour.set(file, index);
+    (sets[index] ??= []).push(file);
+  }
+  return sets;
+};
+
 const packageOf = (file: string): string => (file.startsWith('packages/') ? file.split('/').slice(0, 2).join('/') : '.');
 
 export const census = (infer = false): CensusEntry[] => {
   const entries = inventory();
   const debt = entries.filter((entry) => entry.category !== null && entry.category !== 'generated' && entry.category !== 'vendor');
   const texts = new Map(debt.map((entry) => [entry.file, fs.readFileSync(abs(entry.file), 'utf8')]));
-  const virtualToReal = new Map<string, string>();
-  const hidden = new Set<string>();
-  for (const entry of debt) {
-    virtualToReal.set(abs(renamed(entry.file, texts.get(entry.file) ?? '')), abs(entry.file));
-    hidden.add(abs(entry.file));
-  }
+  // The files presented as TypeScript in the program being checked (one independent set at a time).
+  let virtualToReal = new Map<string, string>();
+  let hidden = new Set<string>();
   const refs = pathReferences(debt);
   const crossPackage = new Map<string, string[]>();
   const debtFiles = new Set(debt.map((entry) => entry.file));
@@ -246,6 +274,7 @@ export const census = (infer = false): CensusEntry[] => {
     const originalRead = host.readFile.bind(host);
     const originalExists = host.fileExists.bind(host);
     const originalGetSourceFile = host.getSourceFile.bind(host);
+    const parsed = new Map<string, ts.SourceFile | undefined>();
     host.fileExists = (file) => virtualToReal.has(file) || (!hidden.has(file) && originalExists(file));
     host.readFile = (file) => {
       const real = virtualToReal.get(file);
@@ -254,46 +283,56 @@ export const census = (infer = false): CensusEntry[] => {
     };
     host.getSourceFile = (file, language, onError, create) => {
       const real = virtualToReal.get(file);
-      if (real === undefined) return hidden.has(file) ? undefined : originalGetSourceFile(file, language, onError, create);
+      if (real === undefined) {
+        if (hidden.has(file)) return undefined;
+        if (!parsed.has(file)) parsed.set(file, originalGetSourceFile(file, language, onError, create));
+        return parsed.get(file);
+      }
       const text = originalRead(real);
       return text === undefined ? undefined : ts.createSourceFile(file, text, language, true);
     };
-    const roots = files.map((entry) => abs(renamed(entry.file, texts.get(entry.file) ?? '')));
-    const program = ts.createProgram({ rootNames: roots, options, host });
-    for (const entry of files) {
-      const virtual = abs(renamed(entry.file, texts.get(entry.file) ?? ''));
-      const sourceFile = program.getSourceFile(virtual);
-      const diagnostics: Record<string, number> = {};
-      const patterns: Record<string, number> = {};
-      if (sourceFile !== undefined) {
-        for (const diagnostic of [...program.getSyntacticDiagnostics(sourceFile), ...program.getSemanticDiagnostics(sourceFile)]) {
-          diagnostics[String(diagnostic.code)] = (diagnostics[String(diagnostic.code)] ?? 0) + 1;
-          const key = patternOf(diagnostic, sourceFile);
-          patterns[key] = (patterns[key] ?? 0) + 1;
+    const byFile = new Map(files.map((entry) => [entry.file, entry]));
+    for (const set of independentSets(files.map((entry) => entry.file), edges)) {
+      const setEntries = set.map((file) => byFile.get(file)).filter((entry) => entry !== undefined);
+      virtualToReal = new Map(setEntries.map((entry) => [abs(renamed(entry.file, texts.get(entry.file) ?? '')), abs(entry.file)]));
+      hidden = new Set(setEntries.map((entry) => abs(entry.file)));
+      const roots = [...virtualToReal.keys()];
+      const program = ts.createProgram({ rootNames: roots, options, host });
+      for (const entry of setEntries) {
+        const virtual = abs(renamed(entry.file, texts.get(entry.file) ?? ''));
+        const sourceFile = program.getSourceFile(virtual);
+        const diagnostics: Record<string, number> = {};
+        const patterns: Record<string, number> = {};
+        if (sourceFile !== undefined) {
+          for (const diagnostic of [...program.getSyntacticDiagnostics(sourceFile), ...program.getSemanticDiagnostics(sourceFile)]) {
+            diagnostics[String(diagnostic.code)] = (diagnostics[String(diagnostic.code)] ?? 0) + 1;
+            const key = patternOf(diagnostic, sourceFile);
+            patterns[key] = (patterns[key] ?? 0) + 1;
+          }
+        } else {
+          diagnostics['missing'] = 1;
         }
-      } else {
-        diagnostics['missing'] = 1;
+        const text = texts.get(entry.file) ?? '';
+        const target = renamed(entry.file, text);
+        const emitChanges = emitOf(text, path.basename(entry.file)) !== emitOf(text, path.basename(target));
+        const boundaries: string[] = [];
+        if (fs.existsSync(abs(entry.file.replace(/\.[cm]?jsx?$/, '.d.ts')))) boundaries.push('d.ts sidecar');
+        if (entry.category === 'electron') boundaries.push('Electron runs this source directly');
+        if (entry.category === 'config') boundaries.push('configuration loaded by its tool');
+        const runnerBoundary = isolatedRunnerBoundary(entry.file, target, text);
+        if (runnerBoundary !== null) boundaries.push(runnerBoundary);
+        const importers = crossPackage.get(entry.file) ?? [];
+        if (importers.length > 0) boundaries.push(`imported by another package: ${importers.slice(0, 2).join(', ')}`);
+        const referencedBy = refs.get(entry.file) ?? [];
+        if (referencedBy.length > 0) boundaries.push(`path referenced by ${referencedBy.slice(0, 3).join(', ')}${referencedBy.length > 3 ? ', ...' : ''}`);
+        const codes = Object.keys(diagnostics).map(Number);
+        const grade: Grade = boundaries.length > 0 ? 'C'
+          : emitChanges || codes.some((code) => Number.isNaN(code) || !MECHANICAL.has(code)) ? 'D'
+            : codes.length > 0 ? 'B' : 'A';
+        results.push({ file: entry.file, category: entry.category, lines: entry.lines, grade, renamedTo: target, diagnostics, patterns, boundaries, emitChanges });
       }
-      const text = texts.get(entry.file) ?? '';
-      const target = renamed(entry.file, text);
-      const emitChanges = emitOf(text, path.basename(entry.file)) !== emitOf(text, path.basename(target));
-      const boundaries: string[] = [];
-      if (fs.existsSync(abs(entry.file.replace(/\.[cm]?jsx?$/, '.d.ts')))) boundaries.push('d.ts sidecar');
-      if (entry.category === 'electron') boundaries.push('Electron runs this source directly');
-      if (entry.category === 'config') boundaries.push('configuration loaded by its tool');
-      const runnerBoundary = isolatedRunnerBoundary(entry.file, target, text);
-      if (runnerBoundary !== null) boundaries.push(runnerBoundary);
-      const importers = crossPackage.get(entry.file) ?? [];
-      if (importers.length > 0) boundaries.push(`imported by another package: ${importers.slice(0, 2).join(', ')}`);
-      const referencedBy = refs.get(entry.file) ?? [];
-      if (referencedBy.length > 0) boundaries.push(`path referenced by ${referencedBy.slice(0, 3).join(', ')}${referencedBy.length > 3 ? ', ...' : ''}`);
-      const codes = Object.keys(diagnostics).map(Number);
-      const grade: Grade = boundaries.length > 0 ? 'C'
-        : emitChanges || codes.some((code) => Number.isNaN(code) || !MECHANICAL.has(code)) ? 'D'
-          : codes.length > 0 ? 'B' : 'A';
-      results.push({ file: entry.file, category: entry.category, lines: entry.lines, grade, renamedTo: target, diagnostics, patterns, boundaries, emitChanges });
+      if (infer) inferPass(options, host, roots, results.filter((result) => set.includes(result.file)), virtualToReal);
     }
-    if (infer) inferPass(options, host, roots, results.filter((result) => contextOf(result.file) === context), virtualToReal);
   }
   return results.sort((a, b) => a.file.localeCompare(b.file));
 };

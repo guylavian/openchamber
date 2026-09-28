@@ -10,9 +10,10 @@
 //   4. checks runtime parity for each file (scripts/ts-parity.ts, against HEAD);
 //   5. lints the renamed files (typed server rules included) and runs the
 //      assertion budget, which must pass unchanged: no new assertion;
-//   6. with --test, runs the renamed tests and the tests that import renamed
+//   6. rebuilds dist-node when server or CLI sources moved;
+//   7. with --test, runs the renamed tests and the tests that import renamed
 //      modules;
-//   7. only then shrinks the JS-debt baseline and regenerates its report.
+//   8. only then shrinks the JS-debt baseline and regenerates its report.
 // Any failure reverts every rename in the batch and exits 1. It never edits
 // file contents and never fixes a diagnostic.
 //
@@ -129,6 +130,7 @@ const main = (): void => {
     { label: `runtime parity (${String(targets.length)} file(s) against HEAD)`, command: process.execPath, args: ['scripts/ts-parity.ts', ...targets] },
     ...(linted.length > 0 ? [{ label: `eslint on ${String(linted.length)} renamed file(s) in linted trees`, command: 'bunx', args: ['eslint', '--config', 'eslint.config.js', ...linted] }] : []),
     { label: 'assertion budget unchanged (no new assertion)', command: process.execPath, args: ['scripts/check-assertion-budget.mjs'] },
+    ...(targets.some((file) => /^packages\/web\/(server|bin)\//.test(file)) ? [{ label: 'server build (dist-node) and artifact check', command: 'bun', args: ['run', 'build:server'], cwd: path.join(ROOT, 'packages/web') }] : []),
     ...(args.includes('--test') ? testSteps(targets) : []),
   ];
   for (const step of steps) {
