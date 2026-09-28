@@ -223,7 +223,7 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
             return withSkills;
         }
 
-        return withSkills.flatMap((node, index) => {
+        return withSkills.flatMap<React.ReactNode>((node, index) => {
             if (agentMentionUsed || typeof node !== 'string') return node;
             const idx = node.indexOf(agentMention.token);
             if (idx === -1) return node;

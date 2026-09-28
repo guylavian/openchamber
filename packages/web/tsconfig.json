@@ -12,7 +12,6 @@
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "baseUrl": ".",
     "types": ["vite/client", "@types/dom-speech-recognition"],
     "paths": {
       "@openchamber/sdk": ["../sdk/src/index.ts"],

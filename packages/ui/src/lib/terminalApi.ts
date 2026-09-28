@@ -99,7 +99,7 @@ const terminalMessageSchema = z.discriminatedUnion('t', [
 ]);
 type TerminalMessage = z.infer<typeof terminalMessageSchema>;
 
-const encode = (message: ClientMessage): Uint8Array => {
+const encode = (message: ClientMessage): Uint8Array<ArrayBuffer> => {
   const payload = encoder.encode(JSON.stringify(message));
   const frame = new Uint8Array(payload.length + 1);
   frame[0] = TAG;

@@ -44,6 +44,7 @@
     "@capacitor/ios": "^8.4.1",
     "@types/node": "^24.19.0",
     "serve-sim": "^0.1.45",
-    "typescript": "~5.9.0"
+    "@typescript/native": "npm:typescript@7.0.2",
+    "typescript": "npm:@typescript/typescript6@6.0.2"
   }
 }

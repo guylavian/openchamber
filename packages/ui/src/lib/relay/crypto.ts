@@ -106,7 +106,7 @@ export const deriveSessionKeys = async (
 };
 
 export interface FrameEncryptor {
-  encrypt(plaintext: Uint8Array): Promise<Uint8Array>;
+  encrypt(plaintext: Uint8Array): Promise<Uint8Array<ArrayBuffer>>;
 }
 
 export interface FrameDecryptor {
@@ -133,7 +133,7 @@ export const createFrameEncryptor = (key: CryptoKey): FrameEncryptor => {
   globalThis.crypto.getRandomValues(ivPrefix);
   let counter = 0n;
   return {
-    async encrypt(plaintext: Uint8Array): Promise<Uint8Array> {
+    async encrypt(plaintext: Uint8Array): Promise<Uint8Array<ArrayBuffer>> {
       if (plaintext.length > MAX_PLAINTEXT_FRAME_BYTES) {
         throw new RelayCryptoError('plaintext frame exceeds maximum size');
       }

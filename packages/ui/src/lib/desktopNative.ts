@@ -1,7 +1,8 @@
 import { hasDesktopInvoke, invokeDesktop, isDesktopShell } from '@/lib/desktop';
 
 type InvokeArgs = Record<string, unknown>;
-type RelayDevTunnelData = ArrayBuffer | Uint8Array;
+// Structured-cloned over Electron IPC, so always ArrayBuffer-backed.
+type RelayDevTunnelData = ArrayBuffer | Uint8Array<ArrayBuffer>;
 type RelayDevTunnelMessage = { type: 'connect' | 'ready' | 'data' | 'close'; data?: RelayDevTunnelData };
 type RelayDevTunnelEvent = { connectionId: string; remotePort: number; message: RelayDevTunnelMessage };
 type RelayDevTunnelBridge = {

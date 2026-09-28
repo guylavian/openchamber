@@ -50,7 +50,9 @@ const abortError = (): DOMException => new DOMException('The operation was abort
 // so tests can substitute an in-memory transport pair.
 export interface TunnelWireSocket {
   readonly readyState: number;
-  send(data: string | ArrayBuffer | Uint8Array): void;
+  // ArrayBuffer-backed only: WebSocket.send does not accept views over a
+  // SharedArrayBuffer, which a bare `Uint8Array` (ArrayBufferLike) would admit.
+  send(data: string | ArrayBuffer | Uint8Array<ArrayBuffer>): void;
   close(code?: number, reason?: string): void;
   onopen: (() => void) | null;
   onmessage: ((event: { data: unknown }) => void) | null;
@@ -104,7 +106,7 @@ export interface RelayTunnelWebSocket {
   onmessage: ((event: RelayTunnelSocketMessageEvent) => void) | null;
   onerror: (() => void) | null;
   onclose: ((event: RelayTunnelSocketCloseEvent) => void) | null;
-  send(data: string | ArrayBuffer | ArrayBufferView): void;
+  send(data: string | ArrayBuffer | ArrayBufferView<ArrayBuffer>): void;
   close(code?: number, reason?: string): void;
 }
 
