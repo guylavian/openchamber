@@ -60,13 +60,15 @@
     "appId": "dev.openchamber.desktop",
     "productName": "OpenChamber",
     "asarUnpack": [
-      "node_modules/@openchamber/web/server/built-in-extensions/**/*"
+      "node_modules/@openchamber/web/dist-node/server/built-in-extensions/**/*"
     ],
     "files": [
       "dist-bundle/entry.mjs",
       "dist-bundle/main.mjs",
       "dist-bundle/early-startup.mjs",
-      "preload.mjs"
+      "preload.mjs",
+      "!node_modules/@openchamber/web/{src,server,bin,scripts,test}/**",
+      "!node_modules/@openchamber/web/{index.html,mini-chat.html,mobile.html,tsconfig*.json,vite.config.ts,vitest.config.ts}"
     ],
     "extraResources": [
       {

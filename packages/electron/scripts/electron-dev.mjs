@@ -221,6 +221,9 @@ async function main() {
   let hmrUiPort = '';
 
   ensureElectronInstalled();
+  // main.mjs imports the server through @openchamber/web, which resolves to
+  // dist-node; build it so Electron never runs a stale server.
+  await runProcess('bun', ['run', 'build:server']);
   const bundledOpenCodeCliEnv = resolveBundledOpenCodeCliEnv();
 
   if (useBundledUi) {

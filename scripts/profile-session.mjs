@@ -36,7 +36,8 @@ import { createProcessCpuSampler, openBrowserClient, resolveServerProcesses } fr
 import { expandProjects, expandSessionLists } from "./perf/scenario.mjs"
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
-const cliPath = join(repoRoot, "packages/web/bin/cli.js")
+// The shipped CLI; run `bun run build:server` first.
+const cliPath = join(repoRoot, "packages/web/dist-node/bin/cli.js")
 
 const DEFAULT_PROMPT = "Write a technical explanation of how a bytecode virtual machine executes"
   + " a function call, about 800 words. Include three fenced code blocks in different languages"

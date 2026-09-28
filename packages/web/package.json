@@ -3,10 +3,18 @@
   "version": "2.0.2",
   "private": false,
   "type": "module",
-  "main": "./server/index.js",
-  "types": "./server/index.d.ts",
+  "main": "./dist-node/server/index.js",
+  "types": "./dist-node/server/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist-node/server/index.d.ts",
+      "default": "./dist-node/server/index.js"
+    },
+    "./server/*": "./dist-node/server/*",
+    "./package.json": "./package.json"
+  },
   "bin": {
-    "openchamber": "./bin/cli.js"
+    "openchamber": "./dist-node/bin/cli.js"
   },
   "publishConfig": {
     "access": "public"
@@ -16,13 +24,13 @@
     "dev:server": "bun ../../scripts/build-builtin-extensions.mjs && OPENCHAMBER_RELAY_HOST=${OPENCHAMBER_RELAY_HOST:-off} bun server/index.js --port ${OPENCHAMBER_PORT:-3001}",
     "dev:server:watch": "bun ../../scripts/build-builtin-extensions.mjs && node ./scripts/dev-server-watch.mjs",
     "build:server": "node ./scripts/build-server.mjs",
-    "build": "node ./scripts/build-server.mjs && vite build",
+    "build": "bun run build:server && vite build",
     "build:watch": "bun ../../scripts/build-builtin-extensions.mjs && vite build --watch",
-    "prepack": "node ./scripts/build-server.mjs",
+    "prepack": "bun run build:server",
     "type-check": "tsc --noEmit && tsc -p tsconfig.server.json",
     "lint": "eslint \"./src/**/*.{ts,tsx}\" --config ../../eslint.config.js",
     "test": "vitest run",
-    "start": "node bin/cli.js serve"
+    "start": "node dist-node/bin/cli.js serve"
   },
   "dependencies": {
     "@clack/prompts": "^1.1.0",
@@ -107,8 +115,7 @@
   },
   "files": [
     "dist",
-    "server",
-    "bin",
+    "dist-node",
     "public",
     "package.json",
     "README.md"
