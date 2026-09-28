@@ -12,9 +12,21 @@ export default tseslint.config([
     extends: [
       js.configs.recommended,
       tseslint.configs.recommended,
-      reactHooks.configs['recommended-latest'],
       reactRefresh.configs.vite,
     ],
+    // The two hook rules eslint-plugin-react-hooks 5 recommended. Version 7's
+    // presets add the React Compiler rules (refs, set-state-in-effect,
+    // purity, ...: 864 findings in packages/ui today); adopting them changes
+    // application code and is its own piece of work.
+    plugins: { 'react-hooks': reactHooks },
+    rules: {
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'warn',
+      // New in ESLint 10's eslint:recommended; each finding means editing
+      // code, so they are adopted separately, not with the upgrade.
+      'no-useless-assignment': 'off',
+      'preserve-caught-error': 'off',
+    },
     languageOptions: {
       ecmaVersion: 2020,
       globals: globals.browser,
