@@ -141,6 +141,21 @@ not upgraded, and why:
 | `node-addon-api` | root, exact `7.1.1` | Held at 7 (8.x is current) | `node-pty` 1.2.0-beta.15 declares `node-addon-api ^7.1.0`, and the Windows native rebuild (`packages/electron/scripts/rebuild-native.mjs`) copies the root copy into `node-pty`, so 8 would break that declared range. | `node-pty` moves to `node-addon-api` 8. |
 | `@types/vscode` | `packages/vscode`, `^1.85.0` | Range held at the engine floor (resolves to the latest 1.x) | `vsce` refuses to package when the `@types/vscode` range exceeds `engines.vscode`, and higher typings would admit APIs older supported VS Code lacks. | `engines.vscode` is raised. |
 
+### Adopted later, deliberately
+
+Upgrades keep behaviour; newer defaults that would change code or output are
+recorded here and adopted in their own change, with evidence.
+
+| Item | Deferred in | What adopting it takes |
+|---|---|---|
+| React Compiler lint rules (`eslint-plugin-react-hooks` 7 presets) | ESLint 10 wave | 864 findings in `packages/ui` (refs 445, set-state-in-effect 331, preserve-manual-memoization 55, immutability 21, ...). The config keeps the two v5 rules. |
+| `no-useless-assignment`, `preserve-caught-error` (ESLint 10 `eslint:recommended`) | ESLint 10 wave | 46 and 11 findings (ui, web, vscode). Off in `eslint.config.js`. |
+| Vite 8 default browser target | Vite 8 wave | `build.target` stays Vite 7's (safari16 ...). Note: the iOS app declares `IPHONEOS_DEPLOYMENT_TARGET = 15.5`, below even that target; aligning the two is a product decision. |
+| Oxc JS minifier and Lightning CSS | Vite 8 wave | Lightning CSS rewrites selectors into `:is()` (specificity) and polyfills a dependency's `light-dark()` through CSS `color-scheme`, which this app mostly sets from JS. Needs a visual check before switching `minify`/`cssMinify` from `'esbuild'`. |
+
+Known pre-existing gap: `scripts/oc-dev.mjs` mobile modes start Vite with
+`local-dev-mobile-vite.config.mjs`, which is neither tracked nor generated.
+
 `@xenova/transformers` was removed: nothing imported it after the local WASM
 speech-to-text was dropped, and it brought `protobufjs` 6, `sharp` 0.32 and
 `onnxruntime` 1.14 into the install (the last `bun audit` advisories). If local
