@@ -177,6 +177,91 @@ const runFixture = async (rendererCount: number): Promise<FixtureMetrics> => {
   return counts;
 };
 
+// Test-only happy-dom fidelity workaround; production sanitizing is untouched.
+// happy-dom's NodeIterator (18.0.1, still so in 20.14.5) is a TreeWalker
+// without the DOM standard's pre-removing steps, so when DOMPurify removes the
+// current node the walk ends and every later sibling goes unsanitized: markup a
+// browser sanitizes away is kept. Re-implement the iterator as specified
+// (https://dom.spec.whatwg.org/#interface-nodeiterator); forward walking is all
+// DOMPurify uses, and it is the only NodeIterator user in the UI. The sanitizer
+// test below proves dangerous markup is removed.
+// Call once the window's DOM globals are installed.
+const matchBrowserDom = (): void => {
+  const base = Node.prototype;
+  type Iterator = { root: Node; reference: Node; beforeReference: boolean };
+  const live = new Set<Iterator>();
+  const following = (node: Node, root: Node): Node | null => {
+    if (node.firstChild) return node.firstChild;
+    for (let current: Node | null = node; current && current !== root; current = current.parentNode) {
+      if (current.nextSibling) return current.nextSibling;
+    }
+    return null;
+  };
+  const lastInclusiveDescendant = (node: Node): Node => {
+    let last = node;
+    while (last.lastChild) last = last.lastChild;
+    return last;
+  };
+  const removeChild = base.removeChild;
+  Object.defineProperty(base, 'removeChild', {
+    configurable: true,
+    value: function (this: Node, child: Node): Node {
+      for (const iterator of live) {
+        if (child === iterator.root || !child.contains(iterator.reference)) continue;
+        if (iterator.beforeReference) {
+          const next = following(lastInclusiveDescendant(child), iterator.root);
+          if (next) {
+            iterator.reference = next;
+            continue;
+          }
+          iterator.beforeReference = false;
+        }
+        iterator.reference = child.previousSibling ? lastInclusiveDescendant(child.previousSibling) : this;
+      }
+      return removeChild.call(this, child);
+    },
+  });
+  // On this document only: DOMPurify reads the method from `window.document`.
+  Object.defineProperty(document, 'createNodeIterator', {
+    configurable: true,
+    value: (root: Node, whatToShow = 0xffffffff, filter: NodeFilter | null = null) => {
+      const state: Iterator = { root, reference: root, beforeReference: true };
+      live.add(state);
+      const accepts = (node: Node): boolean => {
+        if (!((1 << (node.nodeType - 1)) & whatToShow)) return false;
+        if (!filter) return true;
+        return (typeof filter === 'function' ? filter(node) : filter.acceptNode(node)) === 1;
+      };
+      return {
+        root,
+        whatToShow,
+        filter,
+        nextNode(): Node | null {
+          let node: Node | null = state.reference;
+          let before = state.beforeReference;
+          for (;;) {
+            if (before) before = false;
+            else node = following(node, root);
+            if (!node) {
+              live.delete(state);
+              return null;
+            }
+            if (accepts(node)) {
+              state.reference = node;
+              state.beforeReference = false;
+              return node;
+            }
+          }
+        },
+        previousNode(): never {
+          throw new Error('previousNode is not emulated; see matchBrowserDom');
+        },
+        detach(): void {},
+      };
+    },
+  });
+};
+
 const initializePerformanceDom = async (): Promise<void> => {
   windowInstance = new Window({ url: 'http://localhost/' });
   windowInstance.document.write('<!doctype html><html><head></head><body></body></html>');
@@ -192,6 +277,7 @@ const initializePerformanceDom = async (): Promise<void> => {
     if (globalValue === undefined) throw new Error(`happy-dom global is unavailable: ${name}`);
     installGlobal(name, globalValue);
   }
+  matchBrowserDom();
   Object.defineProperty(windowInstance, 'matchMedia', { configurable: true, value: () => ({ matches: false, media: '', onchange: null, addListener: () => undefined, removeListener: () => undefined, addEventListener: () => undefined, removeEventListener: () => undefined, dispatchEvent: () => false }) });
   Object.defineProperty(windowInstance, 'requestAnimationFrame', { configurable: true, value: (callback: FrameRequestCallback) => {
     animationFrameQueue.push(callback);
@@ -325,6 +411,28 @@ afterAll(() => {
 });
 
 describe('MarkdownRenderer DOM mount performance contract', () => {
+  test('under the happy-dom fidelity workarounds DOMPurify still removes dangerous markup', async () => {
+    const { default: DOMPurify } = await import('dompurify');
+    const { renderMarkdownSync } = await import('./markdown/markdownCore');
+    const payload = [
+      '<details><summary>Kept</summary>ok</details>',
+      '<script>alert(1)</script>',
+      '<img src="x" onerror="alert(1)">',
+      '<a href="javascript:alert(1)">link</a>',
+      '<iframe src="https://example.invalid"></iframe>',
+      '<svg><script>alert(1)</script><a href="javascript:alert(1)"><text>t</text></a></svg>',
+      '<math><mtext><style><img src=x onerror=alert(1)></style></mtext></math>',
+    ].join('');
+    const direct = DOMPurify.sanitize(payload);
+    expect(direct).toContain('<details><summary>Kept</summary>ok</details>');
+    for (const html of [direct, renderMarkdownSync(payload)]) {
+      const probe = document.createElement('div');
+      probe.innerHTML = html;
+      expect(probe.querySelector('script, iframe, style, [onerror]')).toBeNull();
+      for (const anchor of probe.querySelectorAll('a')) expect(/^\s*javascript:/i.test(anchor.getAttribute('href') ?? '')).toBe(false);
+    }
+  });
+
   test('preserves disclosure choices through streaming, settlement, and redecorating', async () => {
     const host = document.createElement('div');
     document.body.replaceChildren(host);
