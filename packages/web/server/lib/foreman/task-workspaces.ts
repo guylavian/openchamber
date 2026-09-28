@@ -1,17 +1,28 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import simpleGit from 'simple-git';
+// Named: under NodeNext the default import is typed as the module namespace.
+// Both bind the same function (checked under Node and Bun, ESM and CJS).
+import { simpleGit } from 'simple-git';
 
 import { ForemanStoreError } from './store.js';
+import type { TaskWorkspace } from './store.js';
 
-const workspaceKey = (jobId, taskId) => crypto.createHash('sha256').update(`${jobId}:${taskId}`).digest('hex').slice(0, 20);
-const canonicalDirectory = (value) => path.resolve(value).replace(/^\/var\/folders\//, '/private/var/folders/');
-const sameDirectory = (left, right) => canonicalDirectory(left) === canonicalDirectory(right);
+const workspaceKey = (jobId: string, taskId: string): string => crypto.createHash('sha256').update(`${jobId}:${taskId}`).digest('hex').slice(0, 20);
+const canonicalDirectory = (value: string): string => path.resolve(value).replace(/^\/var\/folders\//, '/private/var/folders/');
+const sameDirectory = (left: string, right: string): boolean => canonicalDirectory(left) === canonicalDirectory(right);
 
 /** Owns the only Git worktree operations used by Foreman. */
-export const createTaskWorkspaceManager = ({ dataDir, git = simpleGit, fsPromises = fs, pathModule = path, now = Date.now }) => ({
-  async prepare({ jobId, taskId, baseDirectory, existing }) {
+export interface TaskWorkspaceManagerOptions {
+  dataDir: string;
+  git?: typeof simpleGit;
+  fsPromises?: Pick<typeof fs, 'access' | 'mkdir'>;
+  pathModule?: Pick<typeof path, 'resolve' | 'dirname'>;
+  now?: () => number;
+}
+
+export const createTaskWorkspaceManager = ({ dataDir, git = simpleGit, fsPromises = fs, pathModule = path, now = Date.now }: TaskWorkspaceManagerOptions) => ({
+  async prepare({ jobId, taskId, baseDirectory, existing }: { jobId: string; taskId: string; baseDirectory: string; existing?: TaskWorkspace | undefined }): Promise<TaskWorkspace> {
     if (existing) {
       if (existing.kind === 'shared-directory') {
         if (existing.directory !== baseDirectory) throw new ForemanStoreError('conflict', 'The Task workspace no longer matches its Job directory');
@@ -50,14 +61,14 @@ export const createTaskWorkspaceManager = ({ dataDir, git = simpleGit, fsPromise
     }
     return { kind: 'git-worktree', directory: target, createdAt: now() };
   },
-  async remove({ jobId, taskId, workspace }) {
+  async remove({ jobId, taskId, workspace }: { jobId: string; taskId: string; workspace?: TaskWorkspace | undefined }): Promise<void> {
     if (!workspace || workspace.kind !== 'git-worktree') return;
     const target = pathModule.resolve(dataDir, 'foreman-worktrees', workspaceKey(jobId, taskId));
     if (!sameDirectory(workspace.directory, target)) throw new ForemanStoreError('conflict', 'The stored Task worktree path is invalid');
     const parentDirectory = pathModule.resolve(dataDir, 'foreman-worktrees');
     if (!sameDirectory(pathModule.dirname(target), parentDirectory)) throw new ForemanStoreError('conflict', 'The Task worktree is outside Foreman storage');
     try { await fsPromises.access(target); }
-    catch (error) { if (error?.code === 'ENOENT') return; throw error; }
+    catch (error) { if ((error as { code?: unknown } | null | undefined)?.code === 'ENOENT') return; throw error; }
     const worktrees = await git(workspace.directory).raw(['worktree', 'list', '--porcelain']);
     const registered = worktrees.split(/\r?\n/).some((line) => line.startsWith('worktree ') && sameDirectory(line.slice('worktree '.length), target));
     if (!registered) {
@@ -66,3 +77,5 @@ export const createTaskWorkspaceManager = ({ dataDir, git = simpleGit, fsPromise
     await git(workspace.directory).raw(['worktree', 'remove', '--force', target]);
   },
 });
+
+export type TaskWorkspaceManager = ReturnType<typeof createTaskWorkspaceManager>;
