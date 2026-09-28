@@ -75,6 +75,7 @@
     "@remixicon/react": "^4.7.0",
     "@simplewebauthn/browser": "13.3.0",
     "@tailwindcss/postcss": "^4.0.0",
+    "@types/express": "^5.0.6",
     "@types/node": "^24.19.0",
     "@types/react": "^19.1.10",
     "@types/react-dom": "^19.1.7",

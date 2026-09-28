@@ -60,7 +60,8 @@ and store live in `packages/ui/src/lib/foreman/`,
 `packages/web/server/lib/foreman/DOCUMENTATION.md` is the current architecture
 reference. Foreman uses OpenChamber's session service and event stream. Task
 dependencies and scheduling live in the Foreman store/scheduler, while Git
-worktree creation is isolated in `task-workspaces.js`. The standalone
+worktree creation is isolated in `task-workspaces.ts`. The Foreman server is
+TypeScript, converted with runtime behaviour unchanged; see its DOCUMENTATION.md. The standalone
 `/Users/guylavian/Projects/Active/foreman/` checkout is a reference only.
 
 ---

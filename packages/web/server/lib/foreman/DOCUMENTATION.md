@@ -63,7 +63,7 @@ it. Invalid values fall back to three.
 The state response includes the effective limit so the Jobs view reports the
 configured value.
 
-## Execution (`execution.js`)
+## Execution (`execution.ts`)
 
 `POST /api/foreman/runs/:id/start`, in order:
 
@@ -143,7 +143,7 @@ view. Memory is advisory; prompts tell the agent to check current code.
 
 ## Routes
 
-`routes.js` registers `/api/foreman/*` in `feature-routes-runtime.js`, before
+`routes.ts` registers `/api/foreman/*` in `feature-routes-runtime.js`, before
 the OpenCode proxy: `GET state`, `POST jobs`, `PATCH jobs/:id`, `POST
 jobs/:id/tasks`, `PATCH tasks/:id`, `DELETE tasks/:id`, `DELETE jobs/:id`,
 `POST tasks/:id/runs`, `POST
@@ -196,9 +196,54 @@ structured tools if the selected agent exposes them, then targeted file
 search/read, then shell for execution, tests, builds, Git, and runtime
 commands. Ordinary session prompts are unchanged.
 
+## TypeScript
+
+Every module here is TypeScript (`types.ts`, `store.ts`, `execution-truth.ts`,
+`scheduler.ts`, `task-workspaces.ts`, `execution.ts`, `routes.ts`, `graph.ts`),
+compiled into `dist-node` by `bun run build:server` like the rest of the server
+(see `docs/platform-toolchain.md`). Importers keep `.js` specifiers.
+
+The conversion from JavaScript changed no runtime behaviour. Each module,
+stripped of its types by Bun's transpiler, is the JavaScript it replaced; the
+only differences are Zod's no-op `.brand()` on id schemas in `store.ts` and the
+named `simpleGit` import in `task-workspaces.ts` (the same function). Types
+describe the contract the code already had; they add no run-time checks.
+
+- **No `any`.** Lint (typescript-eslint `strictTypeChecked`) rejects explicit
+  and implicit `any`, `as any`, `as unknown`, double and angle-bracket
+  assertions and `@ts-` directives, and ignores `eslint-disable` comments.
+- **Erased assertions mark the tensions.** Where the JavaScript relies on an
+  invariant the checker cannot see (state loaded before it is read, an index
+  `findOrThrow` found, an object finished field by field, a store query that
+  only returns runs with a session), the code says so with `x!` or `x as T`.
+  Both are erased, so behaviour stays the JavaScript's, including the error it
+  would throw if the invariant broke.
+- **Rules that would change behaviour are off** for server TypeScript:
+  no-unnecessary-condition (defensive `?.`, `??` and branches stay),
+  restrict-template-expressions, require-await, no-deprecated,
+  no-confusing-void-expression and no-useless-default-assignment. See the
+  comment in `eslint.config.js`.
+- **Identifiers** (`JobId`, `TaskId`, `RunId`, `SessionId`, `MemoryId` in
+  `types.ts`) are branded strings, type-only: stored schemas brand them with
+  Zod's `.brand()`, new ids and request parameters are branded where they are
+  made, and nothing validates them that did not before. Every store, scheduler
+  and execution entry point takes the identifier of its own kind. There is no
+  agent entity in the Foreman server, so there is no `AgentId`.
+- **Unions.** An execution-truth verdict is `blocked | idle | unknown`; an event
+  change is one of seven shapes (a status with its qualifier, or a deleted
+  session), each declaring the others' fields absent so the code reads them as
+  written; `validateDirectoryPath` answers `{ ok: true, directory }` or
+  `{ ok: false, error? }`; the error-code-to-status table `satisfies` the full
+  code list.
+- `types.test.ts` holds type-level regression tests (checked by
+  `tsc -p tsconfig.server.json`).
+- `packages/web/test/foreman-persistence.test.js` loads every file version and
+  drives every mutation path, comparing the bytes written with golden files
+  produced by the JavaScript store.
+
 ## Tests
 
-`store.test.js` (default state, relationships, status rules, restart, failed
+`test/foreman-persistence.test.js` (byte-exact golden files for every file version and mutation path), `types.test.ts` (type-level), `store.test.js` (default state, relationships, status rules, restart, failed
 write, concurrency, v1/v2/v3/v4 migration, memory scope and persistence, deletion rollback, unreadable and newer files),
 `execution.test.js` (one session per start, instructions and directory,
 duplicate and interrupted starts, each failure stage, status mapping,
