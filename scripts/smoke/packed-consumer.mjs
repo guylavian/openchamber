@@ -122,6 +122,8 @@ const serve = async (label, runtime, cliPath) => {
     record(`${label}: serves the UI`, ui.status === 200 && /<html/i.test(ui.body), `status ${ui.status}`);
     const guests = await get('/api/guests');
     record(`${label}: extension registry`, guests.status === 200, `status ${guests.status}`);
+    const foreman = await get('/api/foreman/state');
+    record(`${label}: Foreman state`, foreman.status === 200 && JSON.parse(foreman.body).version === 2, `status ${foreman.status}`);
   } finally {
     try {
       if (process.platform === 'win32') child.kill();

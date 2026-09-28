@@ -187,7 +187,7 @@ It launches the build once in an isolated home (the same isolation as
 touched) and checks: the main process starts the server and OpenCode, the
 preload exposes `window.__OPENCHAMBER_DESKTOP__` while the renderer has no Node
 globals, React mounts, the embedded server answers `/health`, serves the UI,
-reads the extension registry and the filesystem, a terminal spawns through the
+reads the extension registry, Foreman's state and the filesystem, a terminal spawns through the
 rebuilt `node-pty`, and `main.log` holds no module-resolution or native-load
 error. Exit code 1 on any failed check.
 

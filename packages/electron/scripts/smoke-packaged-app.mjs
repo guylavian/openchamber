@@ -130,6 +130,8 @@ try {
     record("serves the UI", ui.status === 200 && /<html/i.test(ui.text), `status ${ui.status}`)
     const guests = await request("/api/guests")
     record("extension registry", guests.status === 200, `status ${guests.status}`)
+    const foreman = await request("/api/foreman/state")
+    record("Foreman state", foreman.status === 200 && foreman.json?.version === 2 && Array.isArray(foreman.json?.jobs), `status ${foreman.status}`)
     const fsHome = await request("/api/fs/home")
     record("filesystem access", fsHome.status === 200, `status ${fsHome.status}`)
 
