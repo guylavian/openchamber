@@ -1,0 +1,327 @@
+{
+  "snapshot": {
+    "version": 2,
+    "globalConcurrency": 3,
+    "jobs": [
+      {
+        "id": "job-c",
+        "title": "Fix flaky test",
+        "directory": "/repo/web",
+        "status": "failed",
+        "createdAt": 200,
+        "updatedAt": 260,
+        "maxParallelTasks": 3
+      }
+    ],
+    "tasks": [
+      {
+        "id": "task-c1",
+        "jobId": "job-c",
+        "title": "Find the race",
+        "status": "cancelled",
+        "createdAt": 201,
+        "updatedAt": 260,
+        "dependsOn": [],
+        "currentRunId": "run-c1-2"
+      }
+    ],
+    "runs": [
+      {
+        "id": "run-c1-1",
+        "taskId": "task-c1",
+        "status": "failed",
+        "error": {
+          "stage": "dispatch",
+          "message": "OpenCode did not queue the task"
+        },
+        "execution": {
+          "type": "opencode-session",
+          "id": "ses_c1",
+          "directory": "/repo/web",
+          "createdAt": 210
+        },
+        "requestId": "req-1",
+        "createdAt": 209,
+        "updatedAt": 230,
+        "finishedAt": 230,
+        "activity": []
+      },
+      {
+        "id": "run-c1-2",
+        "taskId": "task-c1",
+        "status": "cancelled",
+        "execution": {
+          "type": "opencode-session",
+          "id": "ses_c2",
+          "directory": "/repo/web",
+          "createdAt": 240,
+          "deletedAt": 255
+        },
+        "stoppedAt": 250,
+        "createdAt": 239,
+        "updatedAt": 260,
+        "startedAt": 241,
+        "finishedAt": 250,
+        "activity": []
+      }
+    ]
+  },
+  "runContext:run-c1-1": {
+    "run": {
+      "id": "run-c1-1",
+      "taskId": "task-c1",
+      "status": "failed",
+      "error": {
+        "stage": "dispatch",
+        "message": "OpenCode did not queue the task"
+      },
+      "execution": {
+        "type": "opencode-session",
+        "id": "ses_c1",
+        "directory": "/repo/web",
+        "createdAt": 210
+      },
+      "requestId": "req-1",
+      "createdAt": 209,
+      "updatedAt": 230,
+      "finishedAt": 230,
+      "activity": []
+    },
+    "task": {
+      "id": "task-c1",
+      "jobId": "job-c",
+      "title": "Find the race",
+      "status": "cancelled",
+      "createdAt": 201,
+      "updatedAt": 260,
+      "dependsOn": [],
+      "currentRunId": "run-c1-2"
+    },
+    "job": {
+      "id": "job-c",
+      "title": "Fix flaky test",
+      "directory": "/repo/web",
+      "status": "failed",
+      "createdAt": 200,
+      "updatedAt": 260,
+      "maxParallelTasks": 3
+    }
+  },
+  "activity:run-c1-1": [],
+  "runsForExecution:ses_c1": [
+    {
+      "id": "run-c1-1",
+      "taskId": "task-c1",
+      "status": "failed",
+      "error": {
+        "stage": "dispatch",
+        "message": "OpenCode did not queue the task"
+      },
+      "execution": {
+        "type": "opencode-session",
+        "id": "ses_c1",
+        "directory": "/repo/web",
+        "createdAt": 210
+      },
+      "requestId": "req-1",
+      "createdAt": 209,
+      "updatedAt": 230,
+      "finishedAt": 230,
+      "activity": []
+    }
+  ],
+  "runContext:run-c1-2": {
+    "run": {
+      "id": "run-c1-2",
+      "taskId": "task-c1",
+      "status": "cancelled",
+      "execution": {
+        "type": "opencode-session",
+        "id": "ses_c2",
+        "directory": "/repo/web",
+        "createdAt": 240,
+        "deletedAt": 255
+      },
+      "stoppedAt": 250,
+      "createdAt": 239,
+      "updatedAt": 260,
+      "startedAt": 241,
+      "finishedAt": 250,
+      "activity": []
+    },
+    "task": {
+      "id": "task-c1",
+      "jobId": "job-c",
+      "title": "Find the race",
+      "status": "cancelled",
+      "createdAt": 201,
+      "updatedAt": 260,
+      "dependsOn": [],
+      "currentRunId": "run-c1-2"
+    },
+    "job": {
+      "id": "job-c",
+      "title": "Fix flaky test",
+      "directory": "/repo/web",
+      "status": "failed",
+      "createdAt": 200,
+      "updatedAt": 260,
+      "maxParallelTasks": 3
+    }
+  },
+  "activity:run-c1-2": [],
+  "runsForExecution:ses_c2": [
+    {
+      "id": "run-c1-2",
+      "taskId": "task-c1",
+      "status": "cancelled",
+      "execution": {
+        "type": "opencode-session",
+        "id": "ses_c2",
+        "directory": "/repo/web",
+        "createdAt": 240,
+        "deletedAt": 255
+      },
+      "stoppedAt": 250,
+      "createdAt": 239,
+      "updatedAt": 260,
+      "startedAt": 241,
+      "finishedAt": 250,
+      "activity": []
+    }
+  ],
+  "taskContext:task-c1": {
+    "task": {
+      "id": "task-c1",
+      "jobId": "job-c",
+      "title": "Find the race",
+      "status": "cancelled",
+      "createdAt": 201,
+      "updatedAt": 260,
+      "dependsOn": [],
+      "currentRunId": "run-c1-2"
+    },
+    "job": {
+      "id": "job-c",
+      "title": "Fix flaky test",
+      "directory": "/repo/web",
+      "status": "failed",
+      "createdAt": 200,
+      "updatedAt": 260,
+      "maxParallelTasks": 3
+    },
+    "latestRun": {
+      "id": "run-c1-2",
+      "taskId": "task-c1",
+      "status": "cancelled",
+      "execution": {
+        "type": "opencode-session",
+        "id": "ses_c2",
+        "directory": "/repo/web",
+        "createdAt": 240,
+        "deletedAt": 255
+      },
+      "stoppedAt": 250,
+      "createdAt": 239,
+      "updatedAt": 260,
+      "startedAt": 241,
+      "finishedAt": 250,
+      "activity": []
+    }
+  },
+  "jobContext:job-c": {
+    "job": {
+      "id": "job-c",
+      "title": "Fix flaky test",
+      "directory": "/repo/web",
+      "status": "failed",
+      "createdAt": 200,
+      "updatedAt": 260,
+      "maxParallelTasks": 3
+    }
+  },
+  "memories:job-c": [],
+  "relevantMemories:job-c": [],
+  "activeExecutions": [],
+  "mutation": {
+    "id": "job-c",
+    "title": "Fix flaky test",
+    "directory": "/repo/web",
+    "status": "failed",
+    "createdAt": 200,
+    "updatedAt": 10001,
+    "maxParallelTasks": 3
+  },
+  "snapshotAfterMutation": {
+    "version": 2,
+    "globalConcurrency": 3,
+    "jobs": [
+      {
+        "id": "job-c",
+        "title": "Fix flaky test",
+        "directory": "/repo/web",
+        "status": "failed",
+        "createdAt": 200,
+        "updatedAt": 10001,
+        "maxParallelTasks": 3
+      }
+    ],
+    "tasks": [
+      {
+        "id": "task-c1",
+        "jobId": "job-c",
+        "title": "Find the race",
+        "status": "cancelled",
+        "createdAt": 201,
+        "updatedAt": 260,
+        "dependsOn": [],
+        "currentRunId": "run-c1-2"
+      }
+    ],
+    "runs": [
+      {
+        "id": "run-c1-1",
+        "taskId": "task-c1",
+        "status": "failed",
+        "error": {
+          "stage": "dispatch",
+          "message": "OpenCode did not queue the task"
+        },
+        "execution": {
+          "type": "opencode-session",
+          "id": "ses_c1",
+          "directory": "/repo/web",
+          "createdAt": 210
+        },
+        "requestId": "req-1",
+        "createdAt": 209,
+        "updatedAt": 230,
+        "finishedAt": 230,
+        "activity": []
+      },
+      {
+        "id": "run-c1-2",
+        "taskId": "task-c1",
+        "status": "cancelled",
+        "execution": {
+          "type": "opencode-session",
+          "id": "ses_c2",
+          "directory": "/repo/web",
+          "createdAt": 240,
+          "deletedAt": 255
+        },
+        "stoppedAt": 250,
+        "createdAt": 239,
+        "updatedAt": 260,
+        "startedAt": 241,
+        "finishedAt": 250,
+        "activity": []
+      }
+    ]
+  },
+  "fileAfter": "{\n  \"version\": 5,\n  \"jobs\": [\n    {\n      \"id\": \"job-c\",\n      \"title\": \"Fix flaky test\",\n      \"directory\": \"/repo/web\",\n      \"status\": \"failed\",\n      \"createdAt\": 200,\n      \"updatedAt\": 10001,\n      \"maxParallelTasks\": 3\n    }\n  ],\n  \"tasks\": [\n    {\n      \"id\": \"task-c1\",\n      \"jobId\": \"job-c\",\n      \"title\": \"Find the race\",\n      \"status\": \"failed\",\n      \"createdAt\": 201,\n      \"updatedAt\": 260,\n      \"dependsOn\": []\n    }\n  ],\n  \"runs\": [\n    {\n      \"id\": \"run-c1-1\",\n      \"taskId\": \"task-c1\",\n      \"status\": \"failed\",\n      \"error\": {\n        \"stage\": \"dispatch\",\n        \"message\": \"OpenCode did not queue the task\"\n      },\n      \"execution\": {\n        \"type\": \"opencode-session\",\n        \"id\": \"ses_c1\",\n        \"directory\": \"/repo/web\",\n        \"createdAt\": 210\n      },\n      \"requestId\": \"req-1\",\n      \"createdAt\": 209,\n      \"updatedAt\": 230,\n      \"finishedAt\": 230,\n      \"activity\": []\n    },\n    {\n      \"id\": \"run-c1-2\",\n      \"taskId\": \"task-c1\",\n      \"status\": \"cancelled\",\n      \"execution\": {\n        \"type\": \"opencode-session\",\n        \"id\": \"ses_c2\",\n        \"directory\": \"/repo/web\",\n        \"createdAt\": 240,\n        \"deletedAt\": 255\n      },\n      \"stoppedAt\": 250,\n      \"createdAt\": 239,\n      \"updatedAt\": 260,\n      \"startedAt\": 241,\n      \"finishedAt\": 250,\n      \"activity\": []\n    }\n  ],\n  \"memories\": []\n}",
+  "dataDirEntries": [
+    "foreman.json"
+  ],
+  "warnings": []
+}

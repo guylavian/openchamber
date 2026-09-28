@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "jobs": [
+    { "id": "job-c", "title": "Fix flaky test", "directory": "/repo/web", "status": "failed", "createdAt": 200, "updatedAt": 260 }
+  ],
+  "tasks": [
+    { "id": "task-c1", "jobId": "job-c", "title": "Find the race", "status": "failed", "createdAt": 201, "updatedAt": 260 }
+  ],
+  "runs": [
+    { "id": "run-c1-1", "taskId": "task-c1", "status": "failed", "error": { "stage": "dispatch", "message": "OpenCode did not queue the task" }, "execution": { "type": "opencode-session", "id": "ses_c1", "directory": "/repo/web", "createdAt": 210 }, "requestId": "req-1", "createdAt": 209, "updatedAt": 230, "finishedAt": 230 },
+    { "id": "run-c1-2", "taskId": "task-c1", "status": "cancelled", "execution": { "type": "opencode-session", "id": "ses_c2", "directory": "/repo/web", "createdAt": 240, "deletedAt": 255 }, "stoppedAt": 250, "createdAt": 239, "updatedAt": 260, "startedAt": 241, "finishedAt": 250 }
+  ]
+}

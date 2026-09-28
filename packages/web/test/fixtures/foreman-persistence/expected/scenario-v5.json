@@ -1,0 +1,821 @@
+{
+  "createTask": {
+    "id": "gen-1",
+    "jobId": "job-g",
+    "title": "Verify",
+    "status": "blocked",
+    "createdAt": 10001,
+    "updatedAt": 10001,
+    "instructions": "Check the build",
+    "dependsOn": [
+      "task-g5"
+    ],
+    "blockedByTaskIds": [
+      "task-g5"
+    ],
+    "blockingReason": "dependency_incomplete"
+  },
+  "updateTask": {
+    "id": "task-g3",
+    "jobId": "job-g",
+    "title": "Publish",
+    "dependsOn": [
+      "task-g1"
+    ],
+    "status": "ready",
+    "createdAt": 503,
+    "updatedAt": 10002
+  },
+  "updateTaskCycle": {
+    "thrown": "invalid_input",
+    "message": "Task dependencies cannot contain a cycle"
+  },
+  "createRun": {
+    "id": "gen-2",
+    "taskId": "task-g3",
+    "status": "queued",
+    "createdAt": 10004,
+    "updatedAt": 10004,
+    "requestId": "req-g3"
+  },
+  "createRunAgain": {
+    "id": "gen-2",
+    "taskId": "task-g3",
+    "status": "queued",
+    "createdAt": 10004,
+    "updatedAt": 10004,
+    "requestId": "req-g3"
+  },
+  "startIntent": {
+    "run": {
+      "id": "gen-2",
+      "taskId": "task-g3",
+      "status": "queued",
+      "createdAt": 10004,
+      "updatedAt": 10005,
+      "requestId": "req-g3",
+      "activity": [],
+      "execution": {
+        "type": "opencode-session",
+        "createdAt": 1
+      }
+    },
+    "changed": true
+  },
+  "sessionLinked": {
+    "run": {
+      "id": "gen-2",
+      "taskId": "task-g3",
+      "status": "queued",
+      "createdAt": 10004,
+      "updatedAt": 10006,
+      "requestId": "req-g3",
+      "activity": [],
+      "execution": {
+        "type": "opencode-session",
+        "id": "ses_g3",
+        "directory": "/repo/g",
+        "createdAt": 1
+      }
+    },
+    "changed": true
+  },
+  "running": {
+    "run": {
+      "id": "gen-2",
+      "taskId": "task-g3",
+      "status": "running",
+      "createdAt": 10004,
+      "updatedAt": 10007,
+      "requestId": "req-g3",
+      "activity": [
+        {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "runId": "gen-2",
+          "type": "status_changed",
+          "message": "Run is running",
+          "timestamp": 10007
+        }
+      ],
+      "execution": {
+        "type": "opencode-session",
+        "id": "ses_g3",
+        "directory": "/repo/g",
+        "createdAt": 1
+      },
+      "startedAt": 10007
+    },
+    "changed": true
+  },
+  "waiting": {
+    "run": {
+      "id": "gen-2",
+      "taskId": "task-g3",
+      "status": "waiting_for_user",
+      "createdAt": 10004,
+      "updatedAt": 10008,
+      "requestId": "req-g3",
+      "activity": [
+        {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "runId": "gen-2",
+          "type": "status_changed",
+          "message": "Run is running",
+          "timestamp": 10007
+        },
+        {
+          "id": "00000000-0000-4000-8000-000000000002",
+          "runId": "gen-2",
+          "type": "attention_required",
+          "message": "Waiting for permission",
+          "timestamp": 10008
+        }
+      ],
+      "execution": {
+        "type": "opencode-session",
+        "id": "ses_g3",
+        "directory": "/repo/g",
+        "createdAt": 1
+      },
+      "startedAt": 10007,
+      "attention": {
+        "type": "permission",
+        "message": "Allow npm publish?"
+      }
+    },
+    "changed": true
+  },
+  "resolved": {
+    "run": {
+      "id": "gen-2",
+      "taskId": "task-g3",
+      "status": "running",
+      "createdAt": 10004,
+      "updatedAt": 10009,
+      "requestId": "req-g3",
+      "activity": [
+        {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "runId": "gen-2",
+          "type": "status_changed",
+          "message": "Run is running",
+          "timestamp": 10007
+        },
+        {
+          "id": "00000000-0000-4000-8000-000000000002",
+          "runId": "gen-2",
+          "type": "attention_required",
+          "message": "Waiting for permission",
+          "timestamp": 10008
+        },
+        {
+          "id": "00000000-0000-4000-8000-000000000003",
+          "runId": "gen-2",
+          "type": "attention_resolved",
+          "message": "Permission resolved",
+          "timestamp": 10009
+        }
+      ],
+      "execution": {
+        "type": "opencode-session",
+        "id": "ses_g3",
+        "directory": "/repo/g",
+        "createdAt": 1
+      },
+      "startedAt": 10007
+    },
+    "changed": true
+  },
+  "progress": {
+    "id": "00000000-0000-4000-8000-000000000004",
+    "runId": "gen-2",
+    "type": "progress",
+    "message": "Packing",
+    "timestamp": 10010,
+    "metadata": {
+      "step": 2,
+      "dryRun": false
+    }
+  },
+  "failed": {
+    "run": {
+      "id": "gen-2",
+      "taskId": "task-g3",
+      "status": "failed",
+      "createdAt": 10004,
+      "updatedAt": 10011,
+      "requestId": "req-g3",
+      "activity": [
+        {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "runId": "gen-2",
+          "type": "status_changed",
+          "message": "Run is running",
+          "timestamp": 10007
+        },
+        {
+          "id": "00000000-0000-4000-8000-000000000002",
+          "runId": "gen-2",
+          "type": "attention_required",
+          "message": "Waiting for permission",
+          "timestamp": 10008
+        },
+        {
+          "id": "00000000-0000-4000-8000-000000000003",
+          "runId": "gen-2",
+          "type": "attention_resolved",
+          "message": "Permission resolved",
+          "timestamp": 10009
+        },
+        {
+          "id": "00000000-0000-4000-8000-000000000004",
+          "runId": "gen-2",
+          "type": "progress",
+          "message": "Packing",
+          "timestamp": 10010,
+          "metadata": {
+            "step": 2,
+            "dryRun": false
+          }
+        },
+        {
+          "id": "00000000-0000-4000-8000-000000000005",
+          "runId": "gen-2",
+          "type": "run_failed",
+          "message": "Run failed: npm ERR! 403",
+          "timestamp": 10011
+        }
+      ],
+      "execution": {
+        "type": "opencode-session",
+        "id": "ses_g3",
+        "directory": "/repo/g",
+        "createdAt": 1
+      },
+      "startedAt": 10007,
+      "finishedAt": 10011,
+      "error": {
+        "stage": "execution",
+        "message": "npm ERR! 403"
+      }
+    },
+    "changed": true
+  },
+  "deleted": {
+    "run": {
+      "id": "gen-2",
+      "taskId": "task-g3",
+      "status": "failed",
+      "createdAt": 10004,
+      "updatedAt": 10012,
+      "requestId": "req-g3",
+      "activity": [
+        {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "runId": "gen-2",
+          "type": "status_changed",
+          "message": "Run is running",
+          "timestamp": 10007
+        },
+        {
+          "id": "00000000-0000-4000-8000-000000000002",
+          "runId": "gen-2",
+          "type": "attention_required",
+          "message": "Waiting for permission",
+          "timestamp": 10008
+        },
+        {
+          "id": "00000000-0000-4000-8000-000000000003",
+          "runId": "gen-2",
+          "type": "attention_resolved",
+          "message": "Permission resolved",
+          "timestamp": 10009
+        },
+        {
+          "id": "00000000-0000-4000-8000-000000000004",
+          "runId": "gen-2",
+          "type": "progress",
+          "message": "Packing",
+          "timestamp": 10010,
+          "metadata": {
+            "step": 2,
+            "dryRun": false
+          }
+        },
+        {
+          "id": "00000000-0000-4000-8000-000000000005",
+          "runId": "gen-2",
+          "type": "run_failed",
+          "message": "Run failed: npm ERR! 403",
+          "timestamp": 10011
+        },
+        {
+          "id": "00000000-0000-4000-8000-000000000006",
+          "runId": "gen-2",
+          "type": "progress",
+          "message": "OpenCode session deleted",
+          "timestamp": 10012
+        }
+      ],
+      "execution": {
+        "type": "opencode-session",
+        "id": "ses_g3",
+        "directory": "/repo/g",
+        "createdAt": 1,
+        "deletedAt": 2
+      },
+      "startedAt": 10007,
+      "finishedAt": 10011,
+      "error": {
+        "stage": "execution",
+        "message": "npm ERR! 403"
+      }
+    },
+    "changed": true
+  },
+  "manualRunBlocked": {
+    "thrown": "conflict",
+    "message": "This Task already has an active Run"
+  },
+  "updateRunExecuting": {
+    "thrown": "conflict",
+    "message": "This run is executing; its status follows the session"
+  },
+  "updateRunWaiting": {
+    "id": "gen-4",
+    "taskId": "gen-3",
+    "status": "waiting_for_user",
+    "createdAt": 10014,
+    "updatedAt": 10015,
+    "activity": [
+      {
+        "id": "00000000-0000-4000-8000-000000000007",
+        "runId": "gen-4",
+        "type": "attention_required",
+        "message": "Waiting for your response",
+        "timestamp": 10015
+      }
+    ],
+    "attention": {
+      "type": "question",
+      "message": "Looks right?"
+    }
+  },
+  "updateRunAttentionOutsideWaiting": {
+    "thrown": "invalid_input",
+    "message": "attention can only be set while status is waiting_for_user"
+  },
+  "updateRunRunning": {
+    "id": "gen-4",
+    "taskId": "gen-3",
+    "status": "running",
+    "createdAt": 10014,
+    "updatedAt": 10017,
+    "activity": [
+      {
+        "id": "00000000-0000-4000-8000-000000000007",
+        "runId": "gen-4",
+        "type": "attention_required",
+        "message": "Waiting for your response",
+        "timestamp": 10015
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000009",
+        "runId": "gen-4",
+        "type": "attention_resolved",
+        "message": "Question resolved",
+        "timestamp": 10017
+      }
+    ],
+    "startedAt": 10017
+  },
+  "updateRunCompleted": {
+    "id": "gen-4",
+    "taskId": "gen-3",
+    "status": "completed",
+    "createdAt": 10014,
+    "updatedAt": 10018,
+    "activity": [
+      {
+        "id": "00000000-0000-4000-8000-000000000007",
+        "runId": "gen-4",
+        "type": "attention_required",
+        "message": "Waiting for your response",
+        "timestamp": 10015
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000009",
+        "runId": "gen-4",
+        "type": "attention_resolved",
+        "message": "Question resolved",
+        "timestamp": 10017
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000010",
+        "runId": "gen-4",
+        "type": "run_completed",
+        "message": "Run completed",
+        "timestamp": 10018
+      }
+    ],
+    "startedAt": 10017,
+    "finishedAt": 10018
+  },
+  "setWorkspace": {
+    "id": "task-g3",
+    "jobId": "job-g",
+    "title": "Publish",
+    "dependsOn": [
+      "task-g1"
+    ],
+    "status": "pending",
+    "createdAt": 503,
+    "updatedAt": 10019,
+    "workspace": {
+      "kind": "shared-directory",
+      "directory": "/repo/g",
+      "createdAt": 3
+    }
+  },
+  "createMemory": {
+    "id": "gen-5",
+    "scope": "job",
+    "workspaceId": "/repo/g",
+    "jobId": "job-g",
+    "type": "decision",
+    "content": "Publish from CI only",
+    "tags": [
+      "ci",
+      "release"
+    ],
+    "source": "user",
+    "confidence": 0.8,
+    "createdAt": 10020,
+    "updatedAt": 10020,
+    "lastVerifiedAt": 10020
+  },
+  "createMemoryWrongWorkspace": {
+    "thrown": "invalid_input",
+    "message": "Workspace does not match the job directory"
+  },
+  "updateMemory": {
+    "id": "mem-g",
+    "scope": "workspace",
+    "workspaceId": "/repo/g",
+    "type": "known_issue",
+    "content": "The suite needs NODE_ENV=test; see scripts/test.sh",
+    "tags": [
+      "tests"
+    ],
+    "source": "user",
+    "confidence": 0.95,
+    "createdAt": 520,
+    "updatedAt": 10021,
+    "lastVerifiedAt": 10021
+  },
+  "deleteMemory": {
+    "id": "gen-6",
+    "scope": "workspace",
+    "workspaceId": "/repo/g",
+    "type": "fact",
+    "content": "Temporary note",
+    "tags": [],
+    "source": "user",
+    "confidence": 0.8,
+    "createdAt": 10022,
+    "updatedAt": 10022,
+    "lastVerifiedAt": 10022
+  },
+  "updateJob": {
+    "id": "job-g",
+    "title": "Release",
+    "directory": "/repo/g",
+    "status": "waiting",
+    "maxParallelTasks": 4,
+    "createdAt": 500,
+    "updatedAt": 10023
+  },
+  "createJob": {
+    "id": "gen-7",
+    "title": "Follow-up",
+    "status": "pending",
+    "maxParallelTasks": 1,
+    "createdAt": 10024,
+    "updatedAt": 10024,
+    "directory": "/repo/g"
+  },
+  "deleteTask": {
+    "id": "task-g4",
+    "jobId": "job-g",
+    "title": "Announce",
+    "dependsOn": [
+      "task-g3",
+      "task-g1"
+    ],
+    "status": "pending",
+    "createdAt": 504,
+    "updatedAt": 504
+  },
+  "snapshot": {
+    "version": 2,
+    "globalConcurrency": 3,
+    "jobs": [
+      {
+        "id": "job-g",
+        "title": "Release",
+        "directory": "/repo/g",
+        "status": "waiting",
+        "maxParallelTasks": 4,
+        "createdAt": 500,
+        "updatedAt": 10023
+      },
+      {
+        "id": "gen-7",
+        "title": "Follow-up",
+        "status": "pending",
+        "maxParallelTasks": 1,
+        "createdAt": 10024,
+        "updatedAt": 10024,
+        "directory": "/repo/g"
+      }
+    ],
+    "tasks": [
+      {
+        "id": "task-g1",
+        "jobId": "job-g",
+        "title": "Build",
+        "dependsOn": [],
+        "workspace": {
+          "kind": "git-worktree",
+          "directory": "/data/foreman-worktrees/abc",
+          "createdAt": 505
+        },
+        "status": "completed",
+        "createdAt": 501,
+        "updatedAt": 540,
+        "currentRunId": "run-g1-1"
+      },
+      {
+        "id": "task-g2",
+        "jobId": "job-g",
+        "title": "Test",
+        "instructions": "Run the suite",
+        "dependsOn": [
+          "task-g1"
+        ],
+        "workspace": {
+          "kind": "shared-directory",
+          "directory": "/repo/g",
+          "createdAt": 541
+        },
+        "status": "failed",
+        "createdAt": 502,
+        "updatedAt": 555,
+        "currentRunId": "run-g2-1"
+      },
+      {
+        "id": "task-g3",
+        "jobId": "job-g",
+        "title": "Publish",
+        "dependsOn": [
+          "task-g1"
+        ],
+        "status": "failed",
+        "createdAt": 503,
+        "updatedAt": 10019,
+        "workspace": {
+          "kind": "shared-directory",
+          "directory": "/repo/g",
+          "createdAt": 3
+        },
+        "currentRunId": "gen-2"
+      },
+      {
+        "id": "task-g5",
+        "jobId": "job-g",
+        "title": "Changelog",
+        "dependsOn": [],
+        "status": "running",
+        "createdAt": 506,
+        "updatedAt": 506,
+        "currentRunId": "run-g5-0"
+      },
+      {
+        "id": "gen-1",
+        "jobId": "job-g",
+        "title": "Verify",
+        "status": "blocked",
+        "createdAt": 10001,
+        "updatedAt": 10001,
+        "instructions": "Check the build",
+        "dependsOn": [
+          "task-g5"
+        ],
+        "blockedByTaskIds": [
+          "task-g5"
+        ],
+        "blockingReason": "dependency_incomplete"
+      },
+      {
+        "id": "gen-3",
+        "jobId": "job-g",
+        "title": "Manual check",
+        "status": "completed",
+        "createdAt": 10013,
+        "updatedAt": 10013,
+        "dependsOn": [],
+        "currentRunId": "gen-4"
+      }
+    ],
+    "runs": [
+      {
+        "id": "run-g1-1",
+        "taskId": "task-g1",
+        "status": "completed",
+        "execution": {
+          "type": "opencode-session",
+          "id": "ses_g1",
+          "directory": "/data/foreman-worktrees/abc",
+          "createdAt": 510
+        },
+        "createdAt": 509,
+        "updatedAt": 540,
+        "startedAt": 511,
+        "finishedAt": 540,
+        "activity": [
+          {
+            "id": "act-g1-a",
+            "runId": "run-g1-1",
+            "type": "run_started",
+            "message": "Run started",
+            "timestamp": 509
+          },
+          {
+            "id": "act-g1-b",
+            "runId": "run-g1-1",
+            "type": "run_completed",
+            "message": "Run completed",
+            "timestamp": 540
+          }
+        ]
+      },
+      {
+        "id": "run-g2-1",
+        "taskId": "task-g2",
+        "status": "failed",
+        "error": {
+          "stage": "execution",
+          "message": "3 tests failed"
+        },
+        "execution": {
+          "type": "opencode-session",
+          "id": "ses_g2",
+          "directory": "/repo/g",
+          "createdAt": 545
+        },
+        "createdAt": 544,
+        "updatedAt": 555,
+        "startedAt": 546,
+        "finishedAt": 555,
+        "activity": []
+      },
+      {
+        "id": "run-g5-1",
+        "taskId": "task-g5",
+        "status": "waiting_for_user",
+        "attention": {
+          "type": "question",
+          "message": "Which version?"
+        },
+        "execution": {
+          "type": "opencode-session",
+          "id": "ses_g5",
+          "directory": "/repo/g",
+          "createdAt": 551
+        },
+        "createdAt": 550,
+        "updatedAt": 552,
+        "startedAt": 551,
+        "activity": []
+      },
+      {
+        "id": "run-g5-0",
+        "taskId": "task-g5",
+        "status": "queued",
+        "execution": {
+          "type": "opencode-session",
+          "createdAt": 549
+        },
+        "createdAt": 548,
+        "updatedAt": 549,
+        "activity": []
+      },
+      {
+        "id": "gen-2",
+        "taskId": "task-g3",
+        "status": "failed",
+        "createdAt": 10004,
+        "updatedAt": 10012,
+        "requestId": "req-g3",
+        "activity": [
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "runId": "gen-2",
+            "type": "status_changed",
+            "message": "Run is running",
+            "timestamp": 10007
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000002",
+            "runId": "gen-2",
+            "type": "attention_required",
+            "message": "Waiting for permission",
+            "timestamp": 10008
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000003",
+            "runId": "gen-2",
+            "type": "attention_resolved",
+            "message": "Permission resolved",
+            "timestamp": 10009
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000004",
+            "runId": "gen-2",
+            "type": "progress",
+            "message": "Packing",
+            "timestamp": 10010,
+            "metadata": {
+              "step": 2,
+              "dryRun": false
+            }
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000005",
+            "runId": "gen-2",
+            "type": "run_failed",
+            "message": "Run failed: npm ERR! 403",
+            "timestamp": 10011
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000006",
+            "runId": "gen-2",
+            "type": "progress",
+            "message": "OpenCode session deleted",
+            "timestamp": 10012
+          }
+        ],
+        "execution": {
+          "type": "opencode-session",
+          "id": "ses_g3",
+          "directory": "/repo/g",
+          "createdAt": 1,
+          "deletedAt": 2
+        },
+        "startedAt": 10007,
+        "finishedAt": 10011,
+        "error": {
+          "stage": "execution",
+          "message": "npm ERR! 403"
+        }
+      },
+      {
+        "id": "gen-4",
+        "taskId": "gen-3",
+        "status": "completed",
+        "createdAt": 10014,
+        "updatedAt": 10018,
+        "activity": [
+          {
+            "id": "00000000-0000-4000-8000-000000000007",
+            "runId": "gen-4",
+            "type": "attention_required",
+            "message": "Waiting for your response",
+            "timestamp": 10015
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000009",
+            "runId": "gen-4",
+            "type": "attention_resolved",
+            "message": "Question resolved",
+            "timestamp": 10017
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000010",
+            "runId": "gen-4",
+            "type": "run_completed",
+            "message": "Run completed",
+            "timestamp": 10018
+          }
+        ],
+        "startedAt": 10017,
+        "finishedAt": 10018
+      }
+    ]
+  },
+  "fileAfter": "{\n  \"version\": 5,\n  \"jobs\": [\n    {\n      \"id\": \"job-g\",\n      \"title\": \"Release\",\n      \"directory\": \"/repo/g\",\n      \"status\": \"waiting\",\n      \"maxParallelTasks\": 4,\n      \"createdAt\": 500,\n      \"updatedAt\": 10023\n    },\n    {\n      \"id\": \"gen-7\",\n      \"title\": \"Follow-up\",\n      \"status\": \"pending\",\n      \"maxParallelTasks\": 1,\n      \"createdAt\": 10024,\n      \"updatedAt\": 10024,\n      \"directory\": \"/repo/g\"\n    }\n  ],\n  \"tasks\": [\n    {\n      \"id\": \"task-g1\",\n      \"jobId\": \"job-g\",\n      \"title\": \"Build\",\n      \"dependsOn\": [],\n      \"workspace\": {\n        \"kind\": \"git-worktree\",\n        \"directory\": \"/data/foreman-worktrees/abc\",\n        \"createdAt\": 505\n      },\n      \"status\": \"completed\",\n      \"createdAt\": 501,\n      \"updatedAt\": 540\n    },\n    {\n      \"id\": \"task-g2\",\n      \"jobId\": \"job-g\",\n      \"title\": \"Test\",\n      \"instructions\": \"Run the suite\",\n      \"dependsOn\": [\n        \"task-g1\"\n      ],\n      \"workspace\": {\n        \"kind\": \"shared-directory\",\n        \"directory\": \"/repo/g\",\n        \"createdAt\": 541\n      },\n      \"status\": \"failed\",\n      \"createdAt\": 502,\n      \"updatedAt\": 555\n    },\n    {\n      \"id\": \"task-g3\",\n      \"jobId\": \"job-g\",\n      \"title\": \"Publish\",\n      \"dependsOn\": [\n        \"task-g1\"\n      ],\n      \"status\": \"pending\",\n      \"createdAt\": 503,\n      \"updatedAt\": 10019,\n      \"workspace\": {\n        \"kind\": \"shared-directory\",\n        \"directory\": \"/repo/g\",\n        \"createdAt\": 3\n      }\n    },\n    {\n      \"id\": \"task-g5\",\n      \"jobId\": \"job-g\",\n      \"title\": \"Changelog\",\n      \"dependsOn\": [],\n      \"status\": \"pending\",\n      \"createdAt\": 506,\n      \"updatedAt\": 506\n    },\n    {\n      \"id\": \"gen-1\",\n      \"jobId\": \"job-g\",\n      \"title\": \"Verify\",\n      \"status\": \"pending\",\n      \"createdAt\": 10001,\n      \"updatedAt\": 10001,\n      \"instructions\": \"Check the build\",\n      \"dependsOn\": [\n        \"task-g5\"\n      ]\n    },\n    {\n      \"id\": \"gen-3\",\n      \"jobId\": \"job-g\",\n      \"title\": \"Manual check\",\n      \"status\": \"pending\",\n      \"createdAt\": 10013,\n      \"updatedAt\": 10013,\n      \"dependsOn\": []\n    }\n  ],\n  \"runs\": [\n    {\n      \"id\": \"run-g1-1\",\n      \"taskId\": \"task-g1\",\n      \"status\": \"completed\",\n      \"execution\": {\n        \"type\": \"opencode-session\",\n        \"id\": \"ses_g1\",\n        \"directory\": \"/data/foreman-worktrees/abc\",\n        \"createdAt\": 510\n      },\n      \"createdAt\": 509,\n      \"updatedAt\": 540,\n      \"startedAt\": 511,\n      \"finishedAt\": 540,\n      \"activity\": [\n        {\n          \"id\": \"act-g1-a\",\n          \"runId\": \"run-g1-1\",\n          \"type\": \"run_started\",\n          \"message\": \"Run started\",\n          \"timestamp\": 509\n        },\n        {\n          \"id\": \"act-g1-b\",\n          \"runId\": \"run-g1-1\",\n          \"type\": \"run_completed\",\n          \"message\": \"Run completed\",\n          \"timestamp\": 540\n        }\n      ]\n    },\n    {\n      \"id\": \"run-g2-1\",\n      \"taskId\": \"task-g2\",\n      \"status\": \"failed\",\n      \"error\": {\n        \"stage\": \"execution\",\n        \"message\": \"3 tests failed\"\n      },\n      \"execution\": {\n        \"type\": \"opencode-session\",\n        \"id\": \"ses_g2\",\n        \"directory\": \"/repo/g\",\n        \"createdAt\": 545\n      },\n      \"createdAt\": 544,\n      \"updatedAt\": 555,\n      \"startedAt\": 546,\n      \"finishedAt\": 555,\n      \"activity\": []\n    },\n    {\n      \"id\": \"run-g5-1\",\n      \"taskId\": \"task-g5\",\n      \"status\": \"waiting_for_user\",\n      \"attention\": {\n        \"type\": \"question\",\n        \"message\": \"Which version?\"\n      },\n      \"execution\": {\n        \"type\": \"opencode-session\",\n        \"id\": \"ses_g5\",\n        \"directory\": \"/repo/g\",\n        \"createdAt\": 551\n      },\n      \"createdAt\": 550,\n      \"updatedAt\": 552,\n      \"startedAt\": 551,\n      \"activity\": []\n    },\n    {\n      \"id\": \"run-g5-0\",\n      \"taskId\": \"task-g5\",\n      \"status\": \"queued\",\n      \"execution\": {\n        \"type\": \"opencode-session\",\n        \"createdAt\": 549\n      },\n      \"createdAt\": 548,\n      \"updatedAt\": 549,\n      \"activity\": []\n    },\n    {\n      \"id\": \"gen-2\",\n      \"taskId\": \"task-g3\",\n      \"status\": \"failed\",\n      \"createdAt\": 10004,\n      \"updatedAt\": 10012,\n      \"requestId\": \"req-g3\",\n      \"activity\": [\n        {\n          \"id\": \"00000000-0000-4000-8000-000000000001\",\n          \"runId\": \"gen-2\",\n          \"type\": \"status_changed\",\n          \"message\": \"Run is running\",\n          \"timestamp\": 10007\n        },\n        {\n          \"id\": \"00000000-0000-4000-8000-000000000002\",\n          \"runId\": \"gen-2\",\n          \"type\": \"attention_required\",\n          \"message\": \"Waiting for permission\",\n          \"timestamp\": 10008\n        },\n        {\n          \"id\": \"00000000-0000-4000-8000-000000000003\",\n          \"runId\": \"gen-2\",\n          \"type\": \"attention_resolved\",\n          \"message\": \"Permission resolved\",\n          \"timestamp\": 10009\n        },\n        {\n          \"id\": \"00000000-0000-4000-8000-000000000004\",\n          \"runId\": \"gen-2\",\n          \"type\": \"progress\",\n          \"message\": \"Packing\",\n          \"timestamp\": 10010,\n          \"metadata\": {\n            \"step\": 2,\n            \"dryRun\": false\n          }\n        },\n        {\n          \"id\": \"00000000-0000-4000-8000-000000000005\",\n          \"runId\": \"gen-2\",\n          \"type\": \"run_failed\",\n          \"message\": \"Run failed: npm ERR! 403\",\n          \"timestamp\": 10011\n        },\n        {\n          \"id\": \"00000000-0000-4000-8000-000000000006\",\n          \"runId\": \"gen-2\",\n          \"type\": \"progress\",\n          \"message\": \"OpenCode session deleted\",\n          \"timestamp\": 10012\n        }\n      ],\n      \"execution\": {\n        \"type\": \"opencode-session\",\n        \"id\": \"ses_g3\",\n        \"directory\": \"/repo/g\",\n        \"createdAt\": 1,\n        \"deletedAt\": 2\n      },\n      \"startedAt\": 10007,\n      \"finishedAt\": 10011,\n      \"error\": {\n        \"stage\": \"execution\",\n        \"message\": \"npm ERR! 403\"\n      }\n    },\n    {\n      \"id\": \"gen-4\",\n      \"taskId\": \"gen-3\",\n      \"status\": \"completed\",\n      \"createdAt\": 10014,\n      \"updatedAt\": 10018,\n      \"activity\": [\n        {\n          \"id\": \"00000000-0000-4000-8000-000000000007\",\n          \"runId\": \"gen-4\",\n          \"type\": \"attention_required\",\n          \"message\": \"Waiting for your response\",\n          \"timestamp\": 10015\n        },\n        {\n          \"id\": \"00000000-0000-4000-8000-000000000009\",\n          \"runId\": \"gen-4\",\n          \"type\": \"attention_resolved\",\n          \"message\": \"Question resolved\",\n          \"timestamp\": 10017\n        },\n        {\n          \"id\": \"00000000-0000-4000-8000-000000000010\",\n          \"runId\": \"gen-4\",\n          \"type\": \"run_completed\",\n          \"message\": \"Run completed\",\n          \"timestamp\": 10018\n        }\n      ],\n      \"startedAt\": 10017,\n      \"finishedAt\": 10018\n    }\n  ],\n  \"memories\": [\n    {\n      \"id\": \"mem-g\",\n      \"scope\": \"workspace\",\n      \"workspaceId\": \"/repo/g\",\n      \"type\": \"known_issue\",\n      \"content\": \"The suite needs NODE_ENV=test; see scripts/test.sh\",\n      \"tags\": [\n        \"tests\"\n      ],\n      \"source\": \"user\",\n      \"confidence\": 0.95,\n      \"createdAt\": 520,\n      \"updatedAt\": 10021,\n      \"lastVerifiedAt\": 10021\n    },\n    {\n      \"id\": \"gen-5\",\n      \"scope\": \"job\",\n      \"workspaceId\": \"/repo/g\",\n      \"jobId\": \"job-g\",\n      \"type\": \"decision\",\n      \"content\": \"Publish from CI only\",\n      \"tags\": [\n        \"ci\",\n        \"release\"\n      ],\n      \"source\": \"user\",\n      \"confidence\": 0.8,\n      \"createdAt\": 10020,\n      \"updatedAt\": 10020,\n      \"lastVerifiedAt\": 10020\n    }\n  ]\n}",
+  "dataDirEntries": [
+    "foreman.json"
+  ],
+  "warnings": []
+}

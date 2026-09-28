@@ -1,0 +1,19 @@
+{
+  "snapshot": {
+    "thrown": "unsupported_version",
+    "message": "Foreman state was written by a newer OpenChamber (version 6); update to use it"
+  },
+  "mutation": {
+    "thrown": "unsupported_version",
+    "message": "Foreman state was written by a newer OpenChamber (version 6); update to use it"
+  },
+  "snapshotAfterMutation": {
+    "thrown": "unsupported_version",
+    "message": "Foreman state was written by a newer OpenChamber (version 6); update to use it"
+  },
+  "fileAfter": "{ \"version\": 6, \"jobs\": [], \"tasks\": [], \"runs\": [], \"memories\": [], \"futureField\": true }\n",
+  "dataDirEntries": [
+    "foreman.json"
+  ],
+  "warnings": []
+}

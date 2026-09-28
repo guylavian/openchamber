@@ -1,0 +1,915 @@
+{
+  "snapshot": {
+    "version": 2,
+    "globalConcurrency": 3,
+    "jobs": [
+      {
+        "id": "job-g",
+        "title": "Release",
+        "goal": "ship 2.1",
+        "directory": "/repo/g",
+        "status": "running",
+        "maxParallelTasks": 2,
+        "createdAt": 500,
+        "updatedAt": 560
+      }
+    ],
+    "tasks": [
+      {
+        "id": "task-g1",
+        "jobId": "job-g",
+        "title": "Build",
+        "dependsOn": [],
+        "workspace": {
+          "kind": "git-worktree",
+          "directory": "/data/foreman-worktrees/abc",
+          "createdAt": 505
+        },
+        "status": "completed",
+        "createdAt": 501,
+        "updatedAt": 540,
+        "currentRunId": "run-g1-1"
+      },
+      {
+        "id": "task-g2",
+        "jobId": "job-g",
+        "title": "Test",
+        "instructions": "Run the suite",
+        "dependsOn": [
+          "task-g1"
+        ],
+        "workspace": {
+          "kind": "shared-directory",
+          "directory": "/repo/g",
+          "createdAt": 541
+        },
+        "status": "failed",
+        "createdAt": 502,
+        "updatedAt": 555,
+        "currentRunId": "run-g2-1"
+      },
+      {
+        "id": "task-g3",
+        "jobId": "job-g",
+        "title": "Publish",
+        "dependsOn": [
+          "task-g2"
+        ],
+        "status": "blocked",
+        "createdAt": 503,
+        "updatedAt": 503,
+        "blockedByTaskIds": [
+          "task-g2"
+        ],
+        "blockingReason": "dependency_failed"
+      },
+      {
+        "id": "task-g4",
+        "jobId": "job-g",
+        "title": "Announce",
+        "dependsOn": [
+          "task-g3",
+          "task-g1"
+        ],
+        "status": "blocked",
+        "createdAt": 504,
+        "updatedAt": 504,
+        "blockedByTaskIds": [
+          "task-g3"
+        ],
+        "blockingReason": "dependency_incomplete"
+      },
+      {
+        "id": "task-g5",
+        "jobId": "job-g",
+        "title": "Changelog",
+        "dependsOn": [],
+        "status": "running",
+        "createdAt": 506,
+        "updatedAt": 506,
+        "currentRunId": "run-g5-0"
+      }
+    ],
+    "runs": [
+      {
+        "id": "run-g1-1",
+        "taskId": "task-g1",
+        "status": "completed",
+        "execution": {
+          "type": "opencode-session",
+          "id": "ses_g1",
+          "directory": "/data/foreman-worktrees/abc",
+          "createdAt": 510
+        },
+        "createdAt": 509,
+        "updatedAt": 540,
+        "startedAt": 511,
+        "finishedAt": 540,
+        "activity": [
+          {
+            "id": "act-g1-a",
+            "runId": "run-g1-1",
+            "type": "run_started",
+            "message": "Run started",
+            "timestamp": 509
+          },
+          {
+            "id": "act-g1-b",
+            "runId": "run-g1-1",
+            "type": "run_completed",
+            "message": "Run completed",
+            "timestamp": 540
+          }
+        ]
+      },
+      {
+        "id": "run-g2-1",
+        "taskId": "task-g2",
+        "status": "failed",
+        "error": {
+          "stage": "execution",
+          "message": "3 tests failed"
+        },
+        "execution": {
+          "type": "opencode-session",
+          "id": "ses_g2",
+          "directory": "/repo/g",
+          "createdAt": 545
+        },
+        "createdAt": 544,
+        "updatedAt": 555,
+        "startedAt": 546,
+        "finishedAt": 555,
+        "activity": []
+      },
+      {
+        "id": "run-g5-1",
+        "taskId": "task-g5",
+        "status": "waiting_for_user",
+        "attention": {
+          "type": "question",
+          "message": "Which version?"
+        },
+        "execution": {
+          "type": "opencode-session",
+          "id": "ses_g5",
+          "directory": "/repo/g",
+          "createdAt": 551
+        },
+        "createdAt": 550,
+        "updatedAt": 552,
+        "startedAt": 551,
+        "activity": []
+      },
+      {
+        "id": "run-g5-0",
+        "taskId": "task-g5",
+        "status": "queued",
+        "execution": {
+          "type": "opencode-session",
+          "createdAt": 549
+        },
+        "createdAt": 548,
+        "updatedAt": 549,
+        "activity": []
+      }
+    ]
+  },
+  "runContext:run-g1-1": {
+    "run": {
+      "id": "run-g1-1",
+      "taskId": "task-g1",
+      "status": "completed",
+      "execution": {
+        "type": "opencode-session",
+        "id": "ses_g1",
+        "directory": "/data/foreman-worktrees/abc",
+        "createdAt": 510
+      },
+      "createdAt": 509,
+      "updatedAt": 540,
+      "startedAt": 511,
+      "finishedAt": 540,
+      "activity": [
+        {
+          "id": "act-g1-a",
+          "runId": "run-g1-1",
+          "type": "run_started",
+          "message": "Run started",
+          "timestamp": 509
+        },
+        {
+          "id": "act-g1-b",
+          "runId": "run-g1-1",
+          "type": "run_completed",
+          "message": "Run completed",
+          "timestamp": 540
+        }
+      ]
+    },
+    "task": {
+      "id": "task-g1",
+      "jobId": "job-g",
+      "title": "Build",
+      "dependsOn": [],
+      "workspace": {
+        "kind": "git-worktree",
+        "directory": "/data/foreman-worktrees/abc",
+        "createdAt": 505
+      },
+      "status": "completed",
+      "createdAt": 501,
+      "updatedAt": 540,
+      "currentRunId": "run-g1-1"
+    },
+    "job": {
+      "id": "job-g",
+      "title": "Release",
+      "goal": "ship 2.1",
+      "directory": "/repo/g",
+      "status": "running",
+      "maxParallelTasks": 2,
+      "createdAt": 500,
+      "updatedAt": 560
+    }
+  },
+  "activity:run-g1-1": [
+    {
+      "id": "act-g1-a",
+      "runId": "run-g1-1",
+      "type": "run_started",
+      "message": "Run started",
+      "timestamp": 509
+    },
+    {
+      "id": "act-g1-b",
+      "runId": "run-g1-1",
+      "type": "run_completed",
+      "message": "Run completed",
+      "timestamp": 540
+    }
+  ],
+  "runsForExecution:ses_g1": [
+    {
+      "id": "run-g1-1",
+      "taskId": "task-g1",
+      "status": "completed",
+      "execution": {
+        "type": "opencode-session",
+        "id": "ses_g1",
+        "directory": "/data/foreman-worktrees/abc",
+        "createdAt": 510
+      },
+      "createdAt": 509,
+      "updatedAt": 540,
+      "startedAt": 511,
+      "finishedAt": 540,
+      "activity": [
+        {
+          "id": "act-g1-a",
+          "runId": "run-g1-1",
+          "type": "run_started",
+          "message": "Run started",
+          "timestamp": 509
+        },
+        {
+          "id": "act-g1-b",
+          "runId": "run-g1-1",
+          "type": "run_completed",
+          "message": "Run completed",
+          "timestamp": 540
+        }
+      ]
+    }
+  ],
+  "runContext:run-g2-1": {
+    "run": {
+      "id": "run-g2-1",
+      "taskId": "task-g2",
+      "status": "failed",
+      "error": {
+        "stage": "execution",
+        "message": "3 tests failed"
+      },
+      "execution": {
+        "type": "opencode-session",
+        "id": "ses_g2",
+        "directory": "/repo/g",
+        "createdAt": 545
+      },
+      "createdAt": 544,
+      "updatedAt": 555,
+      "startedAt": 546,
+      "finishedAt": 555,
+      "activity": []
+    },
+    "task": {
+      "id": "task-g2",
+      "jobId": "job-g",
+      "title": "Test",
+      "instructions": "Run the suite",
+      "dependsOn": [
+        "task-g1"
+      ],
+      "workspace": {
+        "kind": "shared-directory",
+        "directory": "/repo/g",
+        "createdAt": 541
+      },
+      "status": "failed",
+      "createdAt": 502,
+      "updatedAt": 555,
+      "currentRunId": "run-g2-1"
+    },
+    "job": {
+      "id": "job-g",
+      "title": "Release",
+      "goal": "ship 2.1",
+      "directory": "/repo/g",
+      "status": "running",
+      "maxParallelTasks": 2,
+      "createdAt": 500,
+      "updatedAt": 560
+    }
+  },
+  "activity:run-g2-1": [],
+  "runsForExecution:ses_g2": [
+    {
+      "id": "run-g2-1",
+      "taskId": "task-g2",
+      "status": "failed",
+      "error": {
+        "stage": "execution",
+        "message": "3 tests failed"
+      },
+      "execution": {
+        "type": "opencode-session",
+        "id": "ses_g2",
+        "directory": "/repo/g",
+        "createdAt": 545
+      },
+      "createdAt": 544,
+      "updatedAt": 555,
+      "startedAt": 546,
+      "finishedAt": 555,
+      "activity": []
+    }
+  ],
+  "runContext:run-g5-1": {
+    "run": {
+      "id": "run-g5-1",
+      "taskId": "task-g5",
+      "status": "waiting_for_user",
+      "attention": {
+        "type": "question",
+        "message": "Which version?"
+      },
+      "execution": {
+        "type": "opencode-session",
+        "id": "ses_g5",
+        "directory": "/repo/g",
+        "createdAt": 551
+      },
+      "createdAt": 550,
+      "updatedAt": 552,
+      "startedAt": 551,
+      "activity": []
+    },
+    "task": {
+      "id": "task-g5",
+      "jobId": "job-g",
+      "title": "Changelog",
+      "dependsOn": [],
+      "status": "running",
+      "createdAt": 506,
+      "updatedAt": 506,
+      "currentRunId": "run-g5-0"
+    },
+    "job": {
+      "id": "job-g",
+      "title": "Release",
+      "goal": "ship 2.1",
+      "directory": "/repo/g",
+      "status": "running",
+      "maxParallelTasks": 2,
+      "createdAt": 500,
+      "updatedAt": 560
+    }
+  },
+  "activity:run-g5-1": [],
+  "runsForExecution:ses_g5": [
+    {
+      "id": "run-g5-1",
+      "taskId": "task-g5",
+      "status": "waiting_for_user",
+      "attention": {
+        "type": "question",
+        "message": "Which version?"
+      },
+      "execution": {
+        "type": "opencode-session",
+        "id": "ses_g5",
+        "directory": "/repo/g",
+        "createdAt": 551
+      },
+      "createdAt": 550,
+      "updatedAt": 552,
+      "startedAt": 551,
+      "activity": []
+    }
+  ],
+  "runContext:run-g5-0": {
+    "run": {
+      "id": "run-g5-0",
+      "taskId": "task-g5",
+      "status": "queued",
+      "execution": {
+        "type": "opencode-session",
+        "createdAt": 549
+      },
+      "createdAt": 548,
+      "updatedAt": 549,
+      "activity": []
+    },
+    "task": {
+      "id": "task-g5",
+      "jobId": "job-g",
+      "title": "Changelog",
+      "dependsOn": [],
+      "status": "running",
+      "createdAt": 506,
+      "updatedAt": 506,
+      "currentRunId": "run-g5-0"
+    },
+    "job": {
+      "id": "job-g",
+      "title": "Release",
+      "goal": "ship 2.1",
+      "directory": "/repo/g",
+      "status": "running",
+      "maxParallelTasks": 2,
+      "createdAt": 500,
+      "updatedAt": 560
+    }
+  },
+  "activity:run-g5-0": [],
+  "taskContext:task-g1": {
+    "task": {
+      "id": "task-g1",
+      "jobId": "job-g",
+      "title": "Build",
+      "dependsOn": [],
+      "workspace": {
+        "kind": "git-worktree",
+        "directory": "/data/foreman-worktrees/abc",
+        "createdAt": 505
+      },
+      "status": "completed",
+      "createdAt": 501,
+      "updatedAt": 540,
+      "currentRunId": "run-g1-1"
+    },
+    "job": {
+      "id": "job-g",
+      "title": "Release",
+      "goal": "ship 2.1",
+      "directory": "/repo/g",
+      "status": "running",
+      "maxParallelTasks": 2,
+      "createdAt": 500,
+      "updatedAt": 560
+    },
+    "latestRun": {
+      "id": "run-g1-1",
+      "taskId": "task-g1",
+      "status": "completed",
+      "execution": {
+        "type": "opencode-session",
+        "id": "ses_g1",
+        "directory": "/data/foreman-worktrees/abc",
+        "createdAt": 510
+      },
+      "createdAt": 509,
+      "updatedAt": 540,
+      "startedAt": 511,
+      "finishedAt": 540,
+      "activity": [
+        {
+          "id": "act-g1-a",
+          "runId": "run-g1-1",
+          "type": "run_started",
+          "message": "Run started",
+          "timestamp": 509
+        },
+        {
+          "id": "act-g1-b",
+          "runId": "run-g1-1",
+          "type": "run_completed",
+          "message": "Run completed",
+          "timestamp": 540
+        }
+      ]
+    }
+  },
+  "taskContext:task-g2": {
+    "task": {
+      "id": "task-g2",
+      "jobId": "job-g",
+      "title": "Test",
+      "instructions": "Run the suite",
+      "dependsOn": [
+        "task-g1"
+      ],
+      "workspace": {
+        "kind": "shared-directory",
+        "directory": "/repo/g",
+        "createdAt": 541
+      },
+      "status": "failed",
+      "createdAt": 502,
+      "updatedAt": 555,
+      "currentRunId": "run-g2-1"
+    },
+    "job": {
+      "id": "job-g",
+      "title": "Release",
+      "goal": "ship 2.1",
+      "directory": "/repo/g",
+      "status": "running",
+      "maxParallelTasks": 2,
+      "createdAt": 500,
+      "updatedAt": 560
+    },
+    "latestRun": {
+      "id": "run-g2-1",
+      "taskId": "task-g2",
+      "status": "failed",
+      "error": {
+        "stage": "execution",
+        "message": "3 tests failed"
+      },
+      "execution": {
+        "type": "opencode-session",
+        "id": "ses_g2",
+        "directory": "/repo/g",
+        "createdAt": 545
+      },
+      "createdAt": 544,
+      "updatedAt": 555,
+      "startedAt": 546,
+      "finishedAt": 555,
+      "activity": []
+    }
+  },
+  "taskContext:task-g3": {
+    "task": {
+      "id": "task-g3",
+      "jobId": "job-g",
+      "title": "Publish",
+      "dependsOn": [
+        "task-g2"
+      ],
+      "status": "blocked",
+      "createdAt": 503,
+      "updatedAt": 503,
+      "blockedByTaskIds": [
+        "task-g2"
+      ],
+      "blockingReason": "dependency_failed"
+    },
+    "job": {
+      "id": "job-g",
+      "title": "Release",
+      "goal": "ship 2.1",
+      "directory": "/repo/g",
+      "status": "running",
+      "maxParallelTasks": 2,
+      "createdAt": 500,
+      "updatedAt": 560
+    },
+    "latestRun": null
+  },
+  "taskContext:task-g4": {
+    "task": {
+      "id": "task-g4",
+      "jobId": "job-g",
+      "title": "Announce",
+      "dependsOn": [
+        "task-g3",
+        "task-g1"
+      ],
+      "status": "blocked",
+      "createdAt": 504,
+      "updatedAt": 504,
+      "blockedByTaskIds": [
+        "task-g3"
+      ],
+      "blockingReason": "dependency_incomplete"
+    },
+    "job": {
+      "id": "job-g",
+      "title": "Release",
+      "goal": "ship 2.1",
+      "directory": "/repo/g",
+      "status": "running",
+      "maxParallelTasks": 2,
+      "createdAt": 500,
+      "updatedAt": 560
+    },
+    "latestRun": null
+  },
+  "taskContext:task-g5": {
+    "task": {
+      "id": "task-g5",
+      "jobId": "job-g",
+      "title": "Changelog",
+      "dependsOn": [],
+      "status": "running",
+      "createdAt": 506,
+      "updatedAt": 506,
+      "currentRunId": "run-g5-0"
+    },
+    "job": {
+      "id": "job-g",
+      "title": "Release",
+      "goal": "ship 2.1",
+      "directory": "/repo/g",
+      "status": "running",
+      "maxParallelTasks": 2,
+      "createdAt": 500,
+      "updatedAt": 560
+    },
+    "latestRun": {
+      "id": "run-g5-0",
+      "taskId": "task-g5",
+      "status": "queued",
+      "execution": {
+        "type": "opencode-session",
+        "createdAt": 549
+      },
+      "createdAt": 548,
+      "updatedAt": 549,
+      "activity": []
+    }
+  },
+  "jobContext:job-g": {
+    "job": {
+      "id": "job-g",
+      "title": "Release",
+      "goal": "ship 2.1",
+      "directory": "/repo/g",
+      "status": "running",
+      "maxParallelTasks": 2,
+      "createdAt": 500,
+      "updatedAt": 560
+    }
+  },
+  "memories:job-g": [
+    {
+      "id": "mem-g",
+      "scope": "workspace",
+      "workspaceId": "/repo/g",
+      "type": "known_issue",
+      "content": "The suite needs NODE_ENV=test; see scripts/test.sh",
+      "tags": [
+        "tests",
+        "scripts/test.sh"
+      ],
+      "source": "user",
+      "confidence": 0.7,
+      "createdAt": 520,
+      "updatedAt": 520,
+      "lastVerifiedAt": 530
+    }
+  ],
+  "relevantMemories:job-g": [
+    {
+      "id": "mem-g",
+      "scope": "workspace",
+      "workspaceId": "/repo/g",
+      "type": "known_issue",
+      "content": "The suite needs NODE_ENV=test; see scripts/test.sh",
+      "tags": [
+        "tests",
+        "scripts/test.sh"
+      ],
+      "source": "user",
+      "confidence": 0.7,
+      "createdAt": 520,
+      "updatedAt": 520,
+      "lastVerifiedAt": 530
+    }
+  ],
+  "activeExecutions": [
+    {
+      "id": "run-g5-1",
+      "taskId": "task-g5",
+      "status": "waiting_for_user",
+      "attention": {
+        "type": "question",
+        "message": "Which version?"
+      },
+      "execution": {
+        "type": "opencode-session",
+        "id": "ses_g5",
+        "directory": "/repo/g",
+        "createdAt": 551
+      },
+      "createdAt": 550,
+      "updatedAt": 552,
+      "startedAt": 551,
+      "activity": []
+    }
+  ],
+  "mutation": {
+    "id": "job-g",
+    "title": "Release",
+    "goal": "ship 2.1",
+    "directory": "/repo/g",
+    "status": "running",
+    "maxParallelTasks": 2,
+    "createdAt": 500,
+    "updatedAt": 10001
+  },
+  "snapshotAfterMutation": {
+    "version": 2,
+    "globalConcurrency": 3,
+    "jobs": [
+      {
+        "id": "job-g",
+        "title": "Release",
+        "goal": "ship 2.1",
+        "directory": "/repo/g",
+        "status": "running",
+        "maxParallelTasks": 2,
+        "createdAt": 500,
+        "updatedAt": 10001
+      }
+    ],
+    "tasks": [
+      {
+        "id": "task-g1",
+        "jobId": "job-g",
+        "title": "Build",
+        "dependsOn": [],
+        "workspace": {
+          "kind": "git-worktree",
+          "directory": "/data/foreman-worktrees/abc",
+          "createdAt": 505
+        },
+        "status": "completed",
+        "createdAt": 501,
+        "updatedAt": 540,
+        "currentRunId": "run-g1-1"
+      },
+      {
+        "id": "task-g2",
+        "jobId": "job-g",
+        "title": "Test",
+        "instructions": "Run the suite",
+        "dependsOn": [
+          "task-g1"
+        ],
+        "workspace": {
+          "kind": "shared-directory",
+          "directory": "/repo/g",
+          "createdAt": 541
+        },
+        "status": "failed",
+        "createdAt": 502,
+        "updatedAt": 555,
+        "currentRunId": "run-g2-1"
+      },
+      {
+        "id": "task-g3",
+        "jobId": "job-g",
+        "title": "Publish",
+        "dependsOn": [
+          "task-g2"
+        ],
+        "status": "blocked",
+        "createdAt": 503,
+        "updatedAt": 503,
+        "blockedByTaskIds": [
+          "task-g2"
+        ],
+        "blockingReason": "dependency_failed"
+      },
+      {
+        "id": "task-g4",
+        "jobId": "job-g",
+        "title": "Announce",
+        "dependsOn": [
+          "task-g3",
+          "task-g1"
+        ],
+        "status": "blocked",
+        "createdAt": 504,
+        "updatedAt": 504,
+        "blockedByTaskIds": [
+          "task-g3"
+        ],
+        "blockingReason": "dependency_incomplete"
+      },
+      {
+        "id": "task-g5",
+        "jobId": "job-g",
+        "title": "Changelog",
+        "dependsOn": [],
+        "status": "running",
+        "createdAt": 506,
+        "updatedAt": 506,
+        "currentRunId": "run-g5-0"
+      }
+    ],
+    "runs": [
+      {
+        "id": "run-g1-1",
+        "taskId": "task-g1",
+        "status": "completed",
+        "execution": {
+          "type": "opencode-session",
+          "id": "ses_g1",
+          "directory": "/data/foreman-worktrees/abc",
+          "createdAt": 510
+        },
+        "createdAt": 509,
+        "updatedAt": 540,
+        "startedAt": 511,
+        "finishedAt": 540,
+        "activity": [
+          {
+            "id": "act-g1-a",
+            "runId": "run-g1-1",
+            "type": "run_started",
+            "message": "Run started",
+            "timestamp": 509
+          },
+          {
+            "id": "act-g1-b",
+            "runId": "run-g1-1",
+            "type": "run_completed",
+            "message": "Run completed",
+            "timestamp": 540
+          }
+        ]
+      },
+      {
+        "id": "run-g2-1",
+        "taskId": "task-g2",
+        "status": "failed",
+        "error": {
+          "stage": "execution",
+          "message": "3 tests failed"
+        },
+        "execution": {
+          "type": "opencode-session",
+          "id": "ses_g2",
+          "directory": "/repo/g",
+          "createdAt": 545
+        },
+        "createdAt": 544,
+        "updatedAt": 555,
+        "startedAt": 546,
+        "finishedAt": 555,
+        "activity": []
+      },
+      {
+        "id": "run-g5-1",
+        "taskId": "task-g5",
+        "status": "waiting_for_user",
+        "attention": {
+          "type": "question",
+          "message": "Which version?"
+        },
+        "execution": {
+          "type": "opencode-session",
+          "id": "ses_g5",
+          "directory": "/repo/g",
+          "createdAt": 551
+        },
+        "createdAt": 550,
+        "updatedAt": 552,
+        "startedAt": 551,
+        "activity": []
+      },
+      {
+        "id": "run-g5-0",
+        "taskId": "task-g5",
+        "status": "queued",
+        "execution": {
+          "type": "opencode-session",
+          "createdAt": 549
+        },
+        "createdAt": 548,
+        "updatedAt": 549,
+        "activity": []
+      }
+    ]
+  },
+  "fileAfter": "{\n  \"version\": 5,\n  \"jobs\": [\n    {\n      \"id\": \"job-g\",\n      \"title\": \"Release\",\n      \"goal\": \"ship 2.1\",\n      \"directory\": \"/repo/g\",\n      \"status\": \"running\",\n      \"maxParallelTasks\": 2,\n      \"createdAt\": 500,\n      \"updatedAt\": 10001\n    }\n  ],\n  \"tasks\": [\n    {\n      \"id\": \"task-g1\",\n      \"jobId\": \"job-g\",\n      \"title\": \"Build\",\n      \"dependsOn\": [],\n      \"workspace\": {\n        \"kind\": \"git-worktree\",\n        \"directory\": \"/data/foreman-worktrees/abc\",\n        \"createdAt\": 505\n      },\n      \"status\": \"completed\",\n      \"createdAt\": 501,\n      \"updatedAt\": 540\n    },\n    {\n      \"id\": \"task-g2\",\n      \"jobId\": \"job-g\",\n      \"title\": \"Test\",\n      \"instructions\": \"Run the suite\",\n      \"dependsOn\": [\n        \"task-g1\"\n      ],\n      \"workspace\": {\n        \"kind\": \"shared-directory\",\n        \"directory\": \"/repo/g\",\n        \"createdAt\": 541\n      },\n      \"status\": \"failed\",\n      \"createdAt\": 502,\n      \"updatedAt\": 555\n    },\n    {\n      \"id\": \"task-g3\",\n      \"jobId\": \"job-g\",\n      \"title\": \"Publish\",\n      \"dependsOn\": [\n        \"task-g2\"\n      ],\n      \"status\": \"pending\",\n      \"createdAt\": 503,\n      \"updatedAt\": 503\n    },\n    {\n      \"id\": \"task-g4\",\n      \"jobId\": \"job-g\",\n      \"title\": \"Announce\",\n      \"dependsOn\": [\n        \"task-g3\",\n        \"task-g1\"\n      ],\n      \"status\": \"pending\",\n      \"createdAt\": 504,\n      \"updatedAt\": 504\n    },\n    {\n      \"id\": \"task-g5\",\n      \"jobId\": \"job-g\",\n      \"title\": \"Changelog\",\n      \"dependsOn\": [],\n      \"status\": \"pending\",\n      \"createdAt\": 506,\n      \"updatedAt\": 506\n    }\n  ],\n  \"runs\": [\n    {\n      \"id\": \"run-g1-1\",\n      \"taskId\": \"task-g1\",\n      \"status\": \"completed\",\n      \"execution\": {\n        \"type\": \"opencode-session\",\n        \"id\": \"ses_g1\",\n        \"directory\": \"/data/foreman-worktrees/abc\",\n        \"createdAt\": 510\n      },\n      \"createdAt\": 509,\n      \"updatedAt\": 540,\n      \"startedAt\": 511,\n      \"finishedAt\": 540,\n      \"activity\": [\n        {\n          \"id\": \"act-g1-a\",\n          \"runId\": \"run-g1-1\",\n          \"type\": \"run_started\",\n          \"message\": \"Run started\",\n          \"timestamp\": 509\n        },\n        {\n          \"id\": \"act-g1-b\",\n          \"runId\": \"run-g1-1\",\n          \"type\": \"run_completed\",\n          \"message\": \"Run completed\",\n          \"timestamp\": 540\n        }\n      ]\n    },\n    {\n      \"id\": \"run-g2-1\",\n      \"taskId\": \"task-g2\",\n      \"status\": \"failed\",\n      \"error\": {\n        \"stage\": \"execution\",\n        \"message\": \"3 tests failed\"\n      },\n      \"execution\": {\n        \"type\": \"opencode-session\",\n        \"id\": \"ses_g2\",\n        \"directory\": \"/repo/g\",\n        \"createdAt\": 545\n      },\n      \"createdAt\": 544,\n      \"updatedAt\": 555,\n      \"startedAt\": 546,\n      \"finishedAt\": 555,\n      \"activity\": []\n    },\n    {\n      \"id\": \"run-g5-1\",\n      \"taskId\": \"task-g5\",\n      \"status\": \"waiting_for_user\",\n      \"attention\": {\n        \"type\": \"question\",\n        \"message\": \"Which version?\"\n      },\n      \"execution\": {\n        \"type\": \"opencode-session\",\n        \"id\": \"ses_g5\",\n        \"directory\": \"/repo/g\",\n        \"createdAt\": 551\n      },\n      \"createdAt\": 550,\n      \"updatedAt\": 552,\n      \"startedAt\": 551,\n      \"activity\": []\n    },\n    {\n      \"id\": \"run-g5-0\",\n      \"taskId\": \"task-g5\",\n      \"status\": \"queued\",\n      \"execution\": {\n        \"type\": \"opencode-session\",\n        \"createdAt\": 549\n      },\n      \"createdAt\": 548,\n      \"updatedAt\": 549,\n      \"activity\": []\n    }\n  ],\n  \"memories\": [\n    {\n      \"id\": \"mem-g\",\n      \"scope\": \"workspace\",\n      \"workspaceId\": \"/repo/g\",\n      \"type\": \"known_issue\",\n      \"content\": \"The suite needs NODE_ENV=test; see scripts/test.sh\",\n      \"tags\": [\n        \"tests\",\n        \"scripts/test.sh\"\n      ],\n      \"source\": \"user\",\n      \"confidence\": 0.7,\n      \"createdAt\": 520,\n      \"updatedAt\": 520,\n      \"lastVerifiedAt\": 530\n    }\n  ]\n}",
+  "dataDirEntries": [
+    "foreman.json"
+  ],
+  "warnings": []
+}

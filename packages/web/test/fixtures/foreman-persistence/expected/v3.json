@@ -1,0 +1,282 @@
+{
+  "snapshot": {
+    "version": 2,
+    "globalConcurrency": 3,
+    "jobs": [
+      {
+        "id": "job-d",
+        "title": "Refactor store",
+        "goal": "smaller modules",
+        "directory": "/repo/server",
+        "status": "running",
+        "createdAt": 300,
+        "updatedAt": 320,
+        "maxParallelTasks": 3
+      }
+    ],
+    "tasks": [
+      {
+        "id": "task-d1",
+        "jobId": "job-d",
+        "title": "Split persistence",
+        "instructions": "Move persistence into lib/foreman/store.js helpers",
+        "status": "running",
+        "createdAt": 301,
+        "updatedAt": 320,
+        "dependsOn": [],
+        "currentRunId": "run-d1-1"
+      }
+    ],
+    "runs": [
+      {
+        "id": "run-d1-1",
+        "taskId": "task-d1",
+        "status": "running",
+        "execution": {
+          "type": "opencode-session",
+          "id": "ses_d1",
+          "directory": "/repo/server",
+          "createdAt": 311
+        },
+        "createdAt": 310,
+        "updatedAt": 320,
+        "startedAt": 312,
+        "activity": []
+      }
+    ]
+  },
+  "runContext:run-d1-1": {
+    "run": {
+      "id": "run-d1-1",
+      "taskId": "task-d1",
+      "status": "running",
+      "execution": {
+        "type": "opencode-session",
+        "id": "ses_d1",
+        "directory": "/repo/server",
+        "createdAt": 311
+      },
+      "createdAt": 310,
+      "updatedAt": 320,
+      "startedAt": 312,
+      "activity": []
+    },
+    "task": {
+      "id": "task-d1",
+      "jobId": "job-d",
+      "title": "Split persistence",
+      "instructions": "Move persistence into lib/foreman/store.js helpers",
+      "status": "running",
+      "createdAt": 301,
+      "updatedAt": 320,
+      "dependsOn": [],
+      "currentRunId": "run-d1-1"
+    },
+    "job": {
+      "id": "job-d",
+      "title": "Refactor store",
+      "goal": "smaller modules",
+      "directory": "/repo/server",
+      "status": "running",
+      "createdAt": 300,
+      "updatedAt": 320,
+      "maxParallelTasks": 3
+    }
+  },
+  "activity:run-d1-1": [],
+  "runsForExecution:ses_d1": [
+    {
+      "id": "run-d1-1",
+      "taskId": "task-d1",
+      "status": "running",
+      "execution": {
+        "type": "opencode-session",
+        "id": "ses_d1",
+        "directory": "/repo/server",
+        "createdAt": 311
+      },
+      "createdAt": 310,
+      "updatedAt": 320,
+      "startedAt": 312,
+      "activity": []
+    }
+  ],
+  "taskContext:task-d1": {
+    "task": {
+      "id": "task-d1",
+      "jobId": "job-d",
+      "title": "Split persistence",
+      "instructions": "Move persistence into lib/foreman/store.js helpers",
+      "status": "running",
+      "createdAt": 301,
+      "updatedAt": 320,
+      "dependsOn": [],
+      "currentRunId": "run-d1-1"
+    },
+    "job": {
+      "id": "job-d",
+      "title": "Refactor store",
+      "goal": "smaller modules",
+      "directory": "/repo/server",
+      "status": "running",
+      "createdAt": 300,
+      "updatedAt": 320,
+      "maxParallelTasks": 3
+    },
+    "latestRun": {
+      "id": "run-d1-1",
+      "taskId": "task-d1",
+      "status": "running",
+      "execution": {
+        "type": "opencode-session",
+        "id": "ses_d1",
+        "directory": "/repo/server",
+        "createdAt": 311
+      },
+      "createdAt": 310,
+      "updatedAt": 320,
+      "startedAt": 312,
+      "activity": []
+    }
+  },
+  "jobContext:job-d": {
+    "job": {
+      "id": "job-d",
+      "title": "Refactor store",
+      "goal": "smaller modules",
+      "directory": "/repo/server",
+      "status": "running",
+      "createdAt": 300,
+      "updatedAt": 320,
+      "maxParallelTasks": 3
+    }
+  },
+  "memories:job-d": [
+    {
+      "id": "mem-1",
+      "scope": "workspace",
+      "workspaceId": "/repo/server",
+      "type": "convention",
+      "content": "Persistence helpers live in lib/foreman/store.js and are pure",
+      "tags": [
+        "persistence",
+        "lib/foreman/store.js"
+      ],
+      "source": "user",
+      "confidence": 0.9,
+      "createdAt": 305,
+      "updatedAt": 305,
+      "lastVerifiedAt": 305
+    },
+    {
+      "id": "mem-2",
+      "scope": "job",
+      "workspaceId": "/repo/server",
+      "jobId": "job-d",
+      "type": "decision",
+      "content": "Keep one file per data dir",
+      "tags": [],
+      "source": "agent",
+      "confidence": 0.6,
+      "createdAt": 306,
+      "updatedAt": 307,
+      "lastVerifiedAt": 307
+    }
+  ],
+  "relevantMemories:job-d": [
+    {
+      "id": "mem-1",
+      "scope": "workspace",
+      "workspaceId": "/repo/server",
+      "type": "convention",
+      "content": "Persistence helpers live in lib/foreman/store.js and are pure",
+      "tags": [
+        "persistence",
+        "lib/foreman/store.js"
+      ],
+      "source": "user",
+      "confidence": 0.9,
+      "createdAt": 305,
+      "updatedAt": 305,
+      "lastVerifiedAt": 305
+    }
+  ],
+  "activeExecutions": [
+    {
+      "id": "run-d1-1",
+      "taskId": "task-d1",
+      "status": "running",
+      "execution": {
+        "type": "opencode-session",
+        "id": "ses_d1",
+        "directory": "/repo/server",
+        "createdAt": 311
+      },
+      "createdAt": 310,
+      "updatedAt": 320,
+      "startedAt": 312,
+      "activity": []
+    }
+  ],
+  "mutation": {
+    "id": "job-d",
+    "title": "Refactor store",
+    "goal": "smaller modules",
+    "directory": "/repo/server",
+    "status": "running",
+    "createdAt": 300,
+    "updatedAt": 10001,
+    "maxParallelTasks": 3
+  },
+  "snapshotAfterMutation": {
+    "version": 2,
+    "globalConcurrency": 3,
+    "jobs": [
+      {
+        "id": "job-d",
+        "title": "Refactor store",
+        "goal": "smaller modules",
+        "directory": "/repo/server",
+        "status": "running",
+        "createdAt": 300,
+        "updatedAt": 10001,
+        "maxParallelTasks": 3
+      }
+    ],
+    "tasks": [
+      {
+        "id": "task-d1",
+        "jobId": "job-d",
+        "title": "Split persistence",
+        "instructions": "Move persistence into lib/foreman/store.js helpers",
+        "status": "running",
+        "createdAt": 301,
+        "updatedAt": 320,
+        "dependsOn": [],
+        "currentRunId": "run-d1-1"
+      }
+    ],
+    "runs": [
+      {
+        "id": "run-d1-1",
+        "taskId": "task-d1",
+        "status": "running",
+        "execution": {
+          "type": "opencode-session",
+          "id": "ses_d1",
+          "directory": "/repo/server",
+          "createdAt": 311
+        },
+        "createdAt": 310,
+        "updatedAt": 320,
+        "startedAt": 312,
+        "activity": []
+      }
+    ]
+  },
+  "fileAfter": "{\n  \"version\": 5,\n  \"jobs\": [\n    {\n      \"id\": \"job-d\",\n      \"title\": \"Refactor store\",\n      \"goal\": \"smaller modules\",\n      \"directory\": \"/repo/server\",\n      \"status\": \"running\",\n      \"createdAt\": 300,\n      \"updatedAt\": 10001,\n      \"maxParallelTasks\": 3\n    }\n  ],\n  \"tasks\": [\n    {\n      \"id\": \"task-d1\",\n      \"jobId\": \"job-d\",\n      \"title\": \"Split persistence\",\n      \"instructions\": \"Move persistence into lib/foreman/store.js helpers\",\n      \"status\": \"running\",\n      \"createdAt\": 301,\n      \"updatedAt\": 320,\n      \"dependsOn\": []\n    }\n  ],\n  \"runs\": [\n    {\n      \"id\": \"run-d1-1\",\n      \"taskId\": \"task-d1\",\n      \"status\": \"running\",\n      \"execution\": {\n        \"type\": \"opencode-session\",\n        \"id\": \"ses_d1\",\n        \"directory\": \"/repo/server\",\n        \"createdAt\": 311\n      },\n      \"createdAt\": 310,\n      \"updatedAt\": 320,\n      \"startedAt\": 312,\n      \"activity\": []\n    }\n  ],\n  \"memories\": [\n    {\n      \"id\": \"mem-1\",\n      \"scope\": \"workspace\",\n      \"workspaceId\": \"/repo/server\",\n      \"type\": \"convention\",\n      \"content\": \"Persistence helpers live in lib/foreman/store.js and are pure\",\n      \"tags\": [\n        \"persistence\",\n        \"lib/foreman/store.js\"\n      ],\n      \"source\": \"user\",\n      \"confidence\": 0.9,\n      \"createdAt\": 305,\n      \"updatedAt\": 305,\n      \"lastVerifiedAt\": 305\n    },\n    {\n      \"id\": \"mem-2\",\n      \"scope\": \"job\",\n      \"workspaceId\": \"/repo/server\",\n      \"jobId\": \"job-d\",\n      \"type\": \"decision\",\n      \"content\": \"Keep one file per data dir\",\n      \"tags\": [],\n      \"source\": \"agent\",\n      \"confidence\": 0.6,\n      \"createdAt\": 306,\n      \"updatedAt\": 307,\n      \"lastVerifiedAt\": 307\n    },\n    {\n      \"id\": \"mem-3\",\n      \"scope\": \"workspace\",\n      \"workspaceId\": \"/elsewhere\",\n      \"type\": \"fact\",\n      \"content\": \"Unrelated workspace persistence note\",\n      \"tags\": [\n        \"persistence\"\n      ],\n      \"source\": \"user\",\n      \"confidence\": 1,\n      \"createdAt\": 308,\n      \"updatedAt\": 308,\n      \"lastVerifiedAt\": 308\n    }\n  ]\n}",
+  "dataDirEntries": [
+    "foreman.json"
+  ],
+  "warnings": []
+}

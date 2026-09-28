@@ -1,0 +1,513 @@
+{
+  "snapshot": {
+    "version": 2,
+    "globalConcurrency": 3,
+    "jobs": [
+      {
+        "id": "job-a",
+        "title": "Migrate auth",
+        "goal": "no plaintext tokens",
+        "directory": "/repo/app",
+        "status": "running",
+        "createdAt": 100,
+        "updatedAt": 150,
+        "maxParallelTasks": 3
+      },
+      {
+        "id": "job-b",
+        "title": "Docs",
+        "status": "pending",
+        "createdAt": 110,
+        "updatedAt": 110,
+        "maxParallelTasks": 3
+      }
+    ],
+    "tasks": [
+      {
+        "id": "task-a1",
+        "jobId": "job-a",
+        "title": "Rotate keys",
+        "instructions": "Rotate every key in config/",
+        "status": "waiting",
+        "createdAt": 101,
+        "updatedAt": 140,
+        "dependsOn": [],
+        "currentRunId": "run-a1-1"
+      },
+      {
+        "id": "task-a2",
+        "jobId": "job-a",
+        "title": "Remove plaintext",
+        "status": "ready",
+        "createdAt": 102,
+        "updatedAt": 102,
+        "dependsOn": [],
+        "currentRunId": "run-a2-1"
+      },
+      {
+        "id": "task-b1",
+        "jobId": "job-b",
+        "title": "Write README",
+        "status": "completed",
+        "createdAt": 111,
+        "updatedAt": 130,
+        "dependsOn": [],
+        "currentRunId": "run-b1-1"
+      }
+    ],
+    "runs": [
+      {
+        "id": "run-a1-1",
+        "taskId": "task-a1",
+        "status": "waiting_for_user",
+        "attention": {
+          "type": "permission",
+          "message": "Edit config/keys.json?"
+        },
+        "createdAt": 120,
+        "updatedAt": 140,
+        "startedAt": 121,
+        "activity": [],
+        "execution": {
+          "type": "opencode-session",
+          "id": "ses_a1",
+          "createdAt": 120
+        }
+      },
+      {
+        "id": "run-b1-1",
+        "taskId": "task-b1",
+        "status": "completed",
+        "createdAt": 112,
+        "updatedAt": 130,
+        "startedAt": 113,
+        "finishedAt": 130,
+        "activity": [],
+        "execution": {
+          "type": "opencode-session",
+          "id": "ses_b1",
+          "createdAt": 112
+        }
+      },
+      {
+        "id": "run-a2-1",
+        "taskId": "task-a2",
+        "status": "queued",
+        "createdAt": 125,
+        "updatedAt": 125,
+        "activity": []
+      }
+    ]
+  },
+  "runContext:run-a1-1": {
+    "run": {
+      "id": "run-a1-1",
+      "taskId": "task-a1",
+      "status": "waiting_for_user",
+      "attention": {
+        "type": "permission",
+        "message": "Edit config/keys.json?"
+      },
+      "createdAt": 120,
+      "updatedAt": 140,
+      "startedAt": 121,
+      "activity": [],
+      "execution": {
+        "type": "opencode-session",
+        "id": "ses_a1",
+        "createdAt": 120
+      }
+    },
+    "task": {
+      "id": "task-a1",
+      "jobId": "job-a",
+      "title": "Rotate keys",
+      "instructions": "Rotate every key in config/",
+      "status": "waiting",
+      "createdAt": 101,
+      "updatedAt": 140,
+      "dependsOn": [],
+      "currentRunId": "run-a1-1"
+    },
+    "job": {
+      "id": "job-a",
+      "title": "Migrate auth",
+      "goal": "no plaintext tokens",
+      "directory": "/repo/app",
+      "status": "running",
+      "createdAt": 100,
+      "updatedAt": 150,
+      "maxParallelTasks": 3
+    }
+  },
+  "activity:run-a1-1": [],
+  "runsForExecution:ses_a1": [
+    {
+      "id": "run-a1-1",
+      "taskId": "task-a1",
+      "status": "waiting_for_user",
+      "attention": {
+        "type": "permission",
+        "message": "Edit config/keys.json?"
+      },
+      "createdAt": 120,
+      "updatedAt": 140,
+      "startedAt": 121,
+      "activity": [],
+      "execution": {
+        "type": "opencode-session",
+        "id": "ses_a1",
+        "createdAt": 120
+      }
+    }
+  ],
+  "runContext:run-b1-1": {
+    "run": {
+      "id": "run-b1-1",
+      "taskId": "task-b1",
+      "status": "completed",
+      "createdAt": 112,
+      "updatedAt": 130,
+      "startedAt": 113,
+      "finishedAt": 130,
+      "activity": [],
+      "execution": {
+        "type": "opencode-session",
+        "id": "ses_b1",
+        "createdAt": 112
+      }
+    },
+    "task": {
+      "id": "task-b1",
+      "jobId": "job-b",
+      "title": "Write README",
+      "status": "completed",
+      "createdAt": 111,
+      "updatedAt": 130,
+      "dependsOn": [],
+      "currentRunId": "run-b1-1"
+    },
+    "job": {
+      "id": "job-b",
+      "title": "Docs",
+      "status": "pending",
+      "createdAt": 110,
+      "updatedAt": 110,
+      "maxParallelTasks": 3
+    }
+  },
+  "activity:run-b1-1": [],
+  "runsForExecution:ses_b1": [
+    {
+      "id": "run-b1-1",
+      "taskId": "task-b1",
+      "status": "completed",
+      "createdAt": 112,
+      "updatedAt": 130,
+      "startedAt": 113,
+      "finishedAt": 130,
+      "activity": [],
+      "execution": {
+        "type": "opencode-session",
+        "id": "ses_b1",
+        "createdAt": 112
+      }
+    }
+  ],
+  "runContext:run-a2-1": {
+    "run": {
+      "id": "run-a2-1",
+      "taskId": "task-a2",
+      "status": "queued",
+      "createdAt": 125,
+      "updatedAt": 125,
+      "activity": []
+    },
+    "task": {
+      "id": "task-a2",
+      "jobId": "job-a",
+      "title": "Remove plaintext",
+      "status": "ready",
+      "createdAt": 102,
+      "updatedAt": 102,
+      "dependsOn": [],
+      "currentRunId": "run-a2-1"
+    },
+    "job": {
+      "id": "job-a",
+      "title": "Migrate auth",
+      "goal": "no plaintext tokens",
+      "directory": "/repo/app",
+      "status": "running",
+      "createdAt": 100,
+      "updatedAt": 150,
+      "maxParallelTasks": 3
+    }
+  },
+  "activity:run-a2-1": [],
+  "taskContext:task-a1": {
+    "task": {
+      "id": "task-a1",
+      "jobId": "job-a",
+      "title": "Rotate keys",
+      "instructions": "Rotate every key in config/",
+      "status": "waiting",
+      "createdAt": 101,
+      "updatedAt": 140,
+      "dependsOn": [],
+      "currentRunId": "run-a1-1"
+    },
+    "job": {
+      "id": "job-a",
+      "title": "Migrate auth",
+      "goal": "no plaintext tokens",
+      "directory": "/repo/app",
+      "status": "running",
+      "createdAt": 100,
+      "updatedAt": 150,
+      "maxParallelTasks": 3
+    },
+    "latestRun": {
+      "id": "run-a1-1",
+      "taskId": "task-a1",
+      "status": "waiting_for_user",
+      "attention": {
+        "type": "permission",
+        "message": "Edit config/keys.json?"
+      },
+      "createdAt": 120,
+      "updatedAt": 140,
+      "startedAt": 121,
+      "activity": [],
+      "execution": {
+        "type": "opencode-session",
+        "id": "ses_a1",
+        "createdAt": 120
+      }
+    }
+  },
+  "taskContext:task-a2": {
+    "task": {
+      "id": "task-a2",
+      "jobId": "job-a",
+      "title": "Remove plaintext",
+      "status": "ready",
+      "createdAt": 102,
+      "updatedAt": 102,
+      "dependsOn": [],
+      "currentRunId": "run-a2-1"
+    },
+    "job": {
+      "id": "job-a",
+      "title": "Migrate auth",
+      "goal": "no plaintext tokens",
+      "directory": "/repo/app",
+      "status": "running",
+      "createdAt": 100,
+      "updatedAt": 150,
+      "maxParallelTasks": 3
+    },
+    "latestRun": {
+      "id": "run-a2-1",
+      "taskId": "task-a2",
+      "status": "queued",
+      "createdAt": 125,
+      "updatedAt": 125,
+      "activity": []
+    }
+  },
+  "taskContext:task-b1": {
+    "task": {
+      "id": "task-b1",
+      "jobId": "job-b",
+      "title": "Write README",
+      "status": "completed",
+      "createdAt": 111,
+      "updatedAt": 130,
+      "dependsOn": [],
+      "currentRunId": "run-b1-1"
+    },
+    "job": {
+      "id": "job-b",
+      "title": "Docs",
+      "status": "pending",
+      "createdAt": 110,
+      "updatedAt": 110,
+      "maxParallelTasks": 3
+    },
+    "latestRun": {
+      "id": "run-b1-1",
+      "taskId": "task-b1",
+      "status": "completed",
+      "createdAt": 112,
+      "updatedAt": 130,
+      "startedAt": 113,
+      "finishedAt": 130,
+      "activity": [],
+      "execution": {
+        "type": "opencode-session",
+        "id": "ses_b1",
+        "createdAt": 112
+      }
+    }
+  },
+  "jobContext:job-a": {
+    "job": {
+      "id": "job-a",
+      "title": "Migrate auth",
+      "goal": "no plaintext tokens",
+      "directory": "/repo/app",
+      "status": "running",
+      "createdAt": 100,
+      "updatedAt": 150,
+      "maxParallelTasks": 3
+    }
+  },
+  "memories:job-a": [],
+  "relevantMemories:job-a": [],
+  "jobContext:job-b": {
+    "job": {
+      "id": "job-b",
+      "title": "Docs",
+      "status": "pending",
+      "createdAt": 110,
+      "updatedAt": 110,
+      "maxParallelTasks": 3
+    }
+  },
+  "activeExecutions": [
+    {
+      "id": "run-a1-1",
+      "taskId": "task-a1",
+      "status": "waiting_for_user",
+      "attention": {
+        "type": "permission",
+        "message": "Edit config/keys.json?"
+      },
+      "createdAt": 120,
+      "updatedAt": 140,
+      "startedAt": 121,
+      "activity": [],
+      "execution": {
+        "type": "opencode-session",
+        "id": "ses_a1",
+        "createdAt": 120
+      }
+    }
+  ],
+  "mutation": {
+    "id": "job-a",
+    "title": "Migrate auth",
+    "goal": "no plaintext tokens",
+    "directory": "/repo/app",
+    "status": "running",
+    "createdAt": 100,
+    "updatedAt": 10001,
+    "maxParallelTasks": 3
+  },
+  "snapshotAfterMutation": {
+    "version": 2,
+    "globalConcurrency": 3,
+    "jobs": [
+      {
+        "id": "job-a",
+        "title": "Migrate auth",
+        "goal": "no plaintext tokens",
+        "directory": "/repo/app",
+        "status": "running",
+        "createdAt": 100,
+        "updatedAt": 10001,
+        "maxParallelTasks": 3
+      },
+      {
+        "id": "job-b",
+        "title": "Docs",
+        "status": "pending",
+        "createdAt": 110,
+        "updatedAt": 110,
+        "maxParallelTasks": 3
+      }
+    ],
+    "tasks": [
+      {
+        "id": "task-a1",
+        "jobId": "job-a",
+        "title": "Rotate keys",
+        "instructions": "Rotate every key in config/",
+        "status": "waiting",
+        "createdAt": 101,
+        "updatedAt": 140,
+        "dependsOn": [],
+        "currentRunId": "run-a1-1"
+      },
+      {
+        "id": "task-a2",
+        "jobId": "job-a",
+        "title": "Remove plaintext",
+        "status": "ready",
+        "createdAt": 102,
+        "updatedAt": 102,
+        "dependsOn": [],
+        "currentRunId": "run-a2-1"
+      },
+      {
+        "id": "task-b1",
+        "jobId": "job-b",
+        "title": "Write README",
+        "status": "completed",
+        "createdAt": 111,
+        "updatedAt": 130,
+        "dependsOn": [],
+        "currentRunId": "run-b1-1"
+      }
+    ],
+    "runs": [
+      {
+        "id": "run-a1-1",
+        "taskId": "task-a1",
+        "status": "waiting_for_user",
+        "attention": {
+          "type": "permission",
+          "message": "Edit config/keys.json?"
+        },
+        "createdAt": 120,
+        "updatedAt": 140,
+        "startedAt": 121,
+        "activity": [],
+        "execution": {
+          "type": "opencode-session",
+          "id": "ses_a1",
+          "createdAt": 120
+        }
+      },
+      {
+        "id": "run-b1-1",
+        "taskId": "task-b1",
+        "status": "completed",
+        "createdAt": 112,
+        "updatedAt": 130,
+        "startedAt": 113,
+        "finishedAt": 130,
+        "activity": [],
+        "execution": {
+          "type": "opencode-session",
+          "id": "ses_b1",
+          "createdAt": 112
+        }
+      },
+      {
+        "id": "run-a2-1",
+        "taskId": "task-a2",
+        "status": "queued",
+        "createdAt": 125,
+        "updatedAt": 125,
+        "activity": []
+      }
+    ]
+  },
+  "fileAfter": "{\n  \"version\": 5,\n  \"jobs\": [\n    {\n      \"id\": \"job-a\",\n      \"title\": \"Migrate auth\",\n      \"goal\": \"no plaintext tokens\",\n      \"directory\": \"/repo/app\",\n      \"status\": \"running\",\n      \"createdAt\": 100,\n      \"updatedAt\": 10001,\n      \"maxParallelTasks\": 3\n    },\n    {\n      \"id\": \"job-b\",\n      \"title\": \"Docs\",\n      \"status\": \"pending\",\n      \"createdAt\": 110,\n      \"updatedAt\": 110,\n      \"maxParallelTasks\": 3\n    }\n  ],\n  \"tasks\": [\n    {\n      \"id\": \"task-a1\",\n      \"jobId\": \"job-a\",\n      \"title\": \"Rotate keys\",\n      \"instructions\": \"Rotate every key in config/\",\n      \"status\": \"running\",\n      \"createdAt\": 101,\n      \"updatedAt\": 140,\n      \"dependsOn\": []\n    },\n    {\n      \"id\": \"task-a2\",\n      \"jobId\": \"job-a\",\n      \"title\": \"Remove plaintext\",\n      \"status\": \"pending\",\n      \"createdAt\": 102,\n      \"updatedAt\": 102,\n      \"dependsOn\": []\n    },\n    {\n      \"id\": \"task-b1\",\n      \"jobId\": \"job-b\",\n      \"title\": \"Write README\",\n      \"status\": \"completed\",\n      \"createdAt\": 111,\n      \"updatedAt\": 130,\n      \"dependsOn\": []\n    }\n  ],\n  \"runs\": [\n    {\n      \"id\": \"run-a1-1\",\n      \"taskId\": \"task-a1\",\n      \"status\": \"waiting_for_user\",\n      \"attention\": {\n        \"type\": \"permission\",\n        \"message\": \"Edit config/keys.json?\"\n      },\n      \"createdAt\": 120,\n      \"updatedAt\": 140,\n      \"startedAt\": 121,\n      \"activity\": [],\n      \"execution\": {\n        \"type\": \"opencode-session\",\n        \"id\": \"ses_a1\",\n        \"createdAt\": 120\n      }\n    },\n    {\n      \"id\": \"run-b1-1\",\n      \"taskId\": \"task-b1\",\n      \"status\": \"completed\",\n      \"createdAt\": 112,\n      \"updatedAt\": 130,\n      \"startedAt\": 113,\n      \"finishedAt\": 130,\n      \"activity\": [],\n      \"execution\": {\n        \"type\": \"opencode-session\",\n        \"id\": \"ses_b1\",\n        \"createdAt\": 112\n      }\n    },\n    {\n      \"id\": \"run-a2-1\",\n      \"taskId\": \"task-a2\",\n      \"status\": \"queued\",\n      \"createdAt\": 125,\n      \"updatedAt\": 125,\n      \"activity\": []\n    }\n  ],\n  \"memories\": []\n}",
+  "dataDirEntries": [
+    "foreman.json"
+  ],
+  "warnings": []
+}

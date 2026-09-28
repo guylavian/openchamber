@@ -1,0 +1,477 @@
+{
+  "snapshot": {
+    "version": 2,
+    "globalConcurrency": 3,
+    "jobs": [
+      {
+        "id": "job-e",
+        "title": "Parallel job",
+        "directory": "/repo/e",
+        "status": "running",
+        "maxParallelTasks": 5,
+        "createdAt": 400,
+        "updatedAt": 410
+      },
+      {
+        "id": "job-f",
+        "title": "Default parallelism",
+        "status": "pending",
+        "maxParallelTasks": 3,
+        "createdAt": 401,
+        "updatedAt": 401
+      }
+    ],
+    "tasks": [
+      {
+        "id": "task-e1",
+        "jobId": "job-e",
+        "title": "One",
+        "status": "running",
+        "createdAt": 402,
+        "updatedAt": 402,
+        "dependsOn": [],
+        "currentRunId": "run-e1-1"
+      },
+      {
+        "id": "task-f1",
+        "jobId": "job-f",
+        "title": "Two",
+        "status": "ready",
+        "createdAt": 403,
+        "updatedAt": 403,
+        "dependsOn": []
+      }
+    ],
+    "runs": [
+      {
+        "id": "run-e1-1",
+        "taskId": "task-e1",
+        "status": "running",
+        "execution": {
+          "type": "opencode-session",
+          "id": "ses_e1",
+          "directory": "/repo/e",
+          "createdAt": 405
+        },
+        "createdAt": 404,
+        "updatedAt": 410,
+        "startedAt": 406,
+        "activity": [
+          {
+            "id": "act-1",
+            "runId": "run-e1-1",
+            "type": "run_started",
+            "message": "Run started",
+            "timestamp": 404
+          },
+          {
+            "id": "act-2",
+            "runId": "run-e1-1",
+            "type": "session_created",
+            "message": "OpenCode session created",
+            "timestamp": 405
+          },
+          {
+            "id": "act-3",
+            "runId": "run-e1-1",
+            "type": "progress",
+            "message": "Edited 3 files",
+            "timestamp": 409,
+            "metadata": {
+              "files": 3,
+              "tool": "edit",
+              "ok": true
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "runContext:run-e1-1": {
+    "run": {
+      "id": "run-e1-1",
+      "taskId": "task-e1",
+      "status": "running",
+      "execution": {
+        "type": "opencode-session",
+        "id": "ses_e1",
+        "directory": "/repo/e",
+        "createdAt": 405
+      },
+      "createdAt": 404,
+      "updatedAt": 410,
+      "startedAt": 406,
+      "activity": [
+        {
+          "id": "act-1",
+          "runId": "run-e1-1",
+          "type": "run_started",
+          "message": "Run started",
+          "timestamp": 404
+        },
+        {
+          "id": "act-2",
+          "runId": "run-e1-1",
+          "type": "session_created",
+          "message": "OpenCode session created",
+          "timestamp": 405
+        },
+        {
+          "id": "act-3",
+          "runId": "run-e1-1",
+          "type": "progress",
+          "message": "Edited 3 files",
+          "timestamp": 409,
+          "metadata": {
+            "files": 3,
+            "tool": "edit",
+            "ok": true
+          }
+        }
+      ]
+    },
+    "task": {
+      "id": "task-e1",
+      "jobId": "job-e",
+      "title": "One",
+      "status": "running",
+      "createdAt": 402,
+      "updatedAt": 402,
+      "dependsOn": [],
+      "currentRunId": "run-e1-1"
+    },
+    "job": {
+      "id": "job-e",
+      "title": "Parallel job",
+      "directory": "/repo/e",
+      "status": "running",
+      "maxParallelTasks": 5,
+      "createdAt": 400,
+      "updatedAt": 410
+    }
+  },
+  "activity:run-e1-1": [
+    {
+      "id": "act-1",
+      "runId": "run-e1-1",
+      "type": "run_started",
+      "message": "Run started",
+      "timestamp": 404
+    },
+    {
+      "id": "act-2",
+      "runId": "run-e1-1",
+      "type": "session_created",
+      "message": "OpenCode session created",
+      "timestamp": 405
+    },
+    {
+      "id": "act-3",
+      "runId": "run-e1-1",
+      "type": "progress",
+      "message": "Edited 3 files",
+      "timestamp": 409,
+      "metadata": {
+        "files": 3,
+        "tool": "edit",
+        "ok": true
+      }
+    }
+  ],
+  "runsForExecution:ses_e1": [
+    {
+      "id": "run-e1-1",
+      "taskId": "task-e1",
+      "status": "running",
+      "execution": {
+        "type": "opencode-session",
+        "id": "ses_e1",
+        "directory": "/repo/e",
+        "createdAt": 405
+      },
+      "createdAt": 404,
+      "updatedAt": 410,
+      "startedAt": 406,
+      "activity": [
+        {
+          "id": "act-1",
+          "runId": "run-e1-1",
+          "type": "run_started",
+          "message": "Run started",
+          "timestamp": 404
+        },
+        {
+          "id": "act-2",
+          "runId": "run-e1-1",
+          "type": "session_created",
+          "message": "OpenCode session created",
+          "timestamp": 405
+        },
+        {
+          "id": "act-3",
+          "runId": "run-e1-1",
+          "type": "progress",
+          "message": "Edited 3 files",
+          "timestamp": 409,
+          "metadata": {
+            "files": 3,
+            "tool": "edit",
+            "ok": true
+          }
+        }
+      ]
+    }
+  ],
+  "taskContext:task-e1": {
+    "task": {
+      "id": "task-e1",
+      "jobId": "job-e",
+      "title": "One",
+      "status": "running",
+      "createdAt": 402,
+      "updatedAt": 402,
+      "dependsOn": [],
+      "currentRunId": "run-e1-1"
+    },
+    "job": {
+      "id": "job-e",
+      "title": "Parallel job",
+      "directory": "/repo/e",
+      "status": "running",
+      "maxParallelTasks": 5,
+      "createdAt": 400,
+      "updatedAt": 410
+    },
+    "latestRun": {
+      "id": "run-e1-1",
+      "taskId": "task-e1",
+      "status": "running",
+      "execution": {
+        "type": "opencode-session",
+        "id": "ses_e1",
+        "directory": "/repo/e",
+        "createdAt": 405
+      },
+      "createdAt": 404,
+      "updatedAt": 410,
+      "startedAt": 406,
+      "activity": [
+        {
+          "id": "act-1",
+          "runId": "run-e1-1",
+          "type": "run_started",
+          "message": "Run started",
+          "timestamp": 404
+        },
+        {
+          "id": "act-2",
+          "runId": "run-e1-1",
+          "type": "session_created",
+          "message": "OpenCode session created",
+          "timestamp": 405
+        },
+        {
+          "id": "act-3",
+          "runId": "run-e1-1",
+          "type": "progress",
+          "message": "Edited 3 files",
+          "timestamp": 409,
+          "metadata": {
+            "files": 3,
+            "tool": "edit",
+            "ok": true
+          }
+        }
+      ]
+    }
+  },
+  "taskContext:task-f1": {
+    "task": {
+      "id": "task-f1",
+      "jobId": "job-f",
+      "title": "Two",
+      "status": "ready",
+      "createdAt": 403,
+      "updatedAt": 403,
+      "dependsOn": []
+    },
+    "job": {
+      "id": "job-f",
+      "title": "Default parallelism",
+      "status": "pending",
+      "maxParallelTasks": 3,
+      "createdAt": 401,
+      "updatedAt": 401
+    },
+    "latestRun": null
+  },
+  "jobContext:job-e": {
+    "job": {
+      "id": "job-e",
+      "title": "Parallel job",
+      "directory": "/repo/e",
+      "status": "running",
+      "maxParallelTasks": 5,
+      "createdAt": 400,
+      "updatedAt": 410
+    }
+  },
+  "memories:job-e": [],
+  "relevantMemories:job-e": [],
+  "jobContext:job-f": {
+    "job": {
+      "id": "job-f",
+      "title": "Default parallelism",
+      "status": "pending",
+      "maxParallelTasks": 3,
+      "createdAt": 401,
+      "updatedAt": 401
+    }
+  },
+  "activeExecutions": [
+    {
+      "id": "run-e1-1",
+      "taskId": "task-e1",
+      "status": "running",
+      "execution": {
+        "type": "opencode-session",
+        "id": "ses_e1",
+        "directory": "/repo/e",
+        "createdAt": 405
+      },
+      "createdAt": 404,
+      "updatedAt": 410,
+      "startedAt": 406,
+      "activity": [
+        {
+          "id": "act-1",
+          "runId": "run-e1-1",
+          "type": "run_started",
+          "message": "Run started",
+          "timestamp": 404
+        },
+        {
+          "id": "act-2",
+          "runId": "run-e1-1",
+          "type": "session_created",
+          "message": "OpenCode session created",
+          "timestamp": 405
+        },
+        {
+          "id": "act-3",
+          "runId": "run-e1-1",
+          "type": "progress",
+          "message": "Edited 3 files",
+          "timestamp": 409,
+          "metadata": {
+            "files": 3,
+            "tool": "edit",
+            "ok": true
+          }
+        }
+      ]
+    }
+  ],
+  "mutation": {
+    "id": "job-e",
+    "title": "Parallel job",
+    "directory": "/repo/e",
+    "status": "running",
+    "maxParallelTasks": 5,
+    "createdAt": 400,
+    "updatedAt": 10001
+  },
+  "snapshotAfterMutation": {
+    "version": 2,
+    "globalConcurrency": 3,
+    "jobs": [
+      {
+        "id": "job-e",
+        "title": "Parallel job",
+        "directory": "/repo/e",
+        "status": "running",
+        "maxParallelTasks": 5,
+        "createdAt": 400,
+        "updatedAt": 10001
+      },
+      {
+        "id": "job-f",
+        "title": "Default parallelism",
+        "status": "pending",
+        "maxParallelTasks": 3,
+        "createdAt": 401,
+        "updatedAt": 401
+      }
+    ],
+    "tasks": [
+      {
+        "id": "task-e1",
+        "jobId": "job-e",
+        "title": "One",
+        "status": "running",
+        "createdAt": 402,
+        "updatedAt": 402,
+        "dependsOn": [],
+        "currentRunId": "run-e1-1"
+      },
+      {
+        "id": "task-f1",
+        "jobId": "job-f",
+        "title": "Two",
+        "status": "ready",
+        "createdAt": 403,
+        "updatedAt": 403,
+        "dependsOn": []
+      }
+    ],
+    "runs": [
+      {
+        "id": "run-e1-1",
+        "taskId": "task-e1",
+        "status": "running",
+        "execution": {
+          "type": "opencode-session",
+          "id": "ses_e1",
+          "directory": "/repo/e",
+          "createdAt": 405
+        },
+        "createdAt": 404,
+        "updatedAt": 410,
+        "startedAt": 406,
+        "activity": [
+          {
+            "id": "act-1",
+            "runId": "run-e1-1",
+            "type": "run_started",
+            "message": "Run started",
+            "timestamp": 404
+          },
+          {
+            "id": "act-2",
+            "runId": "run-e1-1",
+            "type": "session_created",
+            "message": "OpenCode session created",
+            "timestamp": 405
+          },
+          {
+            "id": "act-3",
+            "runId": "run-e1-1",
+            "type": "progress",
+            "message": "Edited 3 files",
+            "timestamp": 409,
+            "metadata": {
+              "files": 3,
+              "tool": "edit",
+              "ok": true
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "fileAfter": "{\n  \"version\": 5,\n  \"jobs\": [\n    {\n      \"id\": \"job-e\",\n      \"title\": \"Parallel job\",\n      \"directory\": \"/repo/e\",\n      \"status\": \"running\",\n      \"maxParallelTasks\": 5,\n      \"createdAt\": 400,\n      \"updatedAt\": 10001\n    },\n    {\n      \"id\": \"job-f\",\n      \"title\": \"Default parallelism\",\n      \"status\": \"pending\",\n      \"maxParallelTasks\": 3,\n      \"createdAt\": 401,\n      \"updatedAt\": 401\n    }\n  ],\n  \"tasks\": [\n    {\n      \"id\": \"task-e1\",\n      \"jobId\": \"job-e\",\n      \"title\": \"One\",\n      \"status\": \"ready\",\n      \"createdAt\": 402,\n      \"updatedAt\": 402,\n      \"dependsOn\": []\n    },\n    {\n      \"id\": \"task-f1\",\n      \"jobId\": \"job-f\",\n      \"title\": \"Two\",\n      \"status\": \"pending\",\n      \"createdAt\": 403,\n      \"updatedAt\": 403,\n      \"dependsOn\": []\n    }\n  ],\n  \"runs\": [\n    {\n      \"id\": \"run-e1-1\",\n      \"taskId\": \"task-e1\",\n      \"status\": \"running\",\n      \"execution\": {\n        \"type\": \"opencode-session\",\n        \"id\": \"ses_e1\",\n        \"directory\": \"/repo/e\",\n        \"createdAt\": 405\n      },\n      \"createdAt\": 404,\n      \"updatedAt\": 410,\n      \"startedAt\": 406,\n      \"activity\": [\n        {\n          \"id\": \"act-1\",\n          \"runId\": \"run-e1-1\",\n          \"type\": \"run_started\",\n          \"message\": \"Run started\",\n          \"timestamp\": 404\n        },\n        {\n          \"id\": \"act-2\",\n          \"runId\": \"run-e1-1\",\n          \"type\": \"session_created\",\n          \"message\": \"OpenCode session created\",\n          \"timestamp\": 405\n        },\n        {\n          \"id\": \"act-3\",\n          \"runId\": \"run-e1-1\",\n          \"type\": \"progress\",\n          \"message\": \"Edited 3 files\",\n          \"timestamp\": 409,\n          \"metadata\": {\n            \"files\": 3,\n            \"tool\": \"edit\",\n            \"ok\": true\n          }\n        }\n      ]\n    }\n  ],\n  \"memories\": []\n}",
+  "dataDirEntries": [
+    "foreman.json"
+  ],
+  "warnings": []
+}

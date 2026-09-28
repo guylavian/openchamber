@@ -1,0 +1,1 @@
+{ "version": 3, "jobs": [], "tasks": [], "runs": [], "memories": [ { "id": "m", "scope": "job", "workspaceId": "/w", "type": "fact", "content": "job memory without jobId", "tags": [], "source": "user", "confidence": 0.5, "createdAt": 1, "updatedAt": 1, "lastVerifiedAt": 1 } ] }

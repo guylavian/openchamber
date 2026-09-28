@@ -1,0 +1,39 @@
+{
+  "snapshot": {
+    "version": 2,
+    "globalConcurrency": 3,
+    "jobs": [],
+    "tasks": [],
+    "runs": []
+  },
+  "activeExecutions": [],
+  "mutation": {
+    "id": "gen-1",
+    "title": "First write",
+    "status": "pending",
+    "maxParallelTasks": 3,
+    "createdAt": 10001,
+    "updatedAt": 10001
+  },
+  "snapshotAfterMutation": {
+    "version": 2,
+    "globalConcurrency": 3,
+    "jobs": [
+      {
+        "id": "gen-1",
+        "title": "First write",
+        "status": "pending",
+        "maxParallelTasks": 3,
+        "createdAt": 10001,
+        "updatedAt": 10001
+      }
+    ],
+    "tasks": [],
+    "runs": []
+  },
+  "fileAfter": "{\n  \"version\": 5,\n  \"jobs\": [\n    {\n      \"id\": \"gen-1\",\n      \"title\": \"First write\",\n      \"status\": \"pending\",\n      \"maxParallelTasks\": 3,\n      \"createdAt\": 10001,\n      \"updatedAt\": 10001\n    }\n  ],\n  \"tasks\": [],\n  \"runs\": [],\n  \"memories\": []\n}",
+  "dataDirEntries": [
+    "foreman.json"
+  ],
+  "warnings": []
+}

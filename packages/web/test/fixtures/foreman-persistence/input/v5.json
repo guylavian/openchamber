@@ -1,0 +1,25 @@
+{
+  "version": 5,
+  "jobs": [
+    { "id": "job-g", "title": "Release", "goal": "ship 2.1", "directory": "/repo/g", "status": "running", "maxParallelTasks": 2, "createdAt": 500, "updatedAt": 560 }
+  ],
+  "tasks": [
+    { "id": "task-g1", "jobId": "job-g", "title": "Build", "dependsOn": [], "workspace": { "kind": "git-worktree", "directory": "/data/foreman-worktrees/abc", "createdAt": 505 }, "status": "completed", "createdAt": 501, "updatedAt": 540 },
+    { "id": "task-g2", "jobId": "job-g", "title": "Test", "instructions": "Run the suite", "dependsOn": ["task-g1"], "workspace": { "kind": "shared-directory", "directory": "/repo/g", "createdAt": 541 }, "status": "failed", "createdAt": 502, "updatedAt": 555 },
+    { "id": "task-g3", "jobId": "job-g", "title": "Publish", "dependsOn": ["task-g2"], "status": "pending", "createdAt": 503, "updatedAt": 503 },
+    { "id": "task-g4", "jobId": "job-g", "title": "Announce", "dependsOn": ["task-g3", "task-g1"], "status": "pending", "createdAt": 504, "updatedAt": 504 },
+    { "id": "task-g5", "jobId": "job-g", "title": "Changelog", "dependsOn": [], "status": "pending", "createdAt": 506, "updatedAt": 506 }
+  ],
+  "runs": [
+    { "id": "run-g1-1", "taskId": "task-g1", "status": "completed", "execution": { "type": "opencode-session", "id": "ses_g1", "directory": "/data/foreman-worktrees/abc", "createdAt": 510 }, "createdAt": 509, "updatedAt": 540, "startedAt": 511, "finishedAt": 540, "activity": [
+      { "id": "act-g1-a", "runId": "run-g1-1", "type": "run_started", "message": "Run started", "timestamp": 509 },
+      { "id": "act-g1-b", "runId": "run-g1-1", "type": "run_completed", "message": "Run completed", "timestamp": 540 }
+    ] },
+    { "id": "run-g2-1", "taskId": "task-g2", "status": "failed", "error": { "stage": "execution", "message": "3 tests failed" }, "execution": { "type": "opencode-session", "id": "ses_g2", "directory": "/repo/g", "createdAt": 545 }, "createdAt": 544, "updatedAt": 555, "startedAt": 546, "finishedAt": 555, "activity": [] },
+    { "id": "run-g5-1", "taskId": "task-g5", "status": "waiting_for_user", "attention": { "type": "question", "message": "Which version?" }, "execution": { "type": "opencode-session", "id": "ses_g5", "directory": "/repo/g", "createdAt": 551 }, "createdAt": 550, "updatedAt": 552, "startedAt": 551, "activity": [] },
+    { "id": "run-g5-0", "taskId": "task-g5", "status": "queued", "execution": { "type": "opencode-session", "createdAt": 549 }, "createdAt": 548, "updatedAt": 549, "activity": [] }
+  ],
+  "memories": [
+    { "id": "mem-g", "scope": "workspace", "workspaceId": "/repo/g", "type": "known_issue", "content": "The suite needs NODE_ENV=test; see scripts/test.sh", "tags": ["tests", "scripts/test.sh"], "source": "user", "confidence": 0.7, "createdAt": 520, "updatedAt": 520, "lastVerifiedAt": 530 }
+  ]
+}

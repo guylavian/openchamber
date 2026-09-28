@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "jobs": [
+    { "id": "job-a", "title": "Migrate auth", "goal": "no plaintext tokens", "directory": "/repo/app", "status": "running", "createdAt": 100, "updatedAt": 150 },
+    { "id": "job-b", "title": "Docs", "status": "pending", "createdAt": 110, "updatedAt": 110 }
+  ],
+  "tasks": [
+    { "id": "task-a1", "jobId": "job-a", "title": "Rotate keys", "instructions": "Rotate every key in config/", "status": "running", "createdAt": 101, "updatedAt": 140 },
+    { "id": "task-a2", "jobId": "job-a", "title": "Remove plaintext", "status": "pending", "createdAt": 102, "updatedAt": 102 },
+    { "id": "task-b1", "jobId": "job-b", "title": "Write README", "status": "completed", "createdAt": 111, "updatedAt": 130 }
+  ],
+  "runs": [
+    { "id": "run-a1-1", "taskId": "task-a1", "status": "waiting_for_user", "attention": { "type": "permission", "message": "Edit config/keys.json?" }, "sessionId": "ses_a1", "createdAt": 120, "updatedAt": 140, "startedAt": 121 },
+    { "id": "run-b1-1", "taskId": "task-b1", "status": "completed", "sessionId": "ses_b1", "createdAt": 112, "updatedAt": 130, "startedAt": 113, "finishedAt": 130 },
+    { "id": "run-a2-1", "taskId": "task-a2", "status": "queued", "createdAt": 125, "updatedAt": 125 }
+  ]
+}

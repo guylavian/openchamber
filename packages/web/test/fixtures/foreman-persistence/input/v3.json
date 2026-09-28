@@ -1,0 +1,17 @@
+{
+  "version": 3,
+  "jobs": [
+    { "id": "job-d", "title": "Refactor store", "goal": "smaller modules", "directory": "/repo/server", "status": "running", "createdAt": 300, "updatedAt": 320 }
+  ],
+  "tasks": [
+    { "id": "task-d1", "jobId": "job-d", "title": "Split persistence", "instructions": "Move persistence into lib/foreman/store.js helpers", "status": "running", "createdAt": 301, "updatedAt": 320 }
+  ],
+  "runs": [
+    { "id": "run-d1-1", "taskId": "task-d1", "status": "running", "execution": { "type": "opencode-session", "id": "ses_d1", "directory": "/repo/server", "createdAt": 311 }, "createdAt": 310, "updatedAt": 320, "startedAt": 312 }
+  ],
+  "memories": [
+    { "id": "mem-1", "scope": "workspace", "workspaceId": "/repo/server", "type": "convention", "content": "Persistence helpers live in lib/foreman/store.js and are pure", "tags": ["persistence", "lib/foreman/store.js"], "source": "user", "confidence": 0.9, "createdAt": 305, "updatedAt": 305, "lastVerifiedAt": 305 },
+    { "id": "mem-2", "scope": "job", "workspaceId": "/repo/server", "jobId": "job-d", "type": "decision", "content": "Keep one file per data dir", "tags": [], "source": "agent", "confidence": 0.6, "createdAt": 306, "updatedAt": 307, "lastVerifiedAt": 307 },
+    { "id": "mem-3", "scope": "workspace", "workspaceId": "/elsewhere", "type": "fact", "content": "Unrelated workspace persistence note", "tags": ["persistence"], "source": "user", "confidence": 1, "createdAt": 308, "updatedAt": 308, "lastVerifiedAt": 308 }
+  ]
+}
