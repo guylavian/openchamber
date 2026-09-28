@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Assertion budget for server TypeScript.
+// Assertion budget for server and CLI TypeScript.
 //
 // `x!` and `x as T` are allowed by lint in packages/web/server only so that
 // modules converted from JavaScript keep its runtime behaviour exactly (see the
@@ -23,7 +23,8 @@ import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const SCANNED = 'packages/web/server';
+// Server and CLI TypeScript (tsconfig.server.json compiles both into dist-node).
+const SCANNED = ['packages/web/server', 'packages/web/bin'];
 const BASELINE = path.join(ROOT, 'scripts/assertion-budget.json');
 
 /** Every non-null assertion and type assertion (other than `as const`) in one file, as normalised source text. */
@@ -65,7 +66,7 @@ export const scanDirectives = (root = ROOT) => {
       }
     }
   };
-  walk(path.join(root, SCANNED));
+  for (const scanned of SCANNED) if (fs.existsSync(path.join(root, scanned))) walk(path.join(root, scanned));
   return directives;
 };
 
@@ -84,7 +85,7 @@ export const scan = (root = ROOT) => {
       }
     }
   };
-  walk(path.join(root, SCANNED));
+  for (const scanned of SCANNED) if (fs.existsSync(path.join(root, scanned))) walk(path.join(root, scanned));
   return budget;
 };
 
