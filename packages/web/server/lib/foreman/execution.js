@@ -11,40 +11,55 @@
  * agent tool and scheduled tasks use — and status follows the server's
  * existing OpenCode event stream, translated once for every server consumer.
  *
- * Status is the present state of the execution and only what OpenCode says
- * for certain:
+ * Status is the present state of the execution, not of the outer turn, and only
+ * what its owner says for certain:
  *
  *   execution started              → running
  *   permission asked / form asked  → waiting_for_user (+ attention)
  *   permission replied / form done → running
- *   turn succeeded, no subagents   → completed
+ *   turn succeeded, no subagents   → completed, once execution truth agrees
  *   turn failed                    → failed (+ error)
  *   turn interrupted by the user   → cancelled
  *
  * A turn that ends while a subagent still works is a pause, not the end: the
- * run stays running until the session goes idle with no working children. If
- * OpenCode cannot be asked, the run stays as it is; "could not look" is never
- * reported as "finished".
+ * run stays running until the session goes idle with no working children.
+ *
+ * "The turn ended" is not "the work ended". A gateway-carried session (see
+ * `execution-truth.js`) can finish its outer turn while Claude Code is still
+ * holding a permission, so a completed claim is confirmed against execution
+ * truth before it is made, and a truth nobody can read is never reported as a
+ * finished run. If OpenCode cannot be asked at all, the run stays as it is:
+ * "could not look" is never reported as "finished".
  */
+
+/* ──► Imports. */
 
 import { z } from 'zod';
 
 import { ForemanStoreError } from './store.js';
+import { createExecutionTruthProbe } from './execution-truth.js';
+import { createForemanScheduler } from './scheduler.js';
 
 const EXECUTION_TYPE = 'opencode-session';
 
-/** Event and service fields arrive untyped; anything but text reads as empty. */
+/* ──► Event → run change mapping (see `event-stream/translate-v2.js`). */
+
 const textField = z.string().trim().catch('');
 const trimmed = (value) => textField.parse(value);
+const errorMessage = (error, fallback) => error instanceof Error ? error.message : trimmed(error) || fallback;
 
 const conflict = (message) => new ForemanStoreError('conflict', message);
-
-/** What the task asks for, as the first message of the session. */
-export const taskPrompt = (task) => trimmed(task.instructions) || trimmed(task.title);
-
-const errorMessage = (error, fallback) => {
-  const message = error instanceof Error ? error.message : trimmed(String(error ?? ''));
-  return message || fallback;
+const CODE_INTELLIGENCE_INSTRUCTION = 'For code work, use available LSP/language-server or other structured code-intelligence tools first. If none are available, search for and read only files relevant to this task. Use shell for execution, tests, builds, Git, and runtime commands. Do not start with repository-wide discovery.';
+/** A Run-only prompt context. Ordinary OpenChamber session prompts never pass here. */
+export const taskPrompt = (task, memories = []) => {
+  const request = trimmed(task.instructions) || trimmed(task.title);
+  const workspace = memories.filter((entry) => entry.scope === 'workspace').slice(0, 6);
+  const job = memories.filter((entry) => entry.scope === 'job').slice(0, 6);
+  const section = [];
+  if (workspace.length) section.push('Workspace memory:', ...workspace.map((entry) => `- [${entry.type}] ${entry.content.slice(0, 700)}`));
+  if (job.length) section.push('Job memory:', ...job.map((entry) => `- [${entry.type}] ${entry.content.slice(0, 700)}`));
+  if (section.length) section.push('Treat memory as a hint. Verify it against the current repository; current code wins.');
+  return [CODE_INTELLIGENCE_INSTRUCTION, ...(section.length ? ['', ...section] : []), '', request].join('\n');
 };
 
 /**
@@ -102,26 +117,24 @@ export const runChangeForEvent = (payload) => {
   }
 };
 
-/**
- * @param {object} deps
- * @param {ReturnType<typeof import('./store.js').createForemanStore>} deps.store
- * @param {{ create: Function, send: Function }} deps.sessionService OpenChamber's session service.
- * @param {(directory: string) => Promise<{ ok: boolean, directory?: string, error?: string }>} deps.validateDirectoryPath
- * @param {{ fetchActiveSessionStatuses: Function, hasWorkingChildren: Function }} deps.activityProbe
- * @param {(sessionId: string, directory: string) => Promise<'missing' | 'succeeded' | 'failed' | 'unknown'>} deps.readSessionOutcome
- * @param {(event: object) => void} [deps.broadcast]
- * @param {(message: string) => void} [deps.warn]
- */
+/* ──► Runtime creation. */
+
 export const createForemanExecution = ({
   store,
   sessionService,
   validateDirectoryPath,
   activityProbe,
+  taskWorkspaceManager = { prepare: async ({ baseDirectory }) => ({ kind: 'shared-directory', directory: baseDirectory, createdAt: Date.now() }) },
+  scheduler = undefined,
+  globalConcurrency = undefined,
   readSessionOutcome,
+  executionTruthProbe,
   broadcast = () => {},
   warn = (message) => console.warn(message),
   now = Date.now,
 }) => {
+  const taskScheduler = scheduler ?? createForemanScheduler({ store, ...(globalConcurrency ? { globalLimit: globalConcurrency } : {}) });
+  const truthProbe = executionTruthProbe ?? { readExecutionTruth: async () => ({ verdict: 'idle' }) };
   /** runId → the start in progress, so a second request joins it. */
   const starting = new Map();
   /** runId → the stop in progress, likewise. */
@@ -143,9 +156,16 @@ export const createForemanExecution = ({
     return result.run;
   };
 
+  const recordActivity = async (runId, type, message, metadata) => {
+    const event = await store.addRunActivity(runId, { type, message, ...(metadata ? { metadata } : {}) });
+    if (event) announce(runId);
+    return event;
+  };
+
   const performStart = async (runId) => {
     const { run, task, job } = await store.runContext(runId);
     if (run.execution?.id) return { run, alreadyStarted: true };
+    if (run.status !== 'queued') throw conflict(`A ${run.status} run cannot be started; start a new run`);
     if (run.execution) {
       // A start recorded its intent and never its session: the server stopped
       // in between. A session may exist without a link, so this attempt is
@@ -162,7 +182,9 @@ export const createForemanExecution = ({
     if (run.status !== 'queued') throw conflict(`A ${run.status} run cannot be started; start a new run`);
     if (!task || !job) throw new ForemanStoreError('not_found', 'The run has no task or job');
 
-    const prompt = taskPrompt(task);
+    const reservation = await taskScheduler.reserve(runId);
+    try {
+
     const requested = trimmed(job.directory);
     if (!requested) {
       throw new ForemanStoreError('invalid_input', 'This job has no workspace directory to run in');
@@ -173,13 +195,31 @@ export const createForemanExecution = ({
     if (!validated?.ok) {
       throw new ForemanStoreError('invalid_input', `The job's workspace is not usable: ${validated?.error || requested}`);
     }
+    const taskWorkspace = await taskWorkspaceManager.prepare({
+      jobId: job.id,
+      taskId: task.id,
+      baseDirectory: validated.directory,
+      existing: task.workspace,
+    });
+    await store.setTaskWorkspace(task.id, taskWorkspace);
+    const executionWorkspace = await validateDirectoryPath(taskWorkspace.directory);
+    if (!executionWorkspace?.ok || !executionWorkspace.directory) {
+      throw new ForemanStoreError('invalid_input', `The Task workspace is not usable: ${executionWorkspace?.error || taskWorkspace.directory}`);
+    }
+    const memories = await store.relevantMemories({
+      jobId: job.id,
+      workspaceId: validated.directory,
+      query: [job.title, job.goal, task.title, task.instructions].filter(Boolean).join('\n'),
+    });
+    const prompt = taskPrompt(task, memories);
 
     // Intent first, so a restart can tell "was starting" from "never started".
     await change(runId, (current) => (current.execution ? null : { execution: { type: EXECUTION_TYPE, createdAt: now() } }));
+    await recordActivity(runId, 'run_started', 'Run started');
 
     let created;
     try {
-      created = await sessionService.create({ directory: validated.directory, title: `${job.title}: ${task.title}` });
+      created = await sessionService.create({ directory: executionWorkspace.directory, title: `${job.title}: ${task.title}` });
     } catch (error) {
       const failed = await change(runId, () => ({
         execution: null,
@@ -189,7 +229,7 @@ export const createForemanExecution = ({
       return { run: failed, alreadyStarted: false };
     }
     const sessionId = trimmed(created?.sessionId);
-    const directory = trimmed(created?.directory) || validated.directory;
+    const directory = trimmed(created?.directory) || executionWorkspace.directory;
     if (!sessionId) {
       const failed = await change(runId, () => ({
         execution: null,
@@ -204,6 +244,7 @@ export const createForemanExecution = ({
     await change(runId, (current) => ({
       execution: { type: EXECUTION_TYPE, id: sessionId, directory, createdAt: current.execution?.createdAt ?? now() },
     }));
+    await recordActivity(runId, 'session_created', 'OpenCode session created');
 
     let dispatchError = null;
     try {
@@ -222,6 +263,9 @@ export const createForemanExecution = ({
       return current.status === 'queued' ? { status: 'running' } : null;
     });
     return { run: finalRun, alreadyStarted: false };
+    } finally {
+      reservation.release();
+    }
   };
 
   /**
@@ -236,6 +280,7 @@ export const createForemanExecution = ({
       next.status = 'failed';
       next.error = { stage: 'execution', message };
     }
+    next.activityEvent = { type: 'progress', message: 'OpenCode session deleted' };
     return next;
   };
 
@@ -262,7 +307,7 @@ export const createForemanExecution = ({
       ? null
       : { status: 'cancelled', stoppedAt: now(), ...extra }));
 
-    if (run.execution.deletedAt) return { run: await cancel(), stopped: true };
+    if (run.execution.deletedAt) return { run: await cancel({ execution: { ...run.execution, deletedAt: now() } }), stopped: true };
 
     let result;
     try {
@@ -297,7 +342,7 @@ export const createForemanExecution = ({
     const runs = await store.runsForExecution(EXECUTION_TYPE, eventChange.sessionID);
     if (runs.length === 0) return;
 
-    if (eventChange.sessionDeleted) {
+      if (eventChange.sessionDeleted) {
       for (const run of runs) await change(run.id, (current) => sessionGone(current, 'The OpenCode session was deleted'));
       return;
     }
@@ -311,6 +356,11 @@ export const createForemanExecution = ({
     }
 
     for (const run of runs) {
+      if (eventChange.status === 'waiting_for_user' && run.status === 'waiting_for_user'
+        && run.attention?.type === eventChange.attention?.type
+        && run.attention?.message === eventChange.attention?.message) continue;
+      if (eventChange.status === 'running' && run.status === 'running'
+        && !eventChange.attention && !eventChange.error) continue;
       await change(run.id, (current) => {
         // A run a person stopped stays stopped, whatever its session does next.
         if (current.stoppedAt) return null;
@@ -343,36 +393,99 @@ export const createForemanExecution = ({
   /**
    * After a restart: settle runs whose session moved on while nobody
    * listened. Never starts anything, never creates a session.
+   *
+   * For each active run, after the existing `readSessionOutcome` check,
+   * also consult the execution truth probe. For gateway-carried sessions
+   * (model provider `claude-code`), the probe checks whether an underlying
+   * permission is still waiting. If so, the run stays `waiting_for_user`;
+   * if not, it may become `completed`.
    */
   const reconcile = async () => {
     const runs = await store.activeExecutions();
     if (runs.length === 0) return;
+
+    // Step 1: existing OpenCode activity-state checks (children, etc.)
     const statuses = await activityProbe.fetchActiveSessionStatuses();
-    if (!statuses) return; // OpenCode could not be asked: change nothing.
+    if (statuses) {
+      for (const run of runs) {
+        const sessionId = run.execution.id;
+        if (statuses[sessionId]) {
+          if (run.status === 'queued') await change(run.id, () => ({ status: 'running' }));
+          continue;
+        }
+        const children = await activityProbe.hasWorkingChildren(sessionId, statuses);
+        if (children !== false) continue;
+        const outcome = await readSessionOutcome(sessionId, run.execution.directory ?? '').catch(() => 'unknown');
+        if (outcome === 'succeeded') {
+          await change(run.id, () => ({ status: 'completed' }));
+        } else if (outcome === 'missing') {
+          await change(run.id, () => ({ status: 'failed', error: { stage: 'execution', message: 'The OpenCode session no longer exists' }, execution: { ...run.execution, deletedAt: now() } }));
+        } else if (outcome === 'failed') {
+          await change(run.id, () => ({ status: 'failed', error: { stage: 'execution', message: 'The agent run failed' } }));
+        }
+      }
+    }
+
+    // Step 2: per-run truth-probe verification.
     for (const run of runs) {
       const sessionId = run.execution.id;
-      if (statuses[sessionId]) {
-        if (run.status === 'queued') await change(run.id, () => ({ status: 'running' }));
-        continue;
+      const directory = run.execution.directory ?? '';
+      // Only probe sessions whose model provider is a gateway we understand.
+      const { execution: exec } = run;
+      if (!exec?.id) continue;
+
+      // Ask the execution truth probe for this session.
+      const truthResult = await truthProbe.readExecutionTruth({
+        sessionId,
+        directory,
+      }).catch(() => ({ verdict: 'unknown', source: 'reconcile', resolvable: false, reason: 'could not read execution truth' }));
+      if (!executionTruthProbe) continue;
+      if (truthResult.verdict === 'idle' && statuses?.[sessionId]) continue;
+      if (truthResult.verdict === 'idle' && !statuses) continue;
+
+      // Map the probe verdict to a run status change.
+      if (truthResult.verdict === 'blocked') {
+        // Someone is being waited on — the run must not become completed.
+        const attention = truthResult.attention ?? { type: 'conflict', message: truthResult.reason || 'This session is waiting for a decision' };
+        await change(run.id, (current) => {
+          if (current.status !== 'waiting_for_user' || current.attention?.type !== attention.type) {
+            return { status: 'waiting_for_user', attention };
+          }
+          return null;
+        });
+      } else if (truthResult.verdict === 'idle') {
+        // No hidden blockers remain. Now also check the old outcome for
+        // completion: the session outcome must say succeeded and there must
+        // be no subagent work. Do NOT mark completed just because truth says
+        // idle — that only means "nothing blocking". A completed claim still
+        // needs the outcome to say so.
+        //
+        // 'unknown' verdict: a layer could not be read — treat as conflict waiting,
+        // never as completed.
+        const outcome = await readSessionOutcome(sessionId, directory).catch(() => 'unknown');
+        if (outcome === 'succeeded') {
+          await change(run.id, (current) => current.status === 'waiting_for_user' ? { status: 'running' } : null);
+          const children = await activityProbe.fetchActiveSessionStatuses();
+          if (!children || await activityProbe.hasWorkingChildren(sessionId, children) !== false) continue;
+          await change(run.id, (currentRun) => currentRun.status === 'running' ? { status: 'completed' } : null);
+        } else if (outcome === 'missing') {
+          await change(run.id, () => ({ status: 'failed', error: { stage: 'execution', message: 'The OpenCode session no longer exists' }, execution: { ...run.execution, deletedAt: now() } }));
+        } else if (outcome === 'failed') {
+          await change(run.id, () => ({ status: 'failed', error: { stage: 'execution', message: 'The agent run failed' } }));
+        }
+      } else if (truthResult.verdict === 'unknown') {
+        await change(run.id, (current) => {
+          if (current.status !== 'waiting_for_user') {
+            return { status: 'waiting_for_user', attention: { type: 'conflict', message: truthResult.reason || 'Could not verify execution state' } };
+          }
+          if (current.attention?.type !== 'conflict') {
+            return { attention: { type: 'conflict', message: truthResult.reason || 'Could not verify execution state' } };
+          }
+          return null;
+        });
       }
-      const children = await activityProbe.hasWorkingChildren(sessionId, statuses);
-      if (children !== false) continue;
-      const outcome = await readSessionOutcome(sessionId, run.execution.directory ?? '').catch(() => 'unknown');
-      if (outcome === 'missing') {
-        await change(run.id, (current) => sessionGone(current, 'The OpenCode session no longer exists'));
-      } else if (run.status === 'queued') {
-        // The session was made but the server stopped before the task was
-        // confirmed sent. Whether it arrived is visible in the session.
-        await change(run.id, () => ({
-          status: 'failed',
-          error: { stage: 'dispatch', message: 'Foreman stopped while handing the task to the session; open the session to see whether it arrived' },
-        }));
-      } else if (outcome === 'succeeded' && run.status === 'running') {
-        await change(run.id, () => ({ status: 'completed' }));
-      } else if (outcome === 'failed') {
-        await change(run.id, () => ({ status: 'failed', error: { stage: 'execution', message: 'The agent run failed while Foreman was not running' } }));
-      }
-      // 'unknown': the run keeps its last known state.
+      // verdict 'idle' does not automatically mark completed; the normal outcome
+      // check below (and per-event guards) handle that.
     }
   };
 

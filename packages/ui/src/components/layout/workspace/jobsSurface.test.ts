@@ -91,8 +91,9 @@ describe('layout never touches Foreman data', () => {
   test('moving, hiding and reopening Jobs makes no Foreman request and leaves its state as it was', async () => {
     const state: ForemanState = {
       version: 2,
-      jobs: [{ id: 'j1', title: 'Job', status: 'running', directory, createdAt: 1, updatedAt: 1 }],
-      tasks: [{ id: 't1', jobId: 'j1', title: 'Task', status: 'pending', createdAt: 1, updatedAt: 1 }],
+      globalConcurrency: 3,
+      jobs: [{ id: 'j1', title: 'Job', status: 'running', directory, maxParallelTasks: 3, createdAt: 1, updatedAt: 1 }],
+      tasks: [{ id: 't1', jobId: 'j1', title: 'Task', status: 'running', dependsOn: [], createdAt: 1, updatedAt: 1 }],
       runs: [{
         id: 'r1', taskId: 't1', status: 'running', startedAt: 2,
         execution: { type: 'opencode-session', id: 'ses_1', directory, createdAt: 2 },
@@ -114,6 +115,12 @@ describe('layout never touches Foreman data', () => {
       updateRun: () => record('updateRun', state.runs[0]),
       startRun: () => record('startRun', { run: state.runs[0], alreadyStarted: true }),
       stopRun: () => record('stopRun', { run: state.runs[0], stopped: false }),
+      listMemories: () => record('listMemories', []),
+      listRunActivity: () => record('listRunActivity', []),
+      addRunActivity: (_runId, input) => record('addRunActivity', { id: 'activity-1', runId: _runId, ...input, timestamp: 1 }),
+      createMemory: () => record('createMemory', { id: 'm1', scope: 'workspace', workspaceId: directory, type: 'fact', content: 'x', tags: [], source: 'user', confidence: 0.8, createdAt: 1, updatedAt: 1, lastVerifiedAt: 1 }),
+      updateMemory: () => record('updateMemory', { id: 'm1', scope: 'workspace', workspaceId: directory, type: 'fact', content: 'x', tags: [], source: 'user', confidence: 0.8, createdAt: 1, updatedAt: 1, lastVerifiedAt: 1 }),
+      deleteMemory: () => record('deleteMemory', { id: 'm1', scope: 'workspace', workspaceId: directory, type: 'fact', content: 'x', tags: [], source: 'user', confidence: 0.8, createdAt: 1, updatedAt: 1, lastVerifiedAt: 1 }),
     };
     const foreman = createForemanStore(api);
     await foreman.getState().load();

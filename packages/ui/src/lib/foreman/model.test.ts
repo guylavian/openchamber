@@ -1,16 +1,25 @@
 import { describe, expect, test } from 'bun:test';
 
-import { foremanStateSchema, jobSchema, runSchema, runsForTask, tasksForJob } from './model';
+import { foremanMemorySchema, foremanStateSchema, jobSchema, runSchema, runsForTask, tasksForJob } from './model';
 
 describe('foreman model parsing', () => {
   const job = { id: 'j1', title: 'Job', status: 'pending', createdAt: 1, updatedAt: 1 };
-  const task = { id: 't1', jobId: 'j1', title: 'Task', status: 'pending', createdAt: 1, updatedAt: 1 };
+  const task = { id: 't1', jobId: 'j1', title: 'Task', dependsOn: [], status: 'pending', createdAt: 1, updatedAt: 1 };
   const run = { id: 'r1', taskId: 't1', status: 'queued', createdAt: 1, updatedAt: 1 };
 
   test('accepts what the server writes, optionals absent', () => {
     const parsed = foremanStateSchema.parse({ version: 2, jobs: [job], tasks: [task], runs: [run] });
+    expect(parsed.globalConcurrency).toBe(3);
     expect(parsed.jobs[0].goal).toBeUndefined();
     expect(parsed.runs[0].execution).toBeUndefined();
+  });
+
+  test('memory requires a job id only for Job scope', () => {
+    const base = { id: 'm1', workspaceId: '/repo', type: 'fact', content: 'API client lives under ui.', tags: [], source: 'user', confidence: 0.8, createdAt: 1, updatedAt: 1, lastVerifiedAt: 1 };
+    expect(foremanMemorySchema.safeParse({ ...base, scope: 'workspace' }).success).toBe(true);
+    expect(foremanMemorySchema.safeParse({ ...base, scope: 'job', jobId: 'j1' }).success).toBe(true);
+    expect(foremanMemorySchema.safeParse({ ...base, scope: 'job' }).success).toBe(false);
+    expect(foremanMemorySchema.safeParse({ ...base, scope: 'workspace', jobId: 'j1' }).success).toBe(false);
   });
 
   test('accepts a run waiting with attention and an execution reference', () => {

@@ -6,6 +6,8 @@ import path from 'node:path';
 import { createForemanExecution, runChangeForEvent, taskPrompt } from './execution.js';
 import { createForemanStore } from './store.js';
 
+const CODE_INTELLIGENCE_INSTRUCTION = 'For code work, use available LSP/language-server or other structured code-intelligence tools first. If none are available, search for and read only files relevant to this task. Use shell for execution, tests, builds, Git, and runtime commands. Do not start with repository-wide discovery.';
+
 const tempDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'foreman-exec-'));
 
 /**
@@ -67,6 +69,7 @@ const setup = async ({ directory, service = createFakeSessionService(), probe = 
       : { ok: false, error: 'Directory does not exist' }),
     activityProbe: probe,
     readSessionOutcome: async () => outcome,
+    executionTruthProbe: { readExecutionTruth: async () => ({ verdict: 'idle' }) },
     broadcast: (event) => broadcasts.push(event),
     warn: () => {},
     ...overrides,
@@ -89,17 +92,51 @@ describe('starting a run', () => {
     const { run: started, alreadyStarted } = await execution.startRun(run.id);
     expect(alreadyStarted).toBe(false);
     expect(service.sessions).toEqual([{ sessionId: 'ses_1', directory: workspace, title: 'Fix average: Empty list' }]);
-    expect(service.sends).toEqual([{ sessionId: 'ses_1', prompt: 'Make average([]) return None and run the tests.', directory: workspace }]);
+    expect(service.sends).toEqual([{
+      sessionId: 'ses_1',
+      prompt: `${CODE_INTELLIGENCE_INSTRUCTION}\n\nMake average([]) return None and run the tests.`,
+      directory: workspace,
+    }]);
     expect(started.status).toBe('running');
     expect(started.startedAt).toBeGreaterThan(0);
     expect(started.execution).toMatchObject({ type: 'opencode-session', id: 'ses_1', directory: workspace });
     expect((await store.snapshot()).runs[0].execution.id).toBe('ses_1');
+    expect((await store.activityForRun(run.id)).map(({ type }) => type)).toEqual(['run_started', 'session_created']);
     expect(broadcasts.length).toBeGreaterThan(0);
   });
 
+  it('injects only matching workspace and current Job memory into a new Run', async () => {
+    const { execution, service, store, run, job, workspace } = await setup();
+    const workspaceMemory = await store.createMemory(job.id, workspace, {
+      scope: 'workspace', type: 'architecture', content: 'Average implementation is in packages/math/average.ts.', tags: ['average'],
+    });
+    const jobMemory = await store.createMemory(job.id, workspace, {
+      scope: 'job', type: 'decision', content: 'Empty average returns None.', tags: ['average'],
+    });
+    await store.createMemory(job.id, workspace, {
+      scope: 'workspace', type: 'fact', content: 'Unrelated billing module owns invoices.', tags: ['billing'],
+    });
+    await execution.startRun(run.id);
+    const prompt = service.sends[0].prompt;
+    expect(prompt).toContain(workspaceMemory.content);
+    expect(prompt).toContain(jobMemory.content);
+    expect(prompt).not.toContain('Unrelated billing');
+    expect(prompt).toContain('Workspace memory:');
+    expect(prompt).toContain('Job memory:');
+    expect(prompt).toContain('current code wins');
+  });
+
   it('a task without instructions sends its title', () => {
-    expect(taskPrompt({ title: 'Do the thing' })).toBe('Do the thing');
-    expect(taskPrompt({ title: 'T', instructions: '  exact words  ' })).toBe('exact words');
+    expect(taskPrompt({ title: 'Do the thing' })).toBe(`${CODE_INTELLIGENCE_INSTRUCTION}\n\nDo the thing`);
+    expect(taskPrompt({ title: 'T', instructions: '  exact words  ' })).toBe(`${CODE_INTELLIGENCE_INSTRUCTION}\n\nexact words`);
+  });
+
+  it('preserves the structured-tools, targeted-file, then shell fallback order', () => {
+    const prompt = taskPrompt({ title: 'Fix the parser' });
+    expect(prompt.indexOf('LSP/language-server or other structured code-intelligence tools first'))
+      .toBeLessThan(prompt.indexOf('search for and read only files relevant to this task'));
+    expect(prompt.indexOf('search for and read only files relevant to this task'))
+      .toBeLessThan(prompt.indexOf('Use shell for execution, tests, builds, Git, and runtime commands'));
   });
 
   it('concurrent starts (double click, retry) make one session', async () => {
@@ -110,6 +147,20 @@ describe('starting a run', () => {
     expect(service.sends).toHaveLength(1);
     expect(new Set(results.map((result) => result.run.execution.id))).toEqual(new Set(['ses_1']));
     expect(results.filter((result) => !result.alreadyStarted)).toHaveLength(1);
+  });
+
+  it('applies the configured global concurrency cap to real start requests', async () => {
+    const { store, job, task, run, service, make } = await setup();
+    const otherTask = await store.createTask(job.id, { title: 'Second task' });
+    const otherRun = await store.createRun(otherTask.id);
+    const execution = make({
+      globalConcurrency: 1,
+      taskWorkspaceManager: { prepare: async ({ taskId }) => ({ kind: 'git-worktree', directory: `/worktrees/${taskId}`, createdAt: 1 }) },
+      validateDirectoryPath: async (directory) => ({ ok: true, directory }),
+    });
+    await execution.startRun(run.id);
+    await expect(execution.startRun(otherRun.id)).rejects.toThrow(/global parallel limit \(1\)/);
+    expect(service.sessions).toHaveLength(1);
   });
 
   it('a started run answers with its session and never makes another', async () => {
@@ -147,23 +198,25 @@ describe('starting a run', () => {
   });
 
   it('session creation failing gives a failed run with no link, never running', async () => {
-    const { execution, run } = await setup({ service: createFakeSessionService({ failCreate: true }) });
+    const { execution, run, store } = await setup({ service: createFakeSessionService({ failCreate: true }) });
     const { run: result } = await execution.startRun(run.id);
     expect(result.status).toBe('failed');
     expect(result.error).toEqual({ stage: 'session', message: 'OpenCode is not running' });
     expect(result.execution).toBeUndefined();
     expect(result.startedAt).toBeUndefined();
+    expect((await store.activityForRun(run.id)).map(({ type }) => type)).toEqual(['run_started', 'run_failed']);
   });
 
   it('the send failing keeps the session linked and says the task never reached it', async () => {
     const service = createFakeSessionService({ failSend: true });
-    const { execution, run } = await setup({ service });
+    const { execution, run, store } = await setup({ service });
     const { run: result } = await execution.startRun(run.id);
     expect(service.sessions).toHaveLength(1);
     expect(result.status).toBe('failed');
     expect(result.error.stage).toBe('dispatch');
     expect(result.execution.id).toBe('ses_1');
     expect(result.startedAt).toBeUndefined();
+    expect((await store.activityForRun(run.id)).map(({ type }) => type)).toEqual(['run_started', 'session_created', 'run_failed']);
   });
 
   it('a prompt OpenCode did not queue is a failed dispatch, not running', async () => {
@@ -198,7 +251,9 @@ describe('status follows the session', () => {
   };
 
   it('a permission request waits for the user, the reply resumes it', async () => {
-    const { execution, current } = await startedRun();
+    const { execution, current, run, store } = await startedRun();
+    execution.processPayload(event('permission.asked', { sessionID: 'ses_1', id: 'p1', action: 'edit average.py' }));
+    await settle();
     execution.processPayload(event('permission.asked', { sessionID: 'ses_1', id: 'p1', action: 'edit average.py' }));
     await settle();
     expect(await current()).toMatchObject({ status: 'waiting_for_user', attention: { type: 'permission', message: 'edit average.py' } });
@@ -211,10 +266,11 @@ describe('status follows the session', () => {
     const resumed = await current();
     expect(resumed.status).toBe('running');
     expect(resumed.attention).toBeUndefined();
+    expect((await store.activityForRun(run.id)).map(({ type }) => type)).toEqual(['run_started', 'session_created', 'attention_required', 'attention_resolved']);
   });
 
   it('a question (form) waits for the user until it is settled', async () => {
-    const { execution, current } = await startedRun();
+    const { execution, current, run, store } = await startedRun();
     execution.processPayload(event('form.created', { sessionID: 'ses_1', form: { id: 'f1', title: 'Which file?' } }));
     await settle();
     expect(await current()).toMatchObject({ status: 'waiting_for_user', attention: { type: 'question', message: 'Which file?' } });
@@ -224,12 +280,13 @@ describe('status follows the session', () => {
   });
 
   it('the turn ending with no working subagents completes the run', async () => {
-    const { execution, current } = await startedRun();
+    const { execution, current, run, store } = await startedRun();
     execution.processPayload(event('session.idle', { sessionID: 'ses_1' }));
     await settle();
     const done = await current();
     expect(done.status).toBe('completed');
     expect(done.finishedAt).toBeGreaterThan(0);
+    expect((await store.activityForRun(run.id)).at(-1)?.type).toBe('run_completed');
   });
 
   it('a turn that pauses for a subagent is not the end', async () => {
@@ -249,7 +306,7 @@ describe('status follows the session', () => {
   });
 
   it('a failed turn fails the run with the reason; a user stop cancels it', async () => {
-    const { execution, current } = await startedRun();
+    const { execution, current, run, store } = await startedRun();
     execution.processPayload(event('session.error', { sessionID: 'ses_1', error: { name: 'ProviderError', message: 'rate limited' } }));
     await settle();
     expect(await current()).toMatchObject({ status: 'failed', error: { stage: 'execution', message: 'rate limited' } });
@@ -261,6 +318,7 @@ describe('status follows the session', () => {
     execution.processPayload(event('session.idle', { sessionID: 'ses_1', aborted: true, reason: 'user' }));
     await settle();
     expect((await current()).status).toBe('cancelled');
+    expect((await store.activityForRun(run.id)).map(({ type }) => type).slice(-2)).toEqual(['run_failed', 'run_cancelled']);
   });
 
   it('events for other sessions leave the run alone, and ordinary sessions are never tracked', async () => {

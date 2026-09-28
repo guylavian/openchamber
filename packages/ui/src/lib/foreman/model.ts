@@ -15,13 +15,21 @@ import { z } from 'zod';
  */
 
 const JOB_STATUSES = ['pending', 'running', 'waiting', 'completed', 'failed', 'cancelled'] as const;
-const TASK_STATUSES = ['pending', 'running', 'blocked', 'completed', 'failed', 'cancelled'] as const;
+const TASK_STATUSES = ['pending', 'ready', 'running', 'waiting', 'blocked', 'completed', 'failed', 'cancelled'] as const;
 const RUN_STATUSES = ['queued', 'running', 'waiting_for_user', 'failed', 'completed', 'cancelled'] as const;
 const ATTENTION_TYPES = ['permission', 'question', 'conflict'] as const;
+export const RUN_ACTIVITY_TYPES = ['run_started', 'session_created', 'status_changed', 'attention_required', 'attention_resolved', 'progress', 'validation', 'run_completed', 'run_failed', 'run_cancelled'] as const;
 
 export type JobStatus = (typeof JOB_STATUSES)[number];
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 export type RunStatus = (typeof RUN_STATUSES)[number];
+export type RunActivityType = (typeof RUN_ACTIVITY_TYPES)[number];
+export type TaskBlockingReason = 'dependency_incomplete' | 'dependency_failed';
+
+export const MEMORY_SCOPES = ['workspace', 'job'] as const;
+export const MEMORY_TYPES = ['architecture', 'decision', 'convention', 'important_file', 'known_issue', 'fact'] as const;
+export type MemoryScope = (typeof MEMORY_SCOPES)[number];
+export type MemoryType = (typeof MEMORY_TYPES)[number];
 
 const timestamp = z.number().finite();
 
@@ -31,6 +39,7 @@ export const jobSchema = z.object({
   goal: z.string().optional(),
   /** The workspace the work happens in, by the path sessions also use. */
   directory: z.string().optional(),
+  maxParallelTasks: z.number().int().min(1).max(10).default(3),
   status: z.enum(JOB_STATUSES),
   createdAt: timestamp,
   updatedAt: timestamp,
@@ -41,6 +50,11 @@ export const taskSchema = z.object({
   jobId: z.string().min(1),
   title: z.string(),
   instructions: z.string().optional(),
+  dependsOn: z.array(z.string()).default([]),
+  blockedByTaskIds: z.array(z.string()).optional(),
+  blockingReason: z.enum(['dependency_incomplete', 'dependency_failed']).optional(),
+  currentRunId: z.string().optional(),
+  workspace: z.object({ kind: z.enum(['git-worktree', 'shared-directory']), directory: z.string(), createdAt: timestamp }).optional(),
   status: z.enum(TASK_STATUSES),
   createdAt: timestamp,
   updatedAt: timestamp,
@@ -89,8 +103,40 @@ export const runSchema = z.object({
   finishedAt: timestamp.optional(),
 });
 
+export const runActivitySchema = z.object({
+  id: z.string().min(1),
+  runId: z.string().min(1),
+  type: z.enum(RUN_ACTIVITY_TYPES),
+  message: z.string().min(1),
+  timestamp: timestamp,
+  metadata: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
+});
+
+export const foremanMemorySchema = z.object({
+  id: z.string().min(1),
+  scope: z.enum(MEMORY_SCOPES),
+  workspaceId: z.string().min(1),
+  jobId: z.string().min(1).optional(),
+  type: z.enum(MEMORY_TYPES),
+  content: z.string().min(1),
+  tags: z.array(z.string()),
+  source: z.string().min(1),
+  confidence: z.number().min(0).max(1),
+  createdAt: timestamp,
+  updatedAt: timestamp,
+  lastVerifiedAt: timestamp,
+}).superRefine((entry, context) => {
+  if (entry.scope === 'job' && !entry.jobId) {
+    context.addIssue({ code: 'custom', path: ['jobId'], message: 'jobId is required for job memory' });
+  }
+  if (entry.scope === 'workspace' && entry.jobId) {
+    context.addIssue({ code: 'custom', path: ['jobId'], message: 'workspace memory cannot belong to a job' });
+  }
+});
+
 export const foremanStateSchema = z.object({
   version: z.literal(2),
+  globalConcurrency: z.number().int().min(1).max(32).default(3),
   jobs: z.array(jobSchema),
   tasks: z.array(taskSchema),
   runs: z.array(runSchema),
@@ -99,6 +145,8 @@ export const foremanStateSchema = z.object({
 export type Job = z.infer<typeof jobSchema>;
 export type Task = z.infer<typeof taskSchema>;
 export type Run = z.infer<typeof runSchema>;
+export type RunActivity = z.infer<typeof runActivitySchema>;
+export type ForemanMemory = z.infer<typeof foremanMemorySchema>;
 export type RunAttention = z.infer<typeof runAttentionSchema>;
 export type RunError = z.infer<typeof runErrorSchema>;
 export type ForemanState = z.infer<typeof foremanStateSchema>;
@@ -107,11 +155,13 @@ export interface CreateJobInput {
   title: string;
   goal?: string;
   directory?: string;
+  maxParallelTasks?: number;
 }
 
 export interface CreateTaskInput {
   title: string;
   instructions?: string;
+  dependsOn?: string[];
 }
 
 export interface CreateRunInput {
@@ -129,17 +179,42 @@ export interface JobPatch {
   title?: string;
   goal?: string | null;
   status?: JobStatus;
+  maxParallelTasks?: number;
 }
 
 export interface TaskPatch {
   title?: string;
   instructions?: string | null;
   status?: TaskStatus;
+  dependsOn?: string[];
 }
 
 export interface RunPatch {
   status?: RunStatus;
   attention?: RunAttention | null;
+}
+
+export interface CreateRunActivityInput {
+  type: RunActivityType;
+  message: string;
+  metadata?: Record<string, string | number | boolean>;
+}
+
+export interface CreateForemanMemoryInput {
+  scope: MemoryScope;
+  type: MemoryType;
+  content: string;
+  tags: string[];
+  source?: string;
+  confidence?: number;
+}
+
+export interface ForemanMemoryPatch {
+  type?: MemoryType;
+  content?: string;
+  tags?: string[];
+  source?: string;
+  confidence?: number;
 }
 
 export const tasksForJob = (tasks: readonly Task[], jobId: string): Task[] =>

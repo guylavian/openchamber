@@ -1,11 +1,16 @@
 /**
- * Whether a session's turn has really ended.
+ * Whether a session's turn has really ended, and what it is holding for the user.
  *
  * A parent session goes idle while a background subagent keeps working in a
  * child session. When the child finishes, OpenCode delivers its result to the
  * parent, which runs again and goes idle a second time. So the parent's first
  * idle is a pause, not the end of the turn: anything that treats idle as
  * "done" (goal audits, ready notifications) has to check the children too.
+ *
+ * The two requests OpenCode can be holding for a person — a pending permission
+ * and an unanswered form — are readable at any time, not only while the event
+ * that raised them is being handled. That is what lets a listener that was
+ * started late, or restarted, still learn that a session is waiting.
  *
  * Every read answers `null` when OpenCode could not be asked: "could not look"
  * must never pass for "nothing is running".
@@ -74,5 +79,26 @@ export const createSessionActivityProbe = ({ buildOpenCodeUrl, getOpenCodeAuthHe
     return children.some((id) => Boolean(statuses[id]));
   };
 
-  return { fetchActiveSessionStatuses, fetchChildSessionIds, hasWorkingChildren };
+  /**
+   * What the session is holding for the user right now: the permissions it has
+   * asked for and the forms nobody answered yet. A form that was answered or
+   * cancelled is not waiting and is not reported. `null` when OpenCode could
+   * not be asked about either.
+   */
+  const fetchPendingUserRequests = async (sessionId) => {
+    const path = `/api/session/${encodeURIComponent(sessionId)}`;
+    const [permissions, forms] = await Promise.all([
+      openCodeGet(`${path}/permission`).catch(() => null),
+      openCodeGet(`${path}/form`).catch(() => null),
+    ]);
+    // A shape this build does not know is a layer it cannot read, not an
+    // absence of requests.
+    if (!Array.isArray(permissions) || !Array.isArray(forms)) return null;
+    return {
+      permissions,
+      forms: forms.filter((form) => form?.state?.status === 'pending'),
+    };
+  };
+
+  return { fetchActiveSessionStatuses, fetchChildSessionIds, hasWorkingChildren, fetchPendingUserRequests };
 };

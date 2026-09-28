@@ -3,15 +3,22 @@ import { z } from 'zod';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import {
   foremanStateSchema,
+  foremanMemorySchema,
+  runActivitySchema,
   jobSchema,
   runSchema,
   startRunResultSchema,
   stopRunResultSchema,
   taskSchema,
   type CreateJobInput,
+  type CreateForemanMemoryInput,
   type CreateRunInput,
   type CreateTaskInput,
   type ForemanState,
+  type ForemanMemory,
+  type ForemanMemoryPatch,
+  type RunActivity,
+  type CreateRunActivityInput,
   type Job,
   type JobPatch,
   type Run,
@@ -52,9 +59,18 @@ export interface ForemanApi {
   startRun: (runId: string) => Promise<StartRunResult>;
   /** Interrupts an active run's session and cancels the run. Safe to repeat. */
   stopRun: (runId: string) => Promise<StopRunResult>;
+  listMemories: (jobId: string) => Promise<ForemanMemory[]>;
+  createMemory: (jobId: string, input: CreateForemanMemoryInput) => Promise<ForemanMemory>;
+  updateMemory: (memoryId: string, patch: ForemanMemoryPatch) => Promise<ForemanMemory>;
+  deleteMemory: (memoryId: string) => Promise<ForemanMemory>;
+  listRunActivity: (runId: string) => Promise<RunActivity[]>;
+  addRunActivity: (runId: string, input: CreateRunActivityInput) => Promise<RunActivity>;
 }
 
 const errorPayloadSchema = z.object({ error: z.string(), code: z.string().optional() });
+const memoryListSchema = z.object({ memories: z.array(foremanMemorySchema) });
+const deletedMemorySchema = z.object({ memory: foremanMemorySchema });
+const runActivityListSchema = z.object({ activity: z.array(runActivitySchema) });
 
 const requestInit = (init?: { method: string; body?: object }): RequestInit | undefined => {
   if (!init) return undefined;
@@ -96,4 +112,10 @@ export const foremanApi: ForemanApi = {
   updateRun: (runId, patch) => request(`/api/foreman/runs/${encode(runId)}`, runSchema, { method: 'PATCH', body: patch }),
   startRun: (runId) => request(`/api/foreman/runs/${encode(runId)}/start`, startRunResultSchema, { method: 'POST' }),
   stopRun: (runId) => request(`/api/foreman/runs/${encode(runId)}/stop`, stopRunResultSchema, { method: 'POST' }),
+  listMemories: (jobId) => request(`/api/foreman/jobs/${encode(jobId)}/memories`, memoryListSchema).then((result) => result.memories),
+  createMemory: (jobId, input) => request(`/api/foreman/jobs/${encode(jobId)}/memories`, foremanMemorySchema, { method: 'POST', body: input }),
+  updateMemory: (memoryId, patch) => request(`/api/foreman/memories/${encode(memoryId)}`, foremanMemorySchema, { method: 'PATCH', body: patch }),
+  deleteMemory: (memoryId) => request(`/api/foreman/memories/${encode(memoryId)}`, deletedMemorySchema, { method: 'DELETE' }).then((result) => result.memory),
+  listRunActivity: (runId) => request(`/api/foreman/runs/${encode(runId)}/activity`, runActivityListSchema).then((result) => result.activity),
+  addRunActivity: (runId, input) => request(`/api/foreman/runs/${encode(runId)}/activity`, runActivitySchema, { method: 'POST', body: input }),
 };

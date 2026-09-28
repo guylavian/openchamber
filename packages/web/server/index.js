@@ -134,6 +134,9 @@ import { createOpenChamberSessionService } from './lib/openchamber-sessions/rout
 import { createOpenCodeClient as createOpenChamberOpenCodeClient } from './lib/openchamber-sessions/opencode-client.js';
 import { createForemanStore } from './lib/foreman/store.js';
 import { createForemanExecution } from './lib/foreman/execution.js';
+import { createExecutionTruthProbe } from './lib/foreman/execution-truth.js';
+import { createTaskWorkspaceManager } from './lib/foreman/task-workspaces.js';
+import { foremanGlobalConcurrency } from './lib/foreman/scheduler.js';
 import { createSessionActivityProbe as createForemanActivityProbe } from './lib/opencode/session-activity.js';
 import { createSessionMetadataStore, createOpenCodeSessionMetadata } from './lib/openchamber-sessions/session-metadata-store.js';
 import { createScheduledTaskService } from './lib/scheduled-tasks/service.js';
@@ -1629,7 +1632,9 @@ const pluginNotificationEmitter = createPluginNotificationEmitter({
 // Foreman: Job -> Task -> Run. One store and one execution runtime per
 // server; a Run is carried out by a session made through the session service
 // above, and its status follows the event hub below.
-const foremanStore = createForemanStore({ dataDir: OPENCHAMBER_DATA_DIR });
+const foremanGlobalConcurrencyLimit = foremanGlobalConcurrency(process.env.OPENCHAMBER_FOREMAN_MAX_PARALLEL_TASKS);
+const foremanStore = createForemanStore({ dataDir: OPENCHAMBER_DATA_DIR, globalConcurrency: foremanGlobalConcurrencyLimit });
+const foremanTaskWorkspaceManager = createTaskWorkspaceManager({ dataDir: OPENCHAMBER_DATA_DIR });
 /** What became of a session's last turn, read from OpenCode itself. */
 const readForemanSessionOutcome = async (sessionID, directory) => {
   const client = createOpenChamberOpenCodeClient({
@@ -1651,11 +1656,47 @@ const readForemanSessionOutcome = async (sessionID, directory) => {
   if (last.error) return 'failed';
   return Number.isFinite(last.time?.completed) ? 'succeeded' : 'unknown';
 };
+/** Read the model providerID from a session, for execution-truth probing. */
+const getSessionModelInfo = async (sessionId, directory) => {
+  try {
+    const H = { Authorization: getOpenCodeAuthHeaders(), 'Content-Type': 'application/json', 'x-opencode-directory': directory };
+    const base = buildOpenCodeUrl('/api/session', '').replace(/\/$/, '');
+    const response = await fetch(`${base}/${sessionId}`, { headers: H });
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data?.data?.model || null;
+  } catch {
+    return null;
+  }
+};
+const readPendingRequestsForSession = async ({ sessionId, directory }) => {
+  const client = createOpenChamberOpenCodeClient({
+    baseUrl: buildOpenCodeUrl('/', '').replace(/\/$/, ''),
+    headers: getOpenCodeAuthHeaders(),
+    directory,
+  });
+  const [permissionsResponse, formsResponse] = await Promise.all([
+    client.permission.request.list(),
+    client.form.list(),
+  ]);
+  return {
+    permissions: (permissionsResponse.data ?? []).filter((request) => request.sessionID === sessionId),
+    forms: (formsResponse.data ?? []).filter((form) => form.sessionID === sessionId),
+  };
+};
 const foremanExecution = createForemanExecution({
   store: foremanStore,
+  taskWorkspaceManager: foremanTaskWorkspaceManager,
+  globalConcurrency: foremanGlobalConcurrencyLimit,
   sessionService: openChamberSessionService,
   validateDirectoryPath,
   activityProbe: createForemanActivityProbe({ buildOpenCodeUrl, getOpenCodeAuthHeaders }),
+  executionTruthProbe: createExecutionTruthProbe({
+    readSession: ({ sessionId, directory }) => getSessionModelInfo(sessionId, directory),
+    readPendingRequests: readPendingRequestsForSession,
+    readGatewayBlockers: undefined,
+    gatewayProviders: ['claude-code'],
+  }),
   readSessionOutcome: readForemanSessionOutcome,
   broadcast: (event) => broadcastOpenChamberUiEvent(event),
 });
@@ -2325,6 +2366,7 @@ async function main(options = {}) {
     openChamberControlService,
     foremanStore,
     foremanExecution,
+    foremanTaskWorkspaceManager,
     waitForOpenCodeReady,
     emitSessionCreatedEvent,
     getOpenChamberEventClients: () => uiOpenChamberEventClients,

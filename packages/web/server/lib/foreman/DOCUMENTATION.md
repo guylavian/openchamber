@@ -14,7 +14,9 @@ own session service, and status follows its existing event hub.
   `title`, an optional `goal`, and an optional `directory`, the workspace the
   work happens in, by the same path sessions use. The workspace is referenced,
   never copied.
-- **Task**: one piece of a Job (`jobId`).
+- **Task**: one piece of a Job (`jobId`) with `dependsOn` Task ids and an optional
+  persistent workspace mapping. Dependencies must point to Tasks in the same
+  Job and remain acyclic. One active Run per Task is allowed.
 - **Run**: one attempt at a Task (`taskId`). A Task tried twice has two Runs.
   `execution: { type: 'opencode-session', id, directory, createdAt, deletedAt? }`
   names what carries it out. The Run points at the session; the session knows
@@ -26,7 +28,7 @@ Statuses are the current state and nothing else:
 | Entity | Statuses |
 |---|---|
 | Job | `pending` `running` `waiting` `completed` `failed` `cancelled` |
-| Task | `pending` `running` `blocked` `completed` `failed` `cancelled` |
+| Task | `pending` `ready` `running` `waiting` `blocked` `completed` `failed` `cancelled` |
 | Run | `queued` `running` `waiting_for_user` `failed` `completed` `cancelled` |
 
 `Run.attention` (`{ type: permission | question | conflict, message? }`) says
@@ -38,6 +40,29 @@ becoming a historical flag. Timestamps are milliseconds; the server sets
 `createdAt`/`updatedAt`, and a Run's `startedAt` on its first `running`,
 `finishedAt` on its first terminal status.
 
+Task status is derived from its latest Run and current dependencies. A Task
+with no dependencies starts `ready`; incomplete dependencies make it `blocked`
+with the dependency ids and a reason. A failed or cancelled dependency keeps
+it blocked until a successful retry completes. Old Runs remain unchanged.
+
+The manual scheduler validates readiness and reserves capacity when a user
+starts a Run. Each Job defaults to three parallel Tasks (configurable from one
+to ten); the Foreman server has a configurable global cap. It never creates Tasks
+or Runs automatically. If a Job directory is a Git repository, each Task uses
+a persistent Git worktree under the OpenChamber data directory. A retry uses
+the same worktree. No branches are merged automatically. For non-Git
+directories, the original directory is used and Foreman allows only one Task
+at a time for that directory. Explicit Task or Job deletion removes associated
+worktrees before deleting Foreman records. Deletion refuses active Runs. A
+cleanup error leaves Foreman records in place so deletion can be retried.
+Completion and age never trigger cleanup.
+
+The server-wide parallel limit defaults to three. Set
+`OPENCHAMBER_FOREMAN_MAX_PARALLEL_TASKS` to an integer from 1 to 32 to change
+it. Invalid values fall back to three.
+The state response includes the effective limit so the Jobs view reports the
+configured value.
+
 ## Execution (`execution.js`)
 
 `POST /api/foreman/runs/:id/start`, in order:
@@ -48,8 +73,14 @@ becoming a historical flag. Timestamps are milliseconds; the server sets
 3. `sessionService.create({ directory, title })`. Failure: `failed`,
    `error.stage = session`, the reference removed.
 4. The session id is saved on the run, before anything else happens.
-5. `sessionService.send(id, { prompt })` with the task's instructions (its
-   title when it has none). Failure or "not queued": `failed`,
+5. `sessionService.send(id, { prompt })` with a Foreman execution instruction
+   followed by the task's instructions (its title when it has none). The
+   instruction prefers LSP/language-server or other structured
+   code-intelligence tools exposed by the selected OpenCode agent/provider. If
+   none are available, it asks for task-relevant file search/read, with shell
+   reserved for execution, tests, builds, Git and runtime commands. It does not
+   claim a tool is available or change tools for ordinary sessions. Failure or
+   "not queued": `failed`,
    `error.stage = dispatch`, the reference kept.
 6. `running`, unless an event already moved the run further.
 
@@ -83,8 +114,8 @@ nothing changes. The UI re-reads state on `openchamber:foreman-changed`.
 
 ## Persistence
 
-One file per OpenChamber data dir, `foreman.json`, `{ version: 2, jobs, tasks,
-runs }`, written whole and atomically (temp file, rename) with mutations
+One file per OpenChamber data dir, `foreman.json`, `{ version: 5, jobs, tasks,
+runs (including per-Run activity), memories }`, written whole and atomically (temp file, rename) with mutations
 serialized. A failed write restores the previous in-memory state.
 
 - No file is the normal empty state; reading never creates it.
@@ -93,14 +124,32 @@ serialized. A failed write restores the previous in-memory state.
 - An unreadable file is moved to `foreman.json.corrupt-<time>` and the store
   starts empty; the bytes are the rollback.
 - Version 1 files are converted in memory (a bare `sessionId` becomes an
-  `execution` reference) and rewritten as version 2 on the next mutation.
+  `execution` reference); version 2 files gain an empty memory list. Either is
+rewritten as version 5 on the next mutation. Version 3 gains an empty
+per-Run activity list; version 4 gains Task dependency/workspace defaults and
+the per-Job concurrency default; older versions receive those defaults too. The public Jobs state remains
+  version 2 and does not include memory records.
+
+### Memory
+
+Memory records live in this file, independently of Runs and OpenCode sessions.
+Workspace memory is shared by Jobs using the same validated workspace path;
+Job memory is visible only to its owning Job. Routes validate the Job's current
+directory before creating or listing records. A Run retrieves at most eight
+matching records using case-insensitive text, tags, and path mentions from its
+Job and Task context, scoped to that workspace and Job. No match means no
+memory section is sent. Users can update or delete stale records in the Jobs
+view. Memory is advisory; prompts tell the agent to check current code.
 
 ## Routes
 
 `routes.js` registers `/api/foreman/*` in `feature-routes-runtime.js`, before
 the OpenCode proxy: `GET state`, `POST jobs`, `PATCH jobs/:id`, `POST
-jobs/:id/tasks`, `PATCH tasks/:id`, `POST tasks/:id/runs`, `POST
-runs/:id/start`, `PATCH runs/:id`. Store errors map to 400 / 404 / 409. The
+jobs/:id/tasks`, `PATCH tasks/:id`, `DELETE tasks/:id`, `DELETE jobs/:id`,
+`POST tasks/:id/runs`, `POST
+runs/:id/start`, `PATCH runs/:id`, per-Run activity list/create, Job memory
+list/create, and memory update/delete.
+Store errors map to 400 / 404 / 409. The
 store and the execution runtime are created once in `server/index.js` and
 passed to the routes. Inputs are parsed with zod in the store.
 
@@ -118,14 +167,48 @@ passed to the routes. Inputs are parsed with zod in the store.
 (cache of the server's answers; reset on runtime switch),
 `components/views/JobsView.tsx` (the `jobs` context surface).
 
+### Run activity
+
+Activity is stored inside each Run in the same atomic `foreman.json` file.
+Execution status changes append waiting, resolution, and terminal summaries;
+the start path appends start and session-created events. Curated progress or
+validation summaries can be added through the Run activity API. The timeline
+is capped at 200 entries per Run and collapses adjacent identical type/message
+events. Raw prompts, reasoning, and tool invocations are not recorded. Activity
+is separate from workspace and Job memory and is never attached to ordinary
+OpenChamber sessions. The public Jobs snapshot stays compact; activity is read
+through a Run-scoped endpoint. A `foreman-changed` event refreshes timelines
+already opened in the Jobs view.
+
+## Code intelligence
+
+Foreman creates and dispatches through the same OpenChamber session service as
+other features. Every prompt dispatch for a Run uses
+`POST /api/foreman/runs/:id/start`; that route reaches `taskPrompt` and the
+single Foreman `sessionService.send` call. Reconciliation observes existing
+sessions and stop interrupts them, so neither dispatches another prompt.
+
+OpenCode v2 has no built-in LSP tool in this integration. The built-in agent
+tools include `read`, `glob`, `grep`, and `shell`; configured MCP servers may
+also expose provider-specific structured tools. OpenChamber does not query or
+guarantee those MCP capabilities for a Foreman Run. The instruction prefers
+structured tools if the selected agent exposes them, then targeted file
+search/read, then shell for execution, tests, builds, Git, and runtime
+commands. Ordinary session prompts are unchanged.
+
 ## Tests
 
 `store.test.js` (default state, relationships, status rules, restart, failed
-write, concurrency, v1 migration, unreadable and newer files),
+write, concurrency, v1/v2/v3/v4 migration, memory scope and persistence, deletion rollback, unreadable and newer files),
 `execution.test.js` (one session per start, instructions and directory,
 duplicate and interrupted starts, each failure stage, status mapping,
+start/session, attention, terminal timeline events, event de-duplication and isolation,
 subagent pause, ordering, deletion, restart reconciliation), `routes.test.js`; UI:
 `lib/foreman/model.test.ts`, `stores/useForemanStore.test.ts`,
 `i18n/messages/foreman-panel.i18n.test.ts`,
-`components/layout/workspace/jobsSurface.test.ts` (Jobs in the zone model;
+`scheduler.test.js` (per-Job/global capacity and configured cap); `task-workspaces.test.js`
+(real Git worktree reuse, separation, deletion cleanup and non-Git fallback). Route tests cover
+Task/Job cleanup ordering, active Run protection, and state preservation after cleanup errors. Store tests cover
+dependency validation, readiness, failure/retry release, and one active Run
+per Task. `components/layout/workspace/jobsSurface.test.ts` (Jobs in the zone model;
 layout changes never reach Foreman data).

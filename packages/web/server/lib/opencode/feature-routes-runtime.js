@@ -144,6 +144,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       openChamberControlService,
       foremanStore,
       foremanExecution,
+      foremanTaskWorkspaceManager,
       waitForOpenCodeReady,
       getOpenChamberEventClients,
       writeSseEvent,
@@ -367,7 +368,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       path,
       openchamberDataDir,
     });
-    registerForemanRoutes(app, { store: foremanStore, execution: foremanExecution });
+    registerForemanRoutes(app, { store: foremanStore, execution: foremanExecution, taskWorkspaceManager: foremanTaskWorkspaceManager, validateDirectoryPath });
     registerFsRoutes(app, {
       os,
       path,

@@ -632,6 +632,7 @@ describe('openchamber session routes', () => {
     expect(response.body.sessionId).toBe('ses_123');
     expect(response.body.promptDispatched).toBe(true);
     expect(sessionPromptMock).toHaveBeenCalledWith({ sessionID: 'ses_123', text: 'Run this' });
+    expect(sessionPromptMock.mock.calls[0][0].text).not.toContain('structured code-intelligence tools');
   });
 
   it('creates goal metadata before dispatching the initial goal prompt', async () => {
@@ -853,6 +854,19 @@ describe('openchamber session routes', () => {
     expect(sessionSyntheticMock.mock.invocationCallOrder[0])
       .toBeLessThan(sessionCommandMock.mock.invocationCallOrder[0]);
     expect(recordDelivered).toHaveBeenCalledWith('ses_source', '/repo/app', 'sig_1');
+  });
+
+  it('ordinary OpenChamber prompts do not receive Foreman workspace or job memory', async () => {
+    const { app } = createApp();
+    await request(app)
+      .post('/api/openchamber/sessions')
+      .send({ directory: '/repo/app', prompt: 'Read this file', model: 'openai/gpt-5.5' })
+      .expect(200);
+
+    const dispatched = sessionPromptMock.mock.calls.map(([call]) => call.text).join('\n');
+    expect(dispatched).toContain('Read this file');
+    expect(dispatched).not.toContain('Workspace memory:');
+    expect(dispatched).not.toContain('Job memory:');
   });
 
   it('reuses the previous session selection when send omits model, agent, and variant', async () => {
