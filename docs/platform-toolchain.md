@@ -121,6 +121,7 @@ against the artifact and the packages built from it. "Build" means
 | Docker image: Node 24, `/health`, OpenCode ready, UI, API requires auth | `scripts/smoke/docker.sh` | PR CI (`docker-smoke` job) |
 | Packaged Desktop: server and OpenCode start, preload bridge, no Node globals in the renderer, React mounts, `/health`, UI, extensions, filesystem, node-pty terminal, clean `main.log` | `packages/electron` `bun run smoke:packaged` | desktop release smoke (macOS arm64) |
 | Server TypeScript: no `!` or `as T` beyond the frozen migration budget (`scripts/assertion-budget.json`), and no ESLint directive comments | `scripts/check-assertion-budget.mjs` (TypeScript AST and scanner) | `lint`, PR CI |
+| No new handwritten JavaScript (.js/.jsx/.mjs/.cjs) outside the shrinking Stage D baseline (`scripts/js-debt-baseline.json`); generated/vendored JavaScript excluded by named rules; inventory in `docs/stage-d-js-inventory.md` | `scripts/check-js-debt.ts` (git file list, TypeScript import scan) | root `lint`, PR CI |
 
 Locally, after `bun run build` (and `bun run electron:build` for the desktop gate):
 
