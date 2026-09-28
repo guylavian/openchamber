@@ -65,7 +65,7 @@
     "heic2any": "^0.0.4",
     "html-to-image": "^1.11.13",
     "http-proxy-middleware": "^3.0.7",
-    "katex": "^0.17.0",
+    "katex": "^0.18.9",
     "marked": "^17.0.6",
     "marked-linkify-it": "^4.0.2",
     "morphdom": "^2.7.8",
