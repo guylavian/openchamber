@@ -91,6 +91,15 @@ export const testSteps = (targets: readonly string[]): Step[] => {
   for (const [importer, imported] of edges) {
     if (/\.test\.[cm]?[jt]sx?$/.test(importer) && imported.some((file) => targetSet.has(file))) tests.add(importer);
   }
+  // Tests that name a converted module by path without importing it (vi.mock('./x.js'), spawned scripts).
+  const stems = new Set(targets.map((file) => file.replace(/\.[cm]?[jt]sx?$/, '')));
+  const listed = spawnSync('git', ['ls-files', '--cached', '--', '*.test.*'], { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).stdout.split('\n').filter(Boolean);
+  for (const test of listed) {
+    if (tests.has(test) || !fs.existsSync(path.join(ROOT, test))) continue;
+    for (const match of fs.readFileSync(path.join(ROOT, test), 'utf8').matchAll(/['"`](\.{1,2}\/[\w@./-]+?)\.[cm]?[jt]sx?['"`]/g)) {
+      if (match[1] !== undefined && stems.has(path.posix.normalize(path.posix.join(path.posix.dirname(test), match[1])))) { tests.add(test); break; }
+    }
+  }
   const web = [...tests].filter((file) => file.startsWith('packages/web/')).map((file) => path.relative('packages/web', file));
   const rest = [...tests].filter((file) => !file.startsWith('packages/web/'));
   const steps: Step[] = [];
