@@ -3,11 +3,12 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { collect, runnerFor } from './run-isolated-tests.mjs';
 import { renamed } from './ts-census.ts';
 
-const ROOT = path.resolve(import.meta.dir, '..');
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // Every root a package `test` script hands to run-isolated-tests.
 const ROOTS = ['scripts', 'packages/sdk/src', 'packages/sdk/scripts', 'packages/ui/src', 'packages/vscode/src', 'packages/vscode/webview', 'packages/electron'];
 

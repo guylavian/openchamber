@@ -59,7 +59,7 @@ const typecheckSteps = (targets: readonly string[]): Step[] => {
   }
   const loose = targets.filter((file) => !/^packages\/(web\/(server|bin)|ui|vscode|electron)\//.test(file));
   if (loose.length > 0) {
-    steps.push({ label: `type-check ${String(loose.length)} file(s) outside a project (strict Node settings)`, command: tsc, args: ['--ignoreConfig', '--noEmit', '--strict', '--noUncheckedIndexedAccess', '--exactOptionalPropertyTypes', '--module', 'nodenext', '--moduleResolution', 'nodenext', '--target', 'es2022', '--types', 'node', '--allowImportingTsExtensions', '--verbatimModuleSyntax', '--erasableSyntaxOnly', '--allowJs', '--checkJs', 'false', '--skipLibCheck', ...loose] });
+    steps.push({ label: `type-check ${String(loose.length)} file(s) outside a project (strict Node settings)`, command: tsc, args: ['--ignoreConfig', '--noEmit', '--strict', '--noUncheckedIndexedAccess', '--exactOptionalPropertyTypes', '--module', 'nodenext', '--moduleResolution', 'nodenext', '--target', 'es2022', '--types', 'node,bun-types/test', '--allowImportingTsExtensions', '--verbatimModuleSyntax', '--erasableSyntaxOnly', '--allowJs', '--checkJs', 'false', '--skipLibCheck', ...loose] });
   }
   return steps;
 };

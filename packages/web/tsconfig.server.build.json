@@ -4,6 +4,8 @@
   // also copies the non-code assets and verifies the output.
   "extends": "./tsconfig.server.json",
   "compilerOptions": {
+    // Tests are not built; only they see bun:test (tsconfig.server.json).
+    "types": ["node"],
     "noEmit": false,
     "noEmitOnError": true,
     "rootDir": ".",

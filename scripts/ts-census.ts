@@ -148,7 +148,7 @@ const NODE_STRICT: ts.CompilerOptions = {
   strict: true,
   noUncheckedIndexedAccess: true,
   exactOptionalPropertyTypes: true,
-  types: ['node'],
+  types: ['node', 'bun-types/test'],
   skipLibCheck: true,
   noEmit: true,
   allowImportingTsExtensions: true,
