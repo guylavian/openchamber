@@ -13,6 +13,15 @@
   "packages/web/server/lib/browser-control/broker.ts": {
     "onAbort!": 1
   },
+  "packages/web/server/lib/client-auth/pairing.ts": {
+    "JSON.parse(raw) as { sessions?: unknown } | null": 1,
+    "error as NodeJS.ErrnoException | null": 1,
+    "value.map(normalizeClientKind).filter(Boolean) as string[]": 1
+  },
+  "packages/web/server/lib/client-auth/remote-clients.ts": {
+    "JSON.parse(raw) as { clients?: unknown } | null": 1,
+    "error as NodeJS.ErrnoException | null": 1
+  },
   "packages/web/server/lib/context-obligatory/runtime.ts": {
     "error as Thrown": 1,
     "persistContextCursor!": 1,
@@ -148,9 +157,32 @@
   "packages/web/server/lib/foreman/task-workspaces.ts": {
     "error as { code?: unknown } | null | undefined": 1
   },
+  "packages/web/server/lib/git/identity-storage.ts": {
+    "JSON.parse(content) as GitIdentityStore": 1,
+    "profiles[index]!": 2
+  },
+  "packages/web/server/lib/guests/clone.ts": {
+    "addresses[0]!": 1,
+    "match as RegExpExecArray & [string, string | undefined, string, string]": 1
+  },
+  "packages/web/server/lib/guests/extract-zip.ts": {
+    "names[0]!": 1
+  },
+  "packages/web/server/lib/guests/files.ts": {
+    "error as NodeJS.ErrnoException | null": 5,
+    "pattern[index]!": 1
+  },
+  "packages/web/server/lib/guests/grant-scope.ts": {
+    "stored!": 7,
+    "stored!.filesystem!": 1,
+    "stored!.service!": 2
+  },
   "packages/web/server/lib/guests/html-tokens.ts": {
     "match[2]!": 1,
     "withoutHash.split('?')[0]!": 1
+  },
+  "packages/web/server/lib/guests/storage.ts": {
+    "error as NodeJS.ErrnoException | null": 1
   },
   "packages/web/server/lib/inherited-env.test.ts": {
     "expect.stringMatching(/\\/env$/) as string": 1
@@ -278,6 +310,22 @@
     "response.json().catch(() => null) as Promise<Answer | null>": 1,
     "sessions.keys().next().value!": 1
   },
+  "packages/web/server/lib/project-context/runtime.ts": {
+    "entry.createdAt as number": 8,
+    "entry.source as NoteSource": 1,
+    "entry.updatedAt as number": 2,
+    "error as NodeJS.ErrnoException": 9,
+    "filePath!": 1,
+    "patch.pinned as boolean": 1,
+    "recoverError as NodeJS.ErrnoException": 1,
+    "value.source as NoteSource": 1,
+    "{ body, updatedAt: now } as { body: string; updatedAt: number }": 1
+  },
+  "packages/web/server/lib/projects/project-setup.ts": {
+    "document.setupWorktreeMode as SetupWorktreeMode": 1,
+    "patch.setupWorktreeMode as SetupWorktreeMode": 1,
+    "value.trustedAt as number": 1
+  },
   "packages/web/server/lib/relay/e2ee.ts": {
     "BASE64URL_ALPHABET[((b0 & 0x03) << 4) | ((b1 ?? 0) >> 4)]!": 1,
     "BASE64URL_ALPHABET[((b1 & 0x0f) << 2) | ((b2 ?? 0) >> 6)]!": 1,
@@ -337,6 +385,27 @@
     "error as ServiceError": 3,
     "error as ServiceError | null | undefined": 3
   },
+  "packages/web/server/lib/spaces/gatekeeper-program.test.ts": {
+    "JSON.parse((await control('GET', '/journal')).body) as Journal": 1,
+    "JSON.parse((await control('GET', '/policy')).body) as { mode: string; domains: string[]; grants: string[] }": 1,
+    "JSON.parse(answer.body) as Journal": 1,
+    "JSON.parse(body) as Journal": 1,
+    "after.records.at(-1)!": 1,
+    "createRequire(import.meta.url)(PROGRAM) as GatekeeperRules": 2,
+    "entry!": 1,
+    "found.at(-1)!": 1,
+    "fresh.at(-1)!": 1,
+    "item.close!": 1,
+    "match[1]!": 1,
+    "reader.read(1) as Buffer | null": 1,
+    "records.at(-1)!": 1,
+    "seen.at(-1)!": 6,
+    "server.address() as AddressInfo": 2,
+    "silent.address() as AddressInfo": 1,
+    "since[0]!": 1,
+    "space.read() as Buffer | null": 2,
+    "space.read(16 * 1024) as Buffer | null": 1
+  },
   "packages/web/server/lib/terminal/shutdown.ts": {
     "error as Error": 1,
     "error as NodeJS.ErrnoException": 3,
@@ -374,6 +443,9 @@
   "packages/web/server/lib/tunnels/types.ts": {
     "(input.hostname ?? defaults.hostname) as string": 1,
     "(input.token ?? defaults.token) as string": 1
+  },
+  "packages/web/server/lib/ui-auth/session-cookie.ts": {
+    "forwarded.split(',')[0]!": 1
   },
   "packages/web/server/lib/walkthrough/hunks.ts": {
     "current.hunkDigests!": 2,

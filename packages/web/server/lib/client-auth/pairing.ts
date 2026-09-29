@@ -1,13 +1,64 @@
+import type { PlatformPath } from 'node:path';
+import type { ClientCrypto, ClientStoreFs, RemoteClientAuthRuntime } from './remote-clients.js';
+
+export interface PairingSession {
+  id: string;
+  secretHash: string;
+  createdAt: string;
+  expiresAt: string;
+  usedAt: string | null;
+  cancelledAt: string | null;
+  clientId: string | null;
+  label: string | null;
+  fingerprint: string;
+  allowedClientKinds: string[];
+  createdByClientId: string | null;
+  usesRelay: boolean;
+}
+
+export interface PairingStore {
+  version: number;
+  sessions: PairingSession[];
+}
+
+export interface ClientPairingRuntimeDeps {
+  fsPromises?: ClientStoreFs;
+  path?: Pick<PlatformPath, 'dirname'>;
+  crypto?: ClientCrypto;
+  storePath?: string;
+  remoteClientAuthRuntime?: Pick<RemoteClientAuthRuntime, 'createClient'>;
+  ttlMs?: number;
+}
+
+export interface CreatePairingSessionInput {
+  label?: unknown;
+  allowedClientKinds?: unknown;
+  createdByClientId?: unknown;
+  usesRelay?: unknown;
+}
+
+export interface RedeemPairingSessionInput {
+  pairingId?: unknown;
+  secret?: unknown;
+  clientLabel?: unknown;
+  clientKind?: unknown;
+  deviceName?: unknown;
+  devicePlatform?: unknown;
+  deviceModel?: unknown;
+  appVersion?: unknown;
+  dedupeKey?: unknown;
+}
+
 const STORE_VERSION = 1;
 const PAIRING_ID_PREFIX = 'pair_';
 const SECRET_BYTES = 32;
 const FINGERPRINT_BYTES = 4;
 const DEFAULT_TTL_MS = 10 * 60 * 1000;
 const MAX_LABEL_LENGTH = 80;
-const VALID_CLIENT_KINDS = new Set(['mobile', 'desktop']);
+const VALID_CLIENT_KINDS = new Set<string>(['mobile', 'desktop']);
 const GENERIC_REDEEM_ERROR = 'Invalid or expired pairing session';
 
-const normalizeOptionalString = (value) => {
+const normalizeOptionalString = (value: unknown): string | null => {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
@@ -20,39 +71,39 @@ const PAIRING_LABEL_PLACEHOLDER = 'Pair new device';
 
 // The operator's typed device label, capped. Returns null when unset so callers
 // can distinguish "no name given" from a real name.
-const normalizeStoredLabel = (value) => {
+const normalizeStoredLabel = (value: unknown): string | null => {
   const normalized = normalizeOptionalString(value);
   if (!normalized) return null;
   return normalized.length > MAX_LABEL_LENGTH ? normalized.slice(0, MAX_LABEL_LENGTH) : normalized;
 };
 
-const normalizeTimestamp = (value) => {
+const normalizeTimestamp = (value: unknown): string | null => {
   const normalized = normalizeOptionalString(value);
   if (!normalized) return null;
   const time = Date.parse(normalized);
   return Number.isFinite(time) ? new Date(time).toISOString() : null;
 };
 
-const normalizeClientKind = (value) => {
+const normalizeClientKind = (value: unknown): string | null => {
   const normalized = normalizeOptionalString(value);
   return normalized && VALID_CLIENT_KINDS.has(normalized) ? normalized : null;
 };
 
-const normalizeAllowedClientKinds = (value) => {
+const normalizeAllowedClientKinds = (value: unknown): string[] => {
   if (!Array.isArray(value)) return ['mobile', 'desktop'];
-  const kinds = value.map(normalizeClientKind).filter(Boolean);
+  const kinds = value.map(normalizeClientKind).filter(Boolean) as string[];
   return kinds.length > 0 ? Array.from(new Set(kinds)) : ['mobile', 'desktop'];
 };
 
-const safeJsonParse = (raw) => {
+const safeJsonParse = (raw: string): { sessions?: unknown } | null => {
   try {
-    return JSON.parse(raw);
+    return JSON.parse(raw) as { sessions?: unknown } | null;
   } catch {
     return null;
   }
 };
 
-const constantTimeEqual = (left, right, crypto) => {
+const constantTimeEqual = (left: unknown, right: unknown, crypto: ClientCrypto): boolean => {
   if (typeof left !== 'string' || typeof right !== 'string') return false;
   const leftBuffer = Buffer.from(left, 'hex');
   const rightBuffer = Buffer.from(right, 'hex');
@@ -60,7 +111,7 @@ const constantTimeEqual = (left, right, crypto) => {
   return crypto.timingSafeEqual(leftBuffer, rightBuffer);
 };
 
-const publicSession = (session) => ({
+const publicSession = (session: PairingSession) => ({
   id: session.id,
   createdAt: session.createdAt,
   expiresAt: session.expiresAt,
@@ -76,13 +127,13 @@ const publicSession = (session) => ({
 
 // A pending session is one that can still be redeemed: not used, not cancelled,
 // not expired.
-const isPendingSession = (session) => !session.usedAt
+const isPendingSession = (session: PairingSession): boolean => !session.usedAt
   && !session.cancelledAt
   && Number.isFinite(Date.parse(session.expiresAt))
   && Date.parse(session.expiresAt) > Date.now();
 
-const redeemError = () => {
-  const error = new Error(GENERIC_REDEEM_ERROR);
+const redeemError = (): Error & { statusCode?: number } => {
+  const error: Error & { statusCode?: number } = new Error(GENERIC_REDEEM_ERROR);
   error.statusCode = 400;
   return error;
 };
@@ -94,22 +145,22 @@ export const createClientPairingRuntime = ({
   storePath,
   remoteClientAuthRuntime,
   ttlMs = DEFAULT_TTL_MS,
-} = {}) => {
+}: ClientPairingRuntimeDeps = {}) => {
   if (!fsPromises || !path || !crypto || !storePath || !remoteClientAuthRuntime) {
     throw new Error('createClientPairingRuntime requires fsPromises, path, crypto, storePath, and remoteClientAuthRuntime');
   }
 
   const nowIso = () => new Date().toISOString();
-  const hashSecret = (secret) => crypto.createHash('sha256').update(secret).digest('hex');
+  const hashSecret = (secret: string): string => crypto.createHash('sha256').update(secret).digest('hex');
   const generateId = () => `${PAIRING_ID_PREFIX}${crypto.randomBytes(12).toString('hex')}`;
   const generateSecret = () => crypto.randomBytes(SECRET_BYTES).toString('base64url');
   const generateFingerprint = () => crypto.randomBytes(FINGERPRINT_BYTES).toString('hex').toUpperCase().replace(/^(.{4})(.{4})$/, '$1-$2');
   let storeMutationQueue = Promise.resolve();
 
-  const withStoreMutation = async (fn) => {
+  const withStoreMutation = async <T>(fn: () => Promise<T>): Promise<T> => {
     const previous = storeMutationQueue;
-    let release;
-    storeMutationQueue = new Promise((resolve) => {
+    let release!: () => void;
+    storeMutationQueue = new Promise<void>((resolve) => {
       release = resolve;
     });
     await previous;
@@ -120,12 +171,12 @@ export const createClientPairingRuntime = ({
     }
   };
 
-  const normalizeStore = (payload) => ({
+  const normalizeStore = (payload: { sessions?: unknown } | null): PairingStore => ({
     version: STORE_VERSION,
     sessions: Array.isArray(payload?.sessions)
       ? payload.sessions
-        .filter((session) => session && typeof session === 'object')
-        .map((session) => ({
+        .filter((session: unknown) => session && typeof session === 'object')
+        .map((session: Record<string, unknown>): PairingSession => ({
           id: typeof session.id === 'string' ? session.id : generateId(),
           secretHash: typeof session.secretHash === 'string' ? session.secretHash : '',
           createdAt: typeof session.createdAt === 'string' ? session.createdAt : nowIso(),
@@ -148,12 +199,12 @@ export const createClientPairingRuntime = ({
       const raw = await fsPromises.readFile(storePath, 'utf8');
       return normalizeStore(safeJsonParse(raw));
     } catch (error) {
-      if (error?.code === 'ENOENT') return normalizeStore(null);
+      if ((error as NodeJS.ErrnoException | null)?.code === 'ENOENT') return normalizeStore(null);
       throw error;
     }
   };
 
-  const writeStore = async (store) => {
+  const writeStore = async (store: PairingStore): Promise<void> => {
     await fsPromises.mkdir(path.dirname(storePath), { recursive: true, mode: 0o700 });
     await fsPromises.writeFile(storePath, JSON.stringify(normalizeStore(store), null, 2), { mode: 0o600 });
     if (typeof fsPromises.chmod === 'function') {
@@ -161,7 +212,7 @@ export const createClientPairingRuntime = ({
     }
   };
 
-  const sweepExpiredSessionsFromStore = (store) => {
+  const sweepExpiredSessionsFromStore = (store: PairingStore): void => {
     const now = Date.now();
     const cutoff = now - ttlMs;
     store.sessions = store.sessions.filter((session) => {
@@ -176,12 +227,12 @@ export const createClientPairingRuntime = ({
     });
   };
 
-  const createPairingSession = async ({ label, allowedClientKinds, createdByClientId, usesRelay } = {}) => {
+  const createPairingSession = async ({ label, allowedClientKinds, createdByClientId, usesRelay }: CreatePairingSessionInput = {}) => {
     return withStoreMutation(async () => {
       const store = await readStore();
       sweepExpiredSessionsFromStore(store);
       const secret = generateSecret();
-      const session = {
+      const session: PairingSession = {
         id: generateId(),
         secretHash: hashSecret(secret),
         createdAt: nowIso(),
@@ -213,7 +264,7 @@ export const createClientPairingRuntime = ({
     return store.sessions.some((session) => session.usesRelay === true && isPendingSession(session));
   });
 
-  const getPairingSession = async (id) => {
+  const getPairingSession = async (id: unknown) => {
     const normalizedId = normalizeOptionalString(id);
     if (!normalizedId) return null;
     return withStoreMutation(async () => {
@@ -223,7 +274,7 @@ export const createClientPairingRuntime = ({
     });
   };
 
-  const cancelPairingSession = async (id) => {
+  const cancelPairingSession = async (id: unknown) => {
     const normalizedId = normalizeOptionalString(id);
     if (!normalizedId) return { cancelled: false };
     return withStoreMutation(async () => {
@@ -246,7 +297,7 @@ export const createClientPairingRuntime = ({
     deviceModel,
     appVersion,
     dedupeKey,
-  } = {}) => {
+  }: RedeemPairingSessionInput = {}) => {
     const normalizedId = normalizeOptionalString(pairingId);
     const normalizedSecret = normalizeOptionalString(secret);
     const normalizedKind = normalizeClientKind(clientKind) || 'mobile';

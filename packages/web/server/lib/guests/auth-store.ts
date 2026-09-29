@@ -37,9 +37,14 @@ const storeSchema = z.object({
   guests: z.record(z.string().regex(PANEL_ID), guestAuthEntrySchema),
 });
 
+export type GuestAuthEntry = z.infer<typeof guestAuthEntrySchema>;
+export type GuestAuthStore = z.infer<typeof storeSchema>;
+export type GuestAuthPatch = GuestAuthEntry | ((current: GuestAuthEntry | null) => GuestAuthEntry);
+export type GuestAuthExpectation = (current: GuestAuthEntry | null) => boolean;
+
 const dataDirSchema = z.string().min(1).refine((entry) => !entry.includes('\0') && path.isAbsolute(entry));
 
-export const guestAuthPersistPath = (dataDir) => {
+export const guestAuthPersistPath = (dataDir: unknown): string => {
   const parsed = dataDirSchema.safeParse(dataDir);
   if (!parsed.success) {
     throw new Error('Guest auth needs an absolute OpenChamber data dir');
@@ -47,7 +52,7 @@ export const guestAuthPersistPath = (dataDir) => {
   return path.join(parsed.data, 'guest-auth.json');
 };
 
-const parseStore = (raw) => {
+const parseStore = (raw: string): GuestAuthStore | null => {
   try {
     const parsed = storeSchema.safeParse(JSON.parse(raw));
     return parsed.success ? parsed.data : null;
@@ -56,7 +61,7 @@ const parseStore = (raw) => {
   }
 };
 
-export const readGuestAuthStore = async (persistPath) => {
+export const readGuestAuthStore = async (persistPath: string): Promise<GuestAuthStore> => {
   try {
     const raw = await fs.readFile(persistPath, 'utf8');
     const text = raw.replace(/^\uFEFF/, '').trim();
@@ -77,14 +82,14 @@ export const readGuestAuthStore = async (persistPath) => {
 };
 
 /** @type {Map<string, Promise<unknown>>} */
-const writeChains = new Map();
+const writeChains = new Map<string, Promise<unknown>>();
 let writeSequence = 0;
 
 // Two writers at once (a token refresh while a settings field saves) used to
 // share one temp file and a stale read: one of them lost. Every change to one
 // store file now runs read → change → write as a single step, one after
 // another, each on its own temp file.
-const withAuthStoreLock = (persistPath, run) => {
+const withAuthStoreLock = <T>(persistPath: string, run: () => Promise<T>): Promise<T> => {
   const previous = writeChains.get(persistPath) ?? Promise.resolve();
   const next = previous.catch(() => undefined).then(run);
   const chained = next.finally(() => {
@@ -94,7 +99,7 @@ const withAuthStoreLock = (persistPath, run) => {
   return next;
 };
 
-const writeGuestAuthStoreUnlocked = async (store, persistPath) => {
+const writeGuestAuthStoreUnlocked = async (store: GuestAuthStore, persistPath: string): Promise<void> => {
   const parsed = storeSchema.safeParse(store);
   if (!parsed.success) {
     throw new Error('Invalid guest auth store');
@@ -107,7 +112,7 @@ const writeGuestAuthStoreUnlocked = async (store, persistPath) => {
 };
 
 
-export const getGuestAuth = async (guestId, persistPath) => {
+export const getGuestAuth = async (guestId: string, persistPath: string): Promise<GuestAuthEntry | null> => {
   const store = await readGuestAuthStore(persistPath);
   return store.guests[guestId] ?? null;
 };
@@ -121,13 +126,13 @@ export const getGuestAuth = async (guestId, persistPath) => {
  * that depends on what is there (a client id replacing another one).
  * Returns the entry as stored afterwards, or `null` when it is gone.
  */
-export const patchGuestAuth = (guestId, patch, persistPath, expect = null) => withAuthStoreLock(persistPath, async () => {
+export const patchGuestAuth = (guestId: string, patch: GuestAuthPatch, persistPath: string, expect: GuestAuthExpectation | null = null): Promise<GuestAuthEntry | null> => withAuthStoreLock(persistPath, async () => {
   const store = await readGuestAuthStore(persistPath);
   const current = store.guests[guestId] ?? null;
   if (expect && !expect(current)) {
     return current;
   }
-  const next = { ...(current ?? {}) };
+  const next: GuestAuthEntry & Record<string, unknown> = { ...(current ?? {}) };
   const resolvedPatch = typeof patch === 'function' ? patch(current) : patch;
   for (const [key, value] of Object.entries(resolvedPatch)) {
     if (value === undefined) {
@@ -156,7 +161,7 @@ export const patchGuestAuth = (guestId, patch, persistPath, expect = null) => wi
  * still holds the tokens the caller is reacting to; a caller that saw a 401
  * on one access token must not erase a newer connection made meanwhile.
  */
-export const dropGuestTokens = async (guestId, persistPath, expect = null) => {
+export const dropGuestTokens = async (guestId: string, persistPath: string, expect: GuestAuthExpectation | null = null): Promise<GuestAuthEntry | null> => {
   const current = await getGuestAuth(guestId, persistPath);
   if (!current) {
     return null;
@@ -173,7 +178,7 @@ export const dropGuestTokens = async (guestId, persistPath, expect = null) => {
 };
 
 /** Drop everything stored for a guest: tokens, client credentials, and settings. Used when the package is removed. */
-export const forgetGuestAuth = (guestId, persistPath) => withAuthStoreLock(persistPath, async () => {
+export const forgetGuestAuth = (guestId: string, persistPath: string): Promise<void> => withAuthStoreLock(persistPath, async () => {
   const store = await readGuestAuthStore(persistPath);
   if (!(guestId in store.guests)) {
     return;

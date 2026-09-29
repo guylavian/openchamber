@@ -2,6 +2,37 @@ import defaultFs from 'node:fs/promises';
 import defaultPath from 'node:path';
 
 import { GUEST_FILE_CONTENT_MAX, GUEST_FILE_LIST_MAX, GUEST_FILE_PATH_MAX, guestFileScope } from '@openchamber/sdk';
+import type { Dirent, Stats } from 'node:fs';
+import type { GuestFileEntryKind, GuestFileScope, GuestFileStatKind } from '@openchamber/sdk';
+
+export type GuestFs = Pick<typeof defaultFs, 'realpath' | 'stat' | 'readFile' | 'mkdir' | 'writeFile' | 'rename' | 'unlink' | 'readdir'>;
+
+export type GuestPath = Pick<typeof defaultPath, 'sep' | 'join' | 'dirname' | 'basename' | 'resolve'>;
+
+export interface GuestFileFailure {
+  ok: false;
+  code: string;
+  message: string;
+}
+
+export type GuestFileOutcome<T> = { ok: true; result: T } | GuestFileFailure;
+
+export type ResolvedGuestFile = { ok: true; scope: GuestFileScope; absolute: string } | GuestFileFailure;
+
+export interface ResolveGuestFileInput {
+  path: string;
+  projectDirectory?: string | null | undefined;
+  patterns?: string[] | null | undefined;
+  homeDir: string;
+  fsPromises?: GuestFs | undefined;
+  nodePath?: GuestPath | undefined;
+}
+
+export interface GuestFileOperationInput extends ResolveGuestFileInput {
+  op: string;
+  content?: string | null | undefined;
+  grants?: string[] | null | undefined;
+}
 
 /**
  * Guest file access. A relative path lives inside the open project and needs
@@ -11,16 +42,16 @@ import { GUEST_FILE_CONTENT_MAX, GUEST_FILE_LIST_MAX, GUEST_FILE_PATH_MAX, guest
  * a symlink cannot widen either scope.
  */
 
-const failure = (code, message) => ({ ok: false, code, message });
+const failure = (code: string, message: string): GuestFileFailure => ({ ok: false, code, message });
 
-const isGlobChar = (segment) => segment.includes('*') || segment.includes('?');
+const isGlobChar = (segment: string): boolean => segment.includes('*') || segment.includes('?');
 
-const escapeRegExp = (value) => value.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+const escapeRegExp = (value: string): string => value.replace(/[.+^${}()|[\]\\]/g, '\\$&');
 
 /** Forward-slash form of a path so a glob written with `/` matches on every platform. */
-const toPosix = (value, nodePath) => (nodePath.sep === '/' ? value : value.split(nodePath.sep).join('/'));
+const toPosix = (value: string, nodePath: GuestPath): string => (nodePath.sep === '/' ? value : value.split(nodePath.sep).join('/'));
 
-export const expandHome = (pattern, homeDir) => {
+export const expandHome = (pattern: string, homeDir: string): string => {
   if (pattern === '~') {
     return homeDir;
   }
@@ -35,11 +66,11 @@ export const expandHome = (pattern, homeDir) => {
  * pattern that ends in `/**` also matches the directory itself, so a guest
  * may list the root it was granted.
  */
-export const globToRegExp = (pattern) => {
+export const globToRegExp = (pattern: string): RegExp => {
   let source = '^';
   let index = 0;
   while (index < pattern.length) {
-    const char = pattern[index];
+    const char = pattern[index]!;
     if (char === '*' && pattern[index + 1] === '*') {
       const afterSlash = index === 0 || pattern[index - 1] === '/';
       const beforeSlash = pattern[index + 2] === '/';
@@ -74,7 +105,7 @@ export const globToRegExp = (pattern) => {
   return new RegExp(`${source}$`);
 };
 
-export const matchesFilesystemPattern = (canonicalPath, patterns, homeDir, nodePath = defaultPath) => {
+export const matchesFilesystemPattern = (canonicalPath: string, patterns: string[], homeDir: string, nodePath: GuestPath = defaultPath): boolean => {
   const candidate = toPosix(canonicalPath, nodePath);
   return patterns.some((pattern) => globToRegExp(expandHome(pattern, homeDir)).test(candidate));
 };
@@ -84,15 +115,15 @@ export const matchesFilesystemPattern = (canonicalPath, patterns, homeDir, nodeP
  * that does not exist yet (a write) still resolves through the symlinks above
  * it. Permission errors propagate; the caller maps them to `DENIED`.
  */
-const canonicalize = async (absolute, fsPromises, nodePath) => {
+const canonicalize = async (absolute: string, fsPromises: GuestFs, nodePath: GuestPath): Promise<string> => {
   let current = absolute;
-  const tail = [];
+  const tail: string[] = [];
   for (;;) {
     try {
       const real = await fsPromises.realpath(current);
       return tail.length > 0 ? nodePath.join(real, ...tail) : real;
     } catch (error) {
-      if (error?.code !== 'ENOENT' && error?.code !== 'ENOTDIR') {
+      if ((error as NodeJS.ErrnoException | null)?.code !== 'ENOENT' && (error as NodeJS.ErrnoException | null)?.code !== 'ENOTDIR') {
         throw error;
       }
     }
@@ -110,7 +141,7 @@ const canonicalize = async (absolute, fsPromises, nodePath) => {
  * through the same canonicalization as the candidate, so `/tmp/**` still
  * matches on a host where `/tmp` is a symlink to `/private/tmp`.
  */
-const canonicalizePattern = async (pattern, homeDir, fsPromises, nodePath) => {
+const canonicalizePattern = async (pattern: string, homeDir: string, fsPromises: GuestFs, nodePath: GuestPath): Promise<string> => {
   const expanded = expandHome(pattern, homeDir);
   const segments = expanded.split('/');
   const firstGlob = segments.findIndex(isGlobChar);
@@ -121,11 +152,11 @@ const canonicalizePattern = async (pattern, homeDir, fsPromises, nodePath) => {
   return rest.length > 0 ? `${canonical.replace(/\/+$/, '')}/${rest.join('/')}` : canonical;
 };
 
-const isInside = (candidate, root, nodePath) => (
+const isInside = (candidate: string, root: string, nodePath: GuestPath): boolean => (
   candidate === root || candidate.startsWith(root.endsWith(nodePath.sep) ? root : `${root}${nodePath.sep}`)
 );
 
-const hasDotDot = (value) => value.split('/').some((segment) => segment === '..');
+const hasDotDot = (value: string): boolean => value.split('/').some((segment) => segment === '..');
 
 export const resolveGuestFilePath = async ({
   path: rawPath,
@@ -134,7 +165,7 @@ export const resolveGuestFilePath = async ({
   homeDir,
   fsPromises = defaultFs,
   nodePath = defaultPath,
-}) => {
+}: ResolveGuestFileInput): Promise<ResolvedGuestFile> => {
   if (
     rawPath.length === 0
     || rawPath.length > GUEST_FILE_PATH_MAX
@@ -148,7 +179,7 @@ export const resolveGuestFilePath = async ({
     if (!projectDirectory) {
       return failure('NO_DIRECTORY', 'No project is open.');
     }
-    let projectReal;
+    let projectReal: string;
     try {
       projectReal = await fsPromises.realpath(projectDirectory);
     } catch {
@@ -170,14 +201,14 @@ export const resolveGuestFilePath = async ({
   return { ok: true, scope: 'filesystem', absolute };
 };
 
-const entryKind = (dirent) => {
+const entryKind = (dirent: Dirent): GuestFileEntryKind => {
   if (dirent.isSymbolicLink()) return 'other';
   if (dirent.isFile()) return 'file';
   if (dirent.isDirectory()) return 'directory';
   return 'other';
 };
 
-const readOperation = async (absolute, fsPromises) => {
+const readOperation = async (absolute: string, fsPromises: GuestFs): Promise<GuestFileOutcome<{ content: string }>> => {
   const stat = await fsPromises.stat(absolute);
   if (stat.isDirectory()) {
     return failure('BAD_PATH', 'That path is a directory.');
@@ -192,7 +223,7 @@ const readOperation = async (absolute, fsPromises) => {
   return { ok: true, result: { content } };
 };
 
-const writeOperation = async (absolute, content, fsPromises, nodePath) => {
+const writeOperation = async (absolute: string, content: string | null | undefined, fsPromises: GuestFs, nodePath: GuestPath): Promise<GuestFileOutcome<{ written: boolean }>> => {
   if (content === undefined || content === null) {
     return failure('BAD_PATH', 'Write needs content.');
   }
@@ -212,7 +243,7 @@ const writeOperation = async (absolute, content, fsPromises, nodePath) => {
   return { ok: true, result: { written: true } };
 };
 
-const listOperation = async (absolute, fsPromises) => {
+const listOperation = async (absolute: string, fsPromises: GuestFs): Promise<GuestFileOutcome<{ entries: { name: string; kind: GuestFileEntryKind }[] }>> => {
   const dirents = await fsPromises.readdir(absolute, { withFileTypes: true });
   const entries = dirents
     .map((dirent) => ({ name: dirent.name, kind: entryKind(dirent) }))
@@ -221,12 +252,12 @@ const listOperation = async (absolute, fsPromises) => {
   return { ok: true, result: { entries } };
 };
 
-const statOperation = async (absolute, fsPromises) => {
-  let stat;
+const statOperation = async (absolute: string, fsPromises: GuestFs): Promise<GuestFileOutcome<{ kind: GuestFileStatKind; size: number; mtime: number }>> => {
+  let stat: Stats;
   try {
     stat = await fsPromises.stat(absolute);
   } catch (error) {
-    if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') {
+    if ((error as NodeJS.ErrnoException | null)?.code === 'ENOENT' || (error as NodeJS.ErrnoException | null)?.code === 'ENOTDIR') {
       return { ok: true, result: { kind: 'missing', size: 0, mtime: 0 } };
     }
     throw error;
@@ -235,8 +266,8 @@ const statOperation = async (absolute, fsPromises) => {
   return { ok: true, result: { kind, size: stat.size, mtime: Math.floor(stat.mtimeMs) } };
 };
 
-const mapFsError = (error) => {
-  const code = error?.code;
+const mapFsError = (error: unknown): GuestFileFailure | null => {
+  const code = (error as NodeJS.ErrnoException | null)?.code;
   if (code === 'ENOENT') {
     return failure('NOT_FOUND', 'No file at that path.');
   }
@@ -264,7 +295,7 @@ export const runGuestFileOperation = async ({
   homeDir,
   fsPromises = defaultFs,
   nodePath = defaultPath,
-}) => {
+}: GuestFileOperationInput) => {
   // Grant first, from the raw path's scope, so an unapproved extension never
   // touches the disk (not even a realpath probe).
   const needed = guestFileScope(rawPath) === 'project' ? 'files' : 'filesystem';
@@ -276,7 +307,7 @@ export const runGuestFileOperation = async ({
         : 'This extension has not been allowed to read and write files outside the project.',
     );
   }
-  let resolved;
+  let resolved: ResolvedGuestFile;
   try {
     resolved = await resolveGuestFilePath({ path: rawPath, projectDirectory, patterns, homeDir, fsPromises, nodePath });
   } catch (error) {

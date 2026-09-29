@@ -2,13 +2,32 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-const SOCKET_PLATFORMS = new Set(['linux', 'darwin', 'win32']);
+const SOCKET_PLATFORMS = new Set<string>(['linux', 'darwin', 'win32']);
+
+export interface SocketBindingInput {
+  id: string;
+  candidatesByPlatform?: Partial<Record<NodeJS.Platform, string[]>>;
+}
+
+export interface SocketResolveOptions {
+  override?: string | null | undefined;
+  platform?: NodeJS.Platform | undefined;
+  access?: ((candidate: string) => Promise<void>) | undefined;
+  home?: string | undefined;
+}
+
+export interface PublicSocketBinding {
+  id: string;
+  candidates: string[];
+  resolved: string | null;
+  override: string | null;
+}
 
 /**
  * @param {string} value
  * @param {string} [home]
  */
-export const expandHomePath = (value, home = process.env.HOME || os.homedir()) => {
+export const expandHomePath = (value: string, home: string = process.env.HOME || os.homedir()): string => {
   if (value === '~') {
     return home;
   }
@@ -24,10 +43,10 @@ export const expandHomePath = (value, home = process.env.HOME || os.homedir()) =
  * @param {string} [home]
  */
 export const platformSocketCandidates = (
-  binding,
-  platform = process.platform,
-  home = process.env.HOME || os.homedir(),
-) => {
+  binding: SocketBindingInput,
+  platform: NodeJS.Platform = process.platform,
+  home: string = process.env.HOME || os.homedir(),
+): string[] => {
   if (!SOCKET_PLATFORMS.has(platform)) {
     return [];
   }
@@ -45,7 +64,7 @@ export const platformSocketCandidates = (
  * }} [options]
  * @returns {Promise<string | null>}
  */
-export const resolveSocketBinding = async (binding, options = {}) => {
+export const resolveSocketBinding = async (binding: SocketBindingInput, options: SocketResolveOptions = {}): Promise<string | null> => {
   const {
     override = null,
     platform = process.platform,
@@ -75,14 +94,14 @@ export const resolveSocketBinding = async (binding, options = {}) => {
  *   home?: string,
  * }} [options]
  */
-export const buildPublicSocketBindings = async (bindings, overrides = {}, options = {}) => {
+export const buildPublicSocketBindings = async (bindings: SocketBindingInput[], overrides: Record<string, string> = {}, options: Omit<SocketResolveOptions, 'override'> = {}): Promise<PublicSocketBinding[]> => {
   const {
     platform = process.platform,
     access,
     home = process.env.HOME || os.homedir(),
   } = options;
   /** @type {Array<{ id: string, candidates: string[], resolved: string | null, override: string | null }>} */
-  const out = [];
+  const out: PublicSocketBinding[] = [];
   for (const binding of bindings) {
     const rawOverride = overrides[binding.id];
     const override = typeof rawOverride === 'string' && rawOverride.trim()
@@ -115,10 +134,10 @@ export const buildPublicSocketBindings = async (bindings, overrides = {}, option
  * }} [options]
  * @returns {Promise<Record<string, string>>}
  */
-export const resolveServiceSocketEnv = async (bindings, overrides = {}, options = {}) => {
+export const resolveServiceSocketEnv = async (bindings: SocketBindingInput[], overrides: Record<string, string> = {}, options: Omit<SocketResolveOptions, 'override'> = {}): Promise<Record<string, string>> => {
   const publicBindings = await buildPublicSocketBindings(bindings, overrides, options);
   /** @type {Record<string, string>} */
-  const sockets = {};
+  const sockets: Record<string, string> = {};
   for (const binding of publicBindings) {
     if (!binding.resolved) {
       continue;

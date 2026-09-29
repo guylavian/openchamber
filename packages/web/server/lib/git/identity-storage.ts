@@ -2,6 +2,38 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 
+export interface GitIdentityProfile {
+  id: string;
+  name: string;
+  userName: string;
+  userEmail: string;
+  authType: string;
+  sshKey: string | null;
+  signCommits?: boolean | undefined;
+  signingKey: string | null;
+  host: string | null;
+  color: string;
+  icon: string;
+}
+
+export interface GitIdentityProfileInput {
+  id?: string;
+  name?: string;
+  userName?: string;
+  userEmail?: string;
+  authType?: string;
+  sshKey?: string | null;
+  signCommits?: boolean;
+  signingKey?: string | null;
+  host?: string | null;
+  color?: string;
+  icon?: string;
+}
+
+export interface GitIdentityStore {
+  profiles: GitIdentityProfile[];
+}
+
 const STORAGE_DIR = path.join(os.homedir(), '.config', 'openchamber');
 const STORAGE_FILE = path.join(STORAGE_DIR, 'git-identities.json');
 
@@ -11,7 +43,7 @@ function ensureStorageDir() {
   }
 }
 
-export function loadProfiles() {
+export function loadProfiles(): GitIdentityStore {
   ensureStorageDir();
 
   if (!fs.existsSync(STORAGE_FILE)) {
@@ -20,7 +52,7 @@ export function loadProfiles() {
 
   try {
     const content = fs.readFileSync(STORAGE_FILE, 'utf8');
-    const data = JSON.parse(content);
+    const data = JSON.parse(content) as GitIdentityStore;
     return data;
   } catch (error) {
     console.error('Failed to load git identity profiles:', error);
@@ -28,7 +60,7 @@ export function loadProfiles() {
   }
 }
 
-export function saveProfiles(data) {
+export function saveProfiles(data: GitIdentityStore): boolean {
   ensureStorageDir();
 
   try {
@@ -45,12 +77,12 @@ export function getProfiles() {
   return data.profiles || [];
 }
 
-export function getProfile(id) {
+export function getProfile(id: string): GitIdentityProfile | null {
   const profiles = getProfiles();
   return profiles.find(p => p.id === id) || null;
 }
 
-export function createProfile(profileData) {
+export function createProfile(profileData: GitIdentityProfileInput): GitIdentityProfile {
   const profiles = getProfiles();
 
   if (profiles.some(p => p.id === profileData.id)) {
@@ -81,7 +113,7 @@ export function createProfile(profileData) {
   return newProfile;
 }
 
-export function updateProfile(id, updates) {
+export function updateProfile(id: string, updates: Partial<GitIdentityProfile>): GitIdentityProfile {
   const profiles = getProfiles();
   const index = profiles.findIndex(p => p.id === id);
 
@@ -90,16 +122,16 @@ export function updateProfile(id, updates) {
   }
 
   profiles[index] = {
-    ...profiles[index],
+    ...profiles[index]!,
     ...updates,
-    id: profiles[index].id
+    id: profiles[index]!.id
   };
 
   saveProfiles({ profiles });
   return profiles[index];
 }
 
-export function deleteProfile(id) {
+export function deleteProfile(id: string): boolean {
   const profiles = getProfiles();
   const filteredProfiles = profiles.filter(p => p.id !== id);
 

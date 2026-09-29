@@ -1,17 +1,74 @@
+import type cryptoModule from 'node:crypto';
+import type fsModule from 'node:fs/promises';
+import type { IncomingHttpHeaders } from 'node:http';
+import type { PlatformPath } from 'node:path';
+
+export type ClientTransport = 'relay' | 'direct';
+
+export interface RemoteClientRecord {
+  id: string;
+  label: string;
+  tokenHash: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+  expiresAt: string | null;
+  clientKind: string | null;
+  dedupeKey: string | null;
+  usesRelay: boolean;
+  lastTransport?: ClientTransport | null;
+  authMethod: string | null;
+  pairingId: string | null;
+  deviceName: string | null;
+  devicePlatform: string | null;
+  deviceModel: string | null;
+  appVersion: string | null;
+}
+
+export interface RemoteClientStore {
+  version: number;
+  clients: RemoteClientRecord[];
+}
+
+export type ClientStoreFs = Pick<typeof fsModule, 'readFile' | 'mkdir' | 'writeFile'> & Partial<Pick<typeof fsModule, 'chmod'>>;
+export type ClientCrypto = Pick<typeof cryptoModule, 'createHash' | 'randomBytes' | 'timingSafeEqual'>;
+
+export interface RemoteClientAuthDeps {
+  fsPromises: ClientStoreFs;
+  path: Pick<PlatformPath, 'dirname'>;
+  crypto: ClientCrypto;
+  storePath: string;
+}
+
+export interface CreateClientInput {
+  label?: unknown;
+  fallbackLabel?: unknown;
+  expiresAt?: unknown;
+  clientKind?: unknown;
+  dedupeKey?: unknown;
+  authMethod?: unknown;
+  pairingId?: unknown;
+  deviceName?: unknown;
+  devicePlatform?: unknown;
+  deviceModel?: unknown;
+  appVersion?: unknown;
+  usesRelay?: unknown;
+}
+
 const STORE_VERSION = 1;
 const TOKEN_PREFIX = 'oc_client_';
 const TOKEN_BYTES = 32;
 const MAX_LABEL_LENGTH = 80;
 const LAST_USED_WRITE_INTERVAL_MS = 60_000;
 
-const normalizeLabel = (value) => {
+const normalizeLabel = (value: unknown): string => {
   if (typeof value !== 'string') return 'Remote client';
   const trimmed = value.trim();
   if (!trimmed) return 'Remote client';
   return trimmed.length > MAX_LABEL_LENGTH ? trimmed.slice(0, MAX_LABEL_LENGTH) : trimmed;
 };
 
-const normalizeTimestamp = (value) => {
+const normalizeTimestamp = (value: unknown): string | null => {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   if (!trimmed) return null;
@@ -19,13 +76,13 @@ const normalizeTimestamp = (value) => {
   return Number.isFinite(time) ? new Date(time).toISOString() : null;
 };
 
-const normalizeOptionalString = (value) => {
+const normalizeOptionalString = (value: unknown): string | null => {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
 };
 
-const normalizeMetadata = (client) => ({
+const normalizeMetadata = (client: Record<string, unknown>) => ({
   authMethod: normalizeOptionalString(client.authMethod),
   pairingId: normalizeOptionalString(client.pairingId),
   deviceName: normalizeOptionalString(client.deviceName),
@@ -34,15 +91,15 @@ const normalizeMetadata = (client) => ({
   appVersion: normalizeOptionalString(client.appVersion),
 });
 
-const safeJsonParse = (raw) => {
+const safeJsonParse = (raw: string): { clients?: unknown } | null => {
   try {
-    return JSON.parse(raw);
+    return JSON.parse(raw) as { clients?: unknown } | null;
   } catch {
     return null;
   }
 };
 
-const constantTimeEqual = (left, right, crypto) => {
+const constantTimeEqual = (left: unknown, right: unknown, crypto: ClientCrypto): boolean => {
   if (typeof left !== 'string' || typeof right !== 'string') return false;
   const leftBuffer = Buffer.from(left, 'hex');
   const rightBuffer = Buffer.from(right, 'hex');
@@ -50,17 +107,17 @@ const constantTimeEqual = (left, right, crypto) => {
   return crypto.timingSafeEqual(leftBuffer, rightBuffer);
 };
 
-export const createRemoteClientAuthRuntime = ({ fsPromises, path, crypto, storePath }) => {
-  const hashToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
+export const createRemoteClientAuthRuntime = ({ fsPromises, path, crypto, storePath }: RemoteClientAuthDeps) => {
+  const hashToken = (token: string): string => crypto.createHash('sha256').update(token).digest('hex');
   const nowIso = () => new Date().toISOString();
   const generateId = () => crypto.randomBytes(12).toString('hex');
   const generateToken = () => `${TOKEN_PREFIX}${crypto.randomBytes(TOKEN_BYTES).toString('base64url')}`;
   let storeMutationQueue = Promise.resolve();
 
-  const withStoreMutation = async (fn) => {
+  const withStoreMutation = async <T>(fn: () => Promise<T>): Promise<T> => {
     const previous = storeMutationQueue;
-    let release;
-    storeMutationQueue = new Promise((resolve) => {
+    let release!: () => void;
+    storeMutationQueue = new Promise<void>((resolve) => {
       release = resolve;
     });
     await previous;
@@ -71,12 +128,12 @@ export const createRemoteClientAuthRuntime = ({ fsPromises, path, crypto, storeP
     }
   };
 
-  const normalizeStore = (payload) => ({
+  const normalizeStore = (payload: { clients?: unknown } | null): RemoteClientStore => ({
     version: STORE_VERSION,
     clients: Array.isArray(payload?.clients)
       ? payload.clients
-        .filter((client) => client && typeof client === 'object')
-        .map((client) => ({
+        .filter((client: unknown) => client && typeof client === 'object')
+        .map((client: Record<string, unknown>): RemoteClientRecord => ({
           id: typeof client.id === 'string' ? client.id : generateId(),
           label: normalizeLabel(client.label),
           tokenHash: typeof client.tokenHash === 'string' ? client.tokenHash : '',
@@ -99,12 +156,12 @@ export const createRemoteClientAuthRuntime = ({ fsPromises, path, crypto, storeP
       const raw = await fsPromises.readFile(storePath, 'utf8');
       return normalizeStore(safeJsonParse(raw));
     } catch (error) {
-      if (error?.code === 'ENOENT') return normalizeStore(null);
+      if ((error as NodeJS.ErrnoException | null)?.code === 'ENOENT') return normalizeStore(null);
       throw error;
     }
   };
 
-  const writeStore = async (store) => {
+  const writeStore = async (store: RemoteClientStore): Promise<void> => {
     await fsPromises.mkdir(path.dirname(storePath), { recursive: true, mode: 0o700 });
     await fsPromises.writeFile(storePath, JSON.stringify(normalizeStore(store), null, 2), { mode: 0o600 });
     if (typeof fsPromises.chmod === 'function') {
@@ -112,7 +169,7 @@ export const createRemoteClientAuthRuntime = ({ fsPromises, path, crypto, storeP
     }
   };
 
-  const publicClient = (client) => ({
+  const publicClient = (client: RemoteClientRecord) => ({
     id: client.id,
     label: client.label,
     createdAt: client.createdAt,
@@ -168,7 +225,7 @@ export const createRemoteClientAuthRuntime = ({ fsPromises, path, crypto, storeP
     deviceModel,
     appVersion,
     usesRelay,
-  } = {}) => {
+  }: CreateClientInput = {}) => {
     return withStoreMutation(async () => {
       const store = await readStore();
       const normalizedDedupeKey = normalizeOptionalString(dedupeKey);
@@ -180,7 +237,7 @@ export const createRemoteClientAuthRuntime = ({ fsPromises, path, crypto, storeP
       const existing = normalizedDedupeKey
         ? store.clients.find((entry) => entry.dedupeKey === normalizedDedupeKey)
         : null;
-      const client = {
+      const client: RemoteClientRecord = {
         id: generateId(),
         label: normalizeLabel(normalizeOptionalString(label) || existing?.label || fallbackLabel),
         tokenHash: hashToken(token),
@@ -215,7 +272,7 @@ export const createRemoteClientAuthRuntime = ({ fsPromises, path, crypto, storeP
     });
   };
 
-  const revokeClient = async (id) => {
+  const revokeClient = async (id: unknown) => {
     if (typeof id !== 'string' || id.trim().length === 0) {
       return { revoked: false };
     }
@@ -242,7 +299,7 @@ export const createRemoteClientAuthRuntime = ({ fsPromises, path, crypto, storeP
     });
   };
 
-  const authenticateBearerToken = async (token, req) => {
+  const authenticateBearerToken = async (token: unknown, req?: { headers?: IncomingHttpHeaders } | null) => {
     if (typeof token !== 'string' || !token.startsWith(TOKEN_PREFIX)) {
       return null;
     }
@@ -286,3 +343,5 @@ export const createRemoteClientAuthRuntime = ({ fsPromises, path, crypto, storeP
     revokeClient,
   };
 };
+
+export type RemoteClientAuthRuntime = ReturnType<typeof createRemoteClientAuthRuntime>;

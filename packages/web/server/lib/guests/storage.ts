@@ -3,15 +3,16 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { GUEST_STORAGE_KEY_MAX, GUEST_STORAGE_KEYS_MAX, GUEST_STORAGE_TOTAL_BYTES, GUEST_STORAGE_VALUE_BYTES } from '@openchamber/sdk';
+import type { GuestStorageRequest, JsonValue } from '@openchamber/sdk';
 
-const stores = new Map();
+const stores = new Map<string, Promise<unknown>>();
 const documentSchema = z.record(z.string().min(1).max(GUEST_STORAGE_KEY_MAX), z.json());
-const storagePath = (persistPath, id) => {
+const storagePath = (persistPath: string, id: string): string => {
   if (!/^[a-z][a-z0-9-]*$/.test(id)) throw new Error('Invalid extension identity');
   return path.join(path.dirname(persistPath), 'guest-storage', `${id}.json`);
 };
 
-const withStorageLock = async (file, operation) => {
+const withStorageLock = async <T>(file: string, operation: () => Promise<T>): Promise<T> => {
   const previous = stores.get(file) ?? Promise.resolve();
   const pending = previous.catch(() => {}).then(operation);
   stores.set(file, pending);
@@ -22,24 +23,24 @@ const withStorageLock = async (file, operation) => {
   }
 };
 
-export const removeGuestStorage = (persistPath, id) => {
+export const removeGuestStorage = (persistPath: string, id: string): Promise<void> => {
   const file = storagePath(persistPath, id);
   return withStorageLock(file, () => fs.rm(file, { force: true }));
 };
 
 /** Authorization is rechecked inside the same lock that serializes removal. */
-export const runGuestStorage = (persistPath, id, request, authorize) => {
+export const runGuestStorage = (persistPath: string, id: string, request: GuestStorageRequest, authorize: () => Promise<void>) => {
   const file = storagePath(persistPath, id);
   return withStorageLock(file, async () => {
     await authorize();
-    let entries = new Map();
+    let entries = new Map<string, JsonValue>();
     try {
       const stat = await fs.stat(file);
       if (stat.size > GUEST_STORAGE_TOTAL_BYTES) throw new Error('Storage exceeds its size limit');
       const parsed = documentSchema.parse(JSON.parse(await fs.readFile(file, 'utf8')));
       entries = new Map(Object.entries(parsed));
     } catch (error) {
-      if (error?.code !== 'ENOENT') throw error;
+      if ((error as NodeJS.ErrnoException | null)?.code !== 'ENOENT') throw error;
     }
     if (request.op === 'get') {
       return entries.has(request.key)

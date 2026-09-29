@@ -56,6 +56,40 @@
         "reason": "The JavaScript's own String(value) coerces an arbitrary JSON field from the network; the value is honestly unknown and changing the stringification would change behaviour."
       }
     ],
+    "packages/web/server/lib/client-auth/pairing.ts": [
+      {
+        "rule": "@typescript-eslint/no-unnecessary-boolean-literal-compare",
+        "text": "return store.sessions.some((session) => session.usesRelay === true && isPendingSession(session));",
+        "count": 1,
+        "reason": "The JavaScript's own === true / !== true comparison; usesRelay is typed boolean, so lint calls the comparison unnecessary. Kept for exact runtime parity: a value that is not exactly true (including one read back from an older store) must keep counting as false."
+      },
+      {
+        "rule": "@typescript-eslint/no-unnecessary-boolean-literal-compare",
+        "text": "usesRelay: session.usesRelay === true,",
+        "count": 2,
+        "reason": "The JavaScript's own === true / !== true comparison; usesRelay is typed boolean, so lint calls the comparison unnecessary. Kept for exact runtime parity: a value that is not exactly true (including one read back from an older store) must keep counting as false."
+      }
+    ],
+    "packages/web/server/lib/client-auth/remote-clients.ts": [
+      {
+        "rule": "@typescript-eslint/no-unnecessary-boolean-literal-compare",
+        "text": "const healUsesRelay = transport === 'relay' && client.usesRelay !== true;",
+        "count": 1,
+        "reason": "The JavaScript's own === true / !== true comparison; usesRelay is typed boolean, so lint calls the comparison unnecessary. Kept for exact runtime parity: a value that is not exactly true (including one read back from an older store) must keep counting as false."
+      },
+      {
+        "rule": "@typescript-eslint/no-unnecessary-boolean-literal-compare",
+        "text": "if (client.usesRelay !== true && client.lastTransport !== 'relay') return false;",
+        "count": 1,
+        "reason": "The JavaScript's own === true / !== true comparison; usesRelay is typed boolean, so lint calls the comparison unnecessary. Kept for exact runtime parity: a value that is not exactly true (including one read back from an older store) must keep counting as false."
+      },
+      {
+        "rule": "@typescript-eslint/no-unnecessary-boolean-literal-compare",
+        "text": "usesRelay: client.usesRelay === true,",
+        "count": 1,
+        "reason": "The JavaScript's own === true / !== true comparison; usesRelay is typed boolean, so lint calls the comparison unnecessary. Kept for exact runtime parity: a value that is not exactly true (including one read back from an older store) must keep counting as false."
+      }
+    ],
     "packages/web/server/lib/dev-servers/parse.ts": [
       {
         "rule": "@typescript-eslint/no-unnecessary-type-conversion",
@@ -126,12 +160,60 @@
         "reason": "The JavaScript wraps the resolved git check-ignore stdout in String() before splitting it; the promise is typed Promise<string> (it only ever resolves the accumulated stdout string or ''), so the rule wants String() removed, which would change the emitted code."
       }
     ],
+    "packages/web/server/lib/git/serial-refresh.ts": [
+      {
+        "rule": "@typescript-eslint/no-floating-promises",
+        "text": "promise .catch(() => undefined) .then(() => { if (runs.get(key) !== run) return; if (run.follower) { const follower = run.follower; start(key, follower.requests, follower.execute, follower); return; } runs.delete(key); });",
+        "count": 1,
+        "reason": "The JavaScript's own fire-and-forget call; the promise is deliberately not awaited (its rejection is routed to the deferred or swallowed by the chain), and adding void or await would change the emitted JavaScript."
+      },
+      {
+        "rule": "@typescript-eslint/no-floating-promises",
+        "text": "promise.then(deferred.resolve, deferred.reject);",
+        "count": 1,
+        "reason": "The JavaScript's own fire-and-forget call; the promise is deliberately not awaited (its rejection is routed to the deferred or swallowed by the chain), and adding void or await would change the emitted JavaScript."
+      },
+      {
+        "rule": "@typescript-eslint/no-floating-promises",
+        "text": "start(key, follower.requests, follower.execute, follower);",
+        "count": 1,
+        "reason": "The JavaScript's own fire-and-forget call; the promise is deliberately not awaited (its rejection is routed to the deferred or swallowed by the chain), and adding void or await would change the emitted JavaScript."
+      }
+    ],
+    "packages/web/server/lib/guests/auth-store.ts": [
+      {
+        "rule": "@typescript-eslint/no-dynamic-delete",
+        "text": "delete guests[guestId];",
+        "count": 2,
+        "reason": "The JavaScript's own delete of a computed key on a plain record; the fix would rebuild the object or use a Map, which changes the runtime."
+      },
+      {
+        "rule": "@typescript-eslint/no-dynamic-delete",
+        "text": "delete next[key];",
+        "count": 1,
+        "reason": "The JavaScript's own delete of a computed key on a plain record; the fix would rebuild the object or use a Map, which changes the runtime."
+      }
+    ],
     "packages/web/server/lib/guests/html-tokens.ts": [
       {
         "rule": "@typescript-eslint/no-unnecessary-template-expression",
         "text": "return `${first}`;",
         "count": 1,
         "reason": "The JavaScript stringifies the first query value with a template literal; rewriting it as `return first;` would change the emitted code (parity), so the template stays."
+      }
+    ],
+    "packages/web/server/lib/guests/persist.ts": [
+      {
+        "rule": "@typescript-eslint/no-dynamic-delete",
+        "text": "delete capabilityGrants[guestId];",
+        "count": 1,
+        "reason": "The JavaScript's own delete of a computed key on a plain record; the fix would rebuild the object or use a Map, which changes the runtime."
+      },
+      {
+        "rule": "@typescript-eslint/no-dynamic-delete",
+        "text": "delete capabilityScopes[guestId];",
+        "count": 2,
+        "reason": "The JavaScript's own delete of a computed key on a plain record; the fix would rebuild the object or use a Map, which changes the runtime."
       }
     ],
     "packages/web/server/lib/magic-prompts/runtime.ts": [
@@ -216,6 +298,22 @@
         "reason": "The JavaScript rethrows the caught value as it is; wrapping it in an Error would change what callers receive."
       }
     ],
+    "packages/web/server/lib/project-context/runtime.ts": [
+      {
+        "rule": "@typescript-eslint/no-unused-vars",
+        "text": "const { shared: _movedFlag, ...publicLink } = link;",
+        "count": 1,
+        "reason": "The JavaScript's own rest-destructuring that removes a key from a copy; the discarded binding is the point of the expression, and dropping it would change the emitted JavaScript."
+      }
+    ],
+    "packages/web/server/lib/projects/project-setup.ts": [
+      {
+        "rule": "@typescript-eslint/no-unused-vars",
+        "text": "const { icon: _emptyIcon, ...rest } = action;",
+        "count": 1,
+        "reason": "The JavaScript's own rest-destructuring that removes a key from a copy; the discarded binding is the point of the expression, and dropping it would change the emitted JavaScript."
+      }
+    ],
     "packages/web/server/lib/session-goal/objectives.ts": [
       {
         "rule": "@typescript-eslint/no-base-to-string",
@@ -250,6 +348,56 @@
         "text": "const normalizedRepo = String(repo || '').trim().replace(/\\.git$/i, '');",
         "count": 1,
         "reason": "Typing repo as string | null | undefined makes the JavaScript's own String() coercion look unnecessary; removing it would change the emitted code."
+      }
+    ],
+    "packages/web/server/lib/spaces/gatekeeper-program.test.ts": [
+      {
+        "rule": "@typescript-eslint/no-floating-promises",
+        "text": "connect('CONNECT one.example.test:443 HTTP/1.1', { keepOpen: true, wait: 500 });",
+        "count": 1,
+        "reason": "The JavaScript's own fire-and-forget call; the promise is deliberately not awaited (its rejection is routed to the deferred or swallowed by the chain), and adding void or await would change the emitted JavaScript."
+      },
+      {
+        "rule": "@typescript-eslint/restrict-plus-operands",
+        "text": "answer += chunk;",
+        "count": 1,
+        "reason": "The JavaScript's own string += chunk on a stream 'data' Buffer, which relies on Buffer's implicit toString; making it explicit would change the emitted JavaScript."
+      },
+      {
+        "rule": "@typescript-eslint/restrict-plus-operands",
+        "text": "answer.on('data', (chunk: Buffer) => { text += chunk; });",
+        "count": 3,
+        "reason": "The JavaScript's own string += chunk on a stream 'data' Buffer, which relies on Buffer's implicit toString; making it explicit would change the emitted JavaScript."
+      },
+      {
+        "rule": "@typescript-eslint/restrict-plus-operands",
+        "text": "child.stderr.on('data', (chunk: Buffer) => { output += chunk; });",
+        "count": 1,
+        "reason": "The JavaScript's own string += chunk on a stream 'data' Buffer, which relies on Buffer's implicit toString; making it explicit would change the emitted JavaScript."
+      },
+      {
+        "rule": "@typescript-eslint/restrict-plus-operands",
+        "text": "child.stdout.on('data', (chunk: Buffer) => { output += chunk; if (output.includes('gatekeeper: corridor')) finish({ exited: null }); });",
+        "count": 1,
+        "reason": "The JavaScript's own string += chunk on a stream 'data' Buffer, which relies on Buffer's implicit toString; making it explicit would change the emitted JavaScript."
+      },
+      {
+        "rule": "@typescript-eslint/restrict-plus-operands",
+        "text": "if (byte) seen += byte;",
+        "count": 1,
+        "reason": "The JavaScript's own string += chunk on a stream 'data' Buffer, which relies on Buffer's implicit toString; making it explicit would change the emitted JavaScript."
+      },
+      {
+        "rule": "@typescript-eslint/restrict-plus-operands",
+        "text": "socket.on('data', (chunk: Buffer) => { answer += chunk; });",
+        "count": 1,
+        "reason": "The JavaScript's own string += chunk on a stream 'data' Buffer, which relies on Buffer's implicit toString; making it explicit would change the emitted JavaScript."
+      },
+      {
+        "rule": "@typescript-eslint/restrict-plus-operands",
+        "text": "socket.on('data', (chunk: Buffer) => { text += chunk; });",
+        "count": 1,
+        "reason": "The JavaScript's own string += chunk on a stream 'data' Buffer, which relies on Buffer's implicit toString; making it explicit would change the emitted JavaScript."
       }
     ],
     "packages/web/server/lib/spaces/places/registry.ts": [

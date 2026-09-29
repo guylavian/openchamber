@@ -9,10 +9,12 @@ const MAX_UNCOMPRESSED = 40 * 1024 * 1024;
 const COMPRESSION_STORE = 0;
 const COMPRESSION_DEFLATE = 8;
 
-const readU16 = (buffer, offset) => buffer.readUInt16LE(offset);
-const readU32 = (buffer, offset) => buffer.readUInt32LE(offset);
+export type ExtractZipResult = { ok: true } | { ok: false; code: 'extract-failed' };
 
-const isSafeZipName = (name) => {
+const readU16 = (buffer: Buffer, offset: number): number => buffer.readUInt16LE(offset);
+const readU32 = (buffer: Buffer, offset: number): number => buffer.readUInt32LE(offset);
+
+const isSafeZipName = (name: string): boolean => {
   if (!name || name.includes('\0') || name.includes('\\')) {
     return false;
   }
@@ -24,7 +26,7 @@ const isSafeZipName = (name) => {
 };
 
 /** Extract a zip buffer into dest. Rejects traversal, zip64, encryption, and data descriptors. */
-export const extractZipBuffer = async (buffer, destRoot) => {
+export const extractZipBuffer = async (buffer: unknown, destRoot: string): Promise<ExtractZipResult> => {
   if (!Buffer.isBuffer(buffer) || buffer.length < 22) {
     return { ok: false, code: 'extract-failed' };
   }
@@ -80,7 +82,7 @@ export const extractZipBuffer = async (buffer, destRoot) => {
     if (files > MAX_FILES || uncompressedTotal > MAX_UNCOMPRESSED) {
       return { ok: false, code: 'extract-failed' };
     }
-    let data;
+    let data: Buffer;
     try {
       const payload = buffer.subarray(dataStart, dataEnd);
       // The declared size is already within the archive budget; capping the
@@ -105,7 +107,7 @@ export const extractZipBuffer = async (buffer, destRoot) => {
   return { ok: false, code: 'extract-failed' };
 };
 
-const exists = async (filePath) => {
+const exists = async (filePath: string): Promise<boolean> => {
   try {
     await fs.stat(filePath);
     return true;
@@ -115,7 +117,7 @@ const exists = async (filePath) => {
 };
 
 /** If the extract has one root folder and package.json is inside it, use that folder. */
-export const unwrapGuestRoot = async (extracted) => {
+export const unwrapGuestRoot = async (extracted: string): Promise<string> => {
   if (await exists(path.join(extracted, 'package.json'))) {
     return extracted;
   }
@@ -123,7 +125,7 @@ export const unwrapGuestRoot = async (extracted) => {
   if (names.length !== 1) {
     return extracted;
   }
-  const inner = path.join(extracted, names[0]);
+  const inner = path.join(extracted, names[0]!);
   try {
     const stat = await fs.stat(inner);
     if (stat.isDirectory() && await exists(path.join(inner, 'package.json'))) {

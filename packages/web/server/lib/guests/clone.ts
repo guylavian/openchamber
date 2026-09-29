@@ -3,6 +3,39 @@ import dns from 'node:dns/promises';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
+import type { ChildProcess } from 'node:child_process';
+
+export type HostLookup = (hostname: string, options: { all: true }) => Promise<{ address: string; family?: number }[]>;
+
+export interface PublicAddress {
+  address: string;
+  family: 4 | 6;
+}
+
+export type RunGitResult = { ok: true; stdout: string } | { ok: false };
+
+export interface RunGitOptions {
+  gitBinary?: string;
+  cwd?: string | undefined;
+  timeoutMs?: number | undefined;
+  capture?: boolean | undefined;
+  env?: Record<string, string> | undefined;
+}
+
+export interface GuestGitNetwork {
+  args: string[];
+  env?: Record<string, string>;
+}
+
+export interface CloneGitRepositoryOptions {
+  gitBinary?: string;
+  timeoutMs?: number;
+  ref?: string | undefined;
+  lookup?: HostLookup | undefined;
+  gitIdentityId?: string | undefined;
+}
+
+export type CloneGitRepositoryResult = { ok: true } | { ok: false; code: 'clone-failed' };
 
 const CLONE_TIMEOUT_MS = 60_000;
 
@@ -16,7 +49,7 @@ const PRIVATE_IPV4 = [
  * loopback or LAN address would turn "install from URL" into a request against
  * OpenChamber's own machine or network.
  */
-export const isPublicHostname = (hostname) => {
+export const isPublicHostname = (hostname: string): boolean => {
   const host = hostname.replace(/^\[|\]$/g, '').toLowerCase();
   if (!host || host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || host.endsWith('.internal')) {
     return false;
@@ -47,7 +80,7 @@ export const isPublicHostname = (hostname) => {
  * @param {(hostname: string, options: { all: true }) => Promise<Array<{ address: string, family?: number }>>} [lookup]
  * @returns {Promise<Array<{ address: string, family: 4 | 6 }> | null>}
  */
-export const publicAddressesOf = async (hostname, lookup = (name, options) => dns.lookup(name, options)) => {
+export const publicAddressesOf = async (hostname: string, lookup: HostLookup = (name, options) => dns.lookup(name, options)): Promise<PublicAddress[] | null> => {
   const host = hostname.replace(/^\[|\]$/g, '');
   if (!isPublicHostname(host)) {
     return null;
@@ -76,7 +109,7 @@ export const publicAddressesOf = async (hostname, lookup = (name, options) => dn
  * @param {Parameters<typeof publicAddressesOf>[1]} [lookup]
  * @returns {Promise<string[] | null>}
  */
-export const gitNetworkArgs = async (url, lookup) => {
+export const gitNetworkArgs = async (url: string, lookup?: HostLookup): Promise<string[] | null> => {
   const hostname = httpsHostname(url);
   if (hostname === null) {
     return [];
@@ -92,7 +125,7 @@ export const gitNetworkArgs = async (url, lookup) => {
   ];
 };
 
-const isHttpsGitUrl = (value) => {
+const isHttpsGitUrl = (value: string): boolean => {
   try {
     const parsed = new URL(value);
     return parsed.protocol === 'https:' && parsed.username === '' && parsed.password === '' && isPublicHostname(parsed.hostname);
@@ -102,12 +135,12 @@ const isHttpsGitUrl = (value) => {
 };
 
 /** SSH URLs and scp-style addresses, with no shell syntax in their components. */
-const parseSshGitUrl = (value) => {
+const parseSshGitUrl = (value: string): { hostname: string; port?: string } | null => {
   if (/[\s\\\0]/.test(value)) return null;
-  let hostname;
-  let username;
-  let repository;
-  let port;
+  let hostname: string;
+  let username: string;
+  let repository: string;
+  let port: string | undefined;
   if (value.slice(0, 6).toLowerCase() === 'ssh://') {
     try {
       const url = new URL(value);
@@ -121,7 +154,7 @@ const parseSshGitUrl = (value) => {
   } else {
     const match = /^(?:([A-Za-z0-9_][A-Za-z0-9_.-]*)@)?([A-Za-z0-9][A-Za-z0-9.-]*):(.+)$/.exec(value);
     if (!match) return null;
-    [, username = '', hostname, repository] = match;
+    [, username = '', hostname, repository] = match as RegExpExecArray & [string, string | undefined, string, string];
   }
   if (!/^[A-Za-z0-9.-]+$/.test(hostname) && !net.isIP(hostname.replace(/^\[|\]$/g, ''))) return null;
   if (!isPublicHostname(hostname) || (username && !/^[A-Za-z0-9_][A-Za-z0-9_.-]*$/.test(username))) return null;
@@ -129,7 +162,7 @@ const parseSshGitUrl = (value) => {
   return port ? { hostname, port } : { hostname };
 };
 
-export const isHttpsZipUrl = (value) => {
+export const isHttpsZipUrl = (value: string): boolean => {
   if (!isHttpsGitUrl(value)) {
     return false;
   }
@@ -145,7 +178,7 @@ export const isHttpsZipUrl = (value) => {
 const GIT_REF_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$/;
 
 /** @param {string} value */
-export const isGitRef = (value) => (
+export const isGitRef = (value: string): boolean => (
   GIT_REF_PATTERN.test(value)
   && !value.includes('..')
   && !value.endsWith('/')
@@ -160,7 +193,7 @@ export const isGitRef = (value) => (
  * `null` (the install route answers `invalid-url`).
  * @param {string} value
  */
-export const parseGitInstallUrl = (value) => {
+export const parseGitInstallUrl = (value: string): { url: string; ref?: string } | null => {
   const hashAt = value.indexOf('#');
   const rawUrl = hashAt === -1 ? value : value.slice(0, hashAt);
   const url = rawUrl.replace(/^ssh:\/\//i, 'ssh://');
@@ -180,9 +213,9 @@ export const parseGitInstallUrl = (value) => {
  * timeout (the child is killed). Never rejects. `stdout` is captured only
  * when `capture` is set so a clone's progress is not buffered.
  */
-export const runGit = (args, { gitBinary = 'git', cwd, timeoutMs = CLONE_TIMEOUT_MS, capture = false, env = {} } = {}) => (
-  new Promise((resolve) => {
-    let child;
+export const runGit = (args: string[], { gitBinary = 'git', cwd, timeoutMs = CLONE_TIMEOUT_MS, capture = false, env = {} }: RunGitOptions = {}): Promise<RunGitResult> => (
+  new Promise<RunGitResult>((resolve) => {
+    let child: ChildProcess;
     try {
       child = spawn(
         gitBinary,
@@ -204,12 +237,12 @@ export const runGit = (args, { gitBinary = 'git', cwd, timeoutMs = CLONE_TIMEOUT
       return;
     }
     /** @type {Buffer[]} */
-    const chunks = [];
+    const chunks: Buffer[] = [];
     if (capture && child.stdout) {
-      child.stdout.on('data', (chunk) => chunks.push(chunk));
+      child.stdout.on('data', (chunk: Buffer) => chunks.push(chunk));
     }
     let settled = false;
-    const finish = (result) => {
+    const finish = (result: RunGitResult) => {
       if (settled) {
         return;
       }
@@ -238,7 +271,7 @@ export const runGit = (args, { gitBinary = 'git', cwd, timeoutMs = CLONE_TIMEOUT
  * works the same way as of a branch.
  */
 /** @returns {string | null} the hostname when `value` is an https URL */
-const httpsHostname = (value) => {
+const httpsHostname = (value: string): string | null => {
   try {
     const parsed = new URL(value);
     return parsed.protocol === 'https:' ? parsed.hostname : null;
@@ -247,14 +280,14 @@ const httpsHostname = (value) => {
   }
 };
 
-const quoteSshPath = (value) => {
+const quoteSshPath = (value: string): string => {
   const expanded = value.startsWith('~/') ? path.join(os.homedir(), value.slice(2)) : value;
   const normalized = process.platform === 'win32' ? expanded.replace(/\\/g, '/') : expanded;
   return `'${normalized.replace(/'/g, "'\\''")}'`;
 };
 
 /** Resolve identity on the server for every clone/fetch, so key rotation takes effect. */
-export const prepareGuestGitNetwork = async (source, { gitIdentityId, lookup } = {}) => {
+export const prepareGuestGitNetwork = async (source: string, { gitIdentityId, lookup }: { gitIdentityId?: string | undefined; lookup?: HostLookup | undefined } = {}): Promise<GuestGitNetwork | null> => {
   let sshCommand = process.env.GIT_SSH_COMMAND?.trim() || '';
   if (gitIdentityId && gitIdentityId !== 'global') {
     const { getProfile } = await import('../git/identity-storage.js');
@@ -268,10 +301,10 @@ export const prepareGuestGitNetwork = async (source, { gitIdentityId, lookup } =
     if (!addresses) return null;
     if (!sshCommand) {
       const { getGlobalIdentity } = await import('../git/index.js');
-      const globalIdentity = await getGlobalIdentity();
+      const globalIdentity: { sshCommand: string | null } = await getGlobalIdentity();
       sshCommand = globalIdentity.sshCommand || (process.env.GIT_SSH ? quoteSshPath(process.env.GIT_SSH) : 'ssh');
     }
-    sshCommand += ` -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o Hostname=${addresses[0].address} -o HostKeyAlias=${ssh.hostname.replace(/^\[|\]$/g, '')} -o ProxyCommand=none -o ProxyJump=none`;
+    sshCommand += ` -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o Hostname=${addresses[0]!.address} -o HostKeyAlias=${ssh.hostname.replace(/^\[|\]$/g, '')} -o ProxyCommand=none -o ProxyJump=none`;
     return { args: [], env: { GIT_SSH_COMMAND: sshCommand, GIT_SSH_VARIANT: 'ssh' } };
   }
   const args = await gitNetworkArgs(source, lookup);
@@ -279,7 +312,7 @@ export const prepareGuestGitNetwork = async (source, { gitIdentityId, lookup } =
   return sshCommand ? { args, env: { GIT_SSH_COMMAND: sshCommand } } : { args };
 };
 
-export const cloneGitRepository = async (source, dest, { gitBinary = 'git', timeoutMs = CLONE_TIMEOUT_MS, ref, lookup, gitIdentityId } = {}) => {
+export const cloneGitRepository = async (source: string, dest: string, { gitBinary = 'git', timeoutMs = CLONE_TIMEOUT_MS, ref, lookup, gitIdentityId }: CloneGitRepositoryOptions = {}): Promise<CloneGitRepositoryResult> => {
   if (ref !== undefined && !isGitRef(ref)) {
     return { ok: false, code: 'clone-failed' };
   }

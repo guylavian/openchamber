@@ -15,6 +15,52 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import type { ChildProcessByStdio } from 'node:child_process';
+import type { AddressInfo } from 'node:net';
+import type { Readable } from 'node:stream';
+
+interface Ports {
+  corridor: number;
+  window: number;
+  control: number;
+}
+
+interface JournalRecord {
+  at: string;
+  listener: string;
+  host: string;
+  port: number;
+  decision: string;
+}
+
+interface Journal {
+  records: JournalRecord[];
+  dropped: number;
+  since: string;
+}
+
+interface Answer {
+  status: number | undefined;
+  body: string;
+}
+
+interface Trackable {
+  on: (event: 'close', listener: () => void) => unknown;
+  destroy?: () => unknown;
+  abort?: () => void;
+}
+
+type Gatekeeper = ChildProcessByStdio<null, Readable, Readable>;
+
+interface GatekeeperRules {
+  chooseAddress: <T extends { family: number }>(addresses: T[]) => T | undefined;
+  isBlockedAddress: (text: string) => boolean;
+  joinSockets: (clientSocket: net.Socket, upstream: net.Socket, done: () => void) => void;
+  refuseTarget: (host: string, port: number) => string | null;
+  setNetwork: (body: { mode: string; domains: string[] }) => unknown;
+  splitTarget: (text: string) => { host: string; port: number } | null;
+  walksOutOfGrant: (rest: string) => boolean;
+}
 
 const PROGRAM = fileURLToPath(new URL('./gatekeeper-program.cjs', import.meta.url));
 const SECRET = 'sk-the-real-key-the-space-never-sees';
@@ -51,30 +97,30 @@ const CAPS = { corridor: 20, window: 4, control: 4 };
 const ownAddress = () => Object.values(os.networkInterfaces())
   .flat()
   .filter(Boolean)
-  .map((entry) => entry.address)
+  .map((entry) => entry!.address)
   .find((address) => net.isIPv4(address) && !address.startsWith('127.')) ?? '127.0.0.1';
 
-const freePort = () => new Promise((resolve) => {
+const freePort = () => new Promise<number>((resolve) => {
   const server = net.createServer();
   server.listen(0, '127.0.0.1', () => {
-    const { port } = server.address();
+    const { port } = server.address() as AddressInfo;
     server.close(() => resolve(port));
   });
 });
 
 describe('gatekeeper program', () => {
-  let child;
-  let ports;
-  let upstream;
-  let upstreamPort;
-  let seen = [];
+  let child: Gatekeeper;
+  let ports: Ports;
+  let upstream: http.Server;
+  let upstreamPort: number;
+  let seen: { url: string | undefined; headers: http.IncomingHttpHeaders }[] = [];
   let childOutput = '';
 
   // Every socket and every request this file opens, so that a test that throws still leaves the
   // worker with nothing running. A leaked socket is how a test file takes a vitest worker down,
   // and this file opens hundreds of them on purpose.
-  const opened = new Set();
-  const track = (thing) => {
+  const opened = new Set<Trackable>();
+  const track = <T extends Trackable>(thing: T): T => {
     opened.add(thing);
     thing.on('close', () => opened.delete(thing));
     return thing;
@@ -100,10 +146,10 @@ describe('gatekeeper program', () => {
    * One request to the control channel. It never rejects: a rejection that lands after its test
    * has finished is an unhandled rejection, which ends the worker rather than the test.
    */
-  const control = (method, path, body) => new Promise((resolve) => {
+  const control = (method: string, path: string, body?: unknown) => new Promise<Answer>((resolve) => {
     const request = track(http.request({ host: '127.0.0.1', port: ports.control, method, path }, (answer) => {
       let text = '';
-      answer.on('data', (chunk) => { text += chunk; });
+      answer.on('data', (chunk: Buffer) => { text += chunk; });
       answer.on('end', () => resolve({ status: answer.statusCode, body: text }));
       answer.on('error', () => resolve({ status: 0, body: '' }));
     }));
@@ -111,7 +157,7 @@ describe('gatekeeper program', () => {
     request.end(body === undefined ? undefined : JSON.stringify(body));
   });
 
-  const journal = async () => JSON.parse((await control('GET', '/journal')).body);
+  const journal = async (): Promise<Journal> => JSON.parse((await control('GET', '/journal')).body) as Journal;
 
   /**
    * Where the journal stands now, counted in records ever written: what the ring holds plus what
@@ -134,7 +180,7 @@ describe('gatekeeper program', () => {
    * and it has to: `127.0.0.1`, `example.com` and `blocked.test` are each decided about many
    * times in this file, and an assertion that reads the wrong one passes for the wrong reason.
    */
-  const recordsSince = async (mark) => {
+  const recordsSince = async (mark: number): Promise<JournalRecord[]> => {
     const { records, dropped } = await journal();
     // The ring is in order, so the records written since the mark are the last of it. More than
     // the ring holds and this is every record there is, which is the most that can be said.
@@ -143,41 +189,41 @@ describe('gatekeeper program', () => {
   };
 
   /** Every note of this kind written since the mark, whatever listener made it. */
-  const notesSince = async (decision, mark) => (await recordsSince(mark)).filter((entry) => entry.decision === decision);
+  const notesSince = async (decision: string, mark: number): Promise<JournalRecord[]> => (await recordsSince(mark)).filter((entry) => entry.decision === decision);
 
   /**
    * A note of this kind from this listener, written since the mark. Waited for, like every other
    * record this file reads: a flood is noted when the program drops a connection, which is not
    * the moment the client's socket reported itself connected.
    */
-  const noteFor = async (listener, decision, mark) => {
+  const noteFor = async (listener: string, decision: string, mark: number): Promise<JournalRecord> => {
     for (let attempt = 0; attempt < 120; attempt += 1) {
       const found = (await notesSince(decision, mark)).filter((entry) => entry.listener === listener);
-      if (found.length > 0) return found.at(-1);
+      if (found.length > 0) return found.at(-1)!;
       await new Promise((resolve) => { setTimeout(resolve, 50); });
     }
     throw new Error(`the gatekeeper never noted ${decision} on the ${listener} after its record ${mark}`);
   };
 
-  const decisionFor = async (host, mark = 0) => {
+  const decisionFor = async (host: string, mark = 0): Promise<JournalRecord> => {
     for (let attempt = 0; attempt < 120; attempt += 1) {
       const fresh = (await recordsSince(mark)).filter((entry) => entry.host === host);
-      if (fresh.length > 0) return fresh.at(-1);
+      if (fresh.length > 0) return fresh.at(-1)!;
       await new Promise((resolve) => { setTimeout(resolve, 50); });
     }
     throw new Error(`the gatekeeper never decided anything about ${host} after its record ${mark}`);
   };
 
   /** A raw CONNECT, as any client in the space would send it. Resolves the status line. */
-  const connect = (line, { keepOpen = false, wait = 5_000 } = {}) => new Promise((resolve) => {
+  const connect = (line: string, { keepOpen = false, wait = 5_000 }: { keepOpen?: boolean; wait?: number } = {}) => new Promise<{ status: string | undefined; socket: net.Socket }>((resolve) => {
     const socket = track(net.connect({ host: '127.0.0.1', port: ports.corridor }));
     let answer = '';
-    const done = (text) => {
+    const done = (text: string | undefined) => {
       if (!keepOpen) socket.destroy();
       resolve({ status: text, socket });
     };
     socket.on('connect', () => socket.write(`${line}\r\n\r\n`));
-    socket.on('data', (chunk) => {
+    socket.on('data', (chunk: Buffer) => {
       answer += chunk;
       if (answer.includes('\r\n')) done(answer.split('\r\n')[0]);
     });
@@ -187,22 +233,22 @@ describe('gatekeeper program', () => {
     setTimeout(() => done('no answer'), wait);
   });
 
-  const tunnelTo = (target) => connect(`CONNECT ${target} HTTP/1.1`);
+  const tunnelTo = (target: string) => connect(`CONNECT ${target} HTTP/1.1`);
 
   /** The whole answer to a CONNECT the corridor refuses, headers included. */
-  const connectFully = (line) => new Promise((resolve) => {
+  const connectFully = (line: string) => new Promise<string>((resolve) => {
     const socket = track(net.connect({ host: '127.0.0.1', port: ports.corridor }));
     let answer = '';
     const done = () => { socket.destroy(); resolve(answer); };
     socket.on('connect', () => socket.write(`${line}\r\n\r\n`));
-    socket.on('data', (chunk) => { answer += chunk; });
+    socket.on('data', (chunk: Buffer) => { answer += chunk; });
     socket.on('error', done);
     socket.on('close', done);
     setTimeout(done, 5_000);
   });
 
   /** A plain proxy request, the form the corridor refuses. Its target rides in the request line. */
-  const throughPlainProxy = (url) => new Promise((resolve) => {
+  const throughPlainProxy = (url: string) => new Promise<{ status: number | undefined }>((resolve) => {
     const request = track(http.request({ host: '127.0.0.1', port: ports.corridor, method: 'GET', path: url }, (answer) => {
       answer.resume();
       answer.on('end', () => resolve({ status: answer.statusCode }));
@@ -213,10 +259,10 @@ describe('gatekeeper program', () => {
   });
 
   /** One request through the window, as a tool in the space would send it. */
-  const throughWindow = (path, headers = {}) => new Promise((resolve) => {
+  const throughWindow = (path: string, headers: http.OutgoingHttpHeaders = {}) => new Promise<Answer>((resolve) => {
     const request = track(http.request({ host: '127.0.0.1', port: ports.window, path, headers }, (answer) => {
       let text = '';
-      answer.on('data', (chunk) => { text += chunk; });
+      answer.on('data', (chunk: Buffer) => { text += chunk; });
       answer.on('end', () => resolve({ status: answer.statusCode, body: text }));
       answer.on('error', () => resolve({ status: 0, body: '' }));
     }));
@@ -233,18 +279,18 @@ describe('gatekeeper program', () => {
       response.end(JSON.stringify({ upstreamSaw: request.url }));
     });
     upstreamPort = await freePort();
-    await new Promise((resolve) => { upstream.listen(upstreamPort, '127.0.0.1', resolve); });
+    await new Promise<void>((resolve) => { upstream.listen(upstreamPort, '127.0.0.1', resolve); });
 
     // The last argument is the window's deadline: 1.5 seconds here so a test can watch it
     // pass, 300000 in the container command, which the hardening test asserts.
     child = spawn(process.execPath, [PROGRAM, '127.0.0.1', String(ports.corridor), String(ports.window), String(ports.control), '1500', String(CAPS.corridor), String(CAPS.window), String(CAPS.control)], { stdio: ['ignore', 'pipe', 'pipe'] });
     // Both pipes are read, always. A full stderr pipe blocks the child, and the program writes
     // there whenever it keeps running after an error, which the flood tests provoke.
-    const keep = (chunk) => { childOutput = `${childOutput}${chunk}`.slice(-4_000); };
+    const keep = (chunk: Buffer) => { childOutput = `${childOutput}${chunk}`.slice(-4_000); };
     child.stdout.on('data', keep);
     child.stderr.on('data', keep);
-    await new Promise((resolve, reject) => {
-      const ready = (chunk) => { if (String(chunk).includes('gatekeeper:')) resolve(); };
+    await new Promise<void>((resolve, reject) => {
+      const ready = (chunk: Buffer) => { if (String(chunk).includes('gatekeeper:')) resolve(); };
       child.stdout.on('data', ready);
       child.once('exit', (code) => reject(new Error(`the gatekeeper ended with ${code}: ${childOutput}`)));
       setTimeout(() => reject(new Error(`the gatekeeper did not start: ${childOutput}`)), 10_000);
@@ -261,7 +307,7 @@ describe('gatekeeper program', () => {
     // A server with a connection still on it does not close, and a hook that never returns is
     // the other way a worker dies. So the connections go first, and the wait has an end.
     upstream?.closeAllConnections?.();
-    await new Promise((resolve) => {
+    await new Promise<void>((resolve) => {
       const done = setTimeout(resolve, 5_000);
       upstream?.close(() => { clearTimeout(done); resolve(); });
     });
@@ -275,7 +321,7 @@ describe('gatekeeper program', () => {
     it('resolves a name itself, and refuses it when nothing comes back', async () => {
       // `.test` never resolves. The list rules are covered directly, further down.
       expect((await tunnelTo('blocked.test:443')).status).toMatch(/403/);
-      expect(await decisionFor('blocked.test')).toMatchObject({ listener: 'corridor', port: 443, decision: expect.stringMatching(/^deny:unresolved:/) });
+      expect(await decisionFor('blocked.test')).toMatchObject<Record<string, unknown>>({ listener: 'corridor', port: 443, decision: expect.stringMatching(/^deny:unresolved:/) });
     });
 
     it('refuses a name that is not on the list, with no suffix or wildcard matching', async () => {
@@ -335,7 +381,7 @@ describe('gatekeeper program', () => {
       // resolver that answers, so it lives in the escape suite with `localtest.me`.
       const at = await journalMark();
       await tunnelTo('blocked.test:443');
-      expect(await decisionFor('blocked.test', at)).toMatchObject({ decision: expect.stringMatching(/^deny:unresolved:/) });
+      expect(await decisionFor('blocked.test', at)).toMatchObject<Record<string, unknown>>({ decision: expect.stringMatching(/^deny:unresolved:/) });
     });
 
     it('allows port 443 only here too, so a space can attack nothing else from the user\'s address', async () => {
@@ -343,7 +389,7 @@ describe('gatekeeper program', () => {
       // have passed. Every other port is refused before any of that.
       const at = await journalMark();
       await tunnelTo('blocked.test:443');
-      expect(await decisionFor('blocked.test', at)).toMatchObject({ port: 443, decision: expect.stringMatching(/^deny:unresolved:/) });
+      expect(await decisionFor('blocked.test', at)).toMatchObject<Record<string, unknown>>({ port: 443, decision: expect.stringMatching(/^deny:unresolved:/) });
 
       for (const port of [80, 22, 8443, 9418]) {
         const when = await journalMark();
@@ -392,7 +438,7 @@ describe('gatekeeper program', () => {
       const answer = await tunnelTo(`${host}:443`);
       expect(answer.status).toMatch(/400|socket error|closed/);
 
-      const { refuseTarget, setNetwork } = createRequire(import.meta.url)(PROGRAM);
+      const { refuseTarget, setNetwork } = createRequire(import.meta.url)(PROGRAM) as GatekeeperRules;
       setNetwork({ mode: 'open', domains: [] });
       expect(refuseTarget(host, 443)).toBe('deny:not-a-name');
     });
@@ -485,10 +531,10 @@ describe('gatekeeper program', () => {
       // 16 refused clients the program waits on at once, with room to spare and no more sockets
       // than that needs: this loop was the most expensive thing in the file.
       const attempts = CAPS.corridor * 3;
-      const kept = [];
-      const outcomes = [];
+      const kept: net.Socket[] = [];
+      const outcomes: string[] = [];
       for (let attempt = 0; attempt < attempts; attempt += 1) {
-        outcomes.push(await new Promise((resolve) => {
+        outcomes.push(await new Promise<string>((resolve) => {
           // `allowHalfOpen`, so reading the refusal does not make this client close by itself.
           const socket = track(net.connect({ host: '127.0.0.1', port: ports.corridor, allowHalfOpen: true }));
           kept.push(socket);
@@ -516,7 +562,7 @@ describe('gatekeeper program', () => {
       const socket = track(net.connect({ host: '127.0.0.1', port: ports.corridor, allowHalfOpen: true }));
       let text = '';
       socket.on('error', () => {});
-      socket.on('data', (chunk) => { text += chunk; });
+      socket.on('data', (chunk: Buffer) => { text += chunk; });
       await new Promise((resolve) => { socket.on('connect', resolve); });
       socket.write('CONNECT 203.0.113.7:443 HTTP/1.1\r\n\r\n');
       socket.write('x'.repeat(4 * 1024 * 1024));
@@ -541,7 +587,7 @@ describe('gatekeeper program', () => {
       expect(socket.destroyed).toBe(true);
 
       // A client that takes its answer a byte at a time still gets all of it.
-      const slow = await new Promise((resolve) => {
+      const slow = await new Promise<string>((resolve) => {
         const reader = track(net.connect({ host: '127.0.0.1', port: ports.corridor, allowHalfOpen: true }));
         let seen = '';
         reader.on('error', () => resolve(seen));
@@ -549,7 +595,7 @@ describe('gatekeeper program', () => {
           reader.pause();
           reader.write('CONNECT 203.0.113.7:443 HTTP/1.1\r\n\r\n');
           const timer = setInterval(() => {
-            const byte = reader.read(1);
+            const byte = reader.read(1) as Buffer | null;
             if (byte) seen += byte;
             if (seen.includes('\r\n\r\n')) { clearInterval(timer); resolve(seen); }
           }, 10);
@@ -578,23 +624,23 @@ describe('gatekeeper program', () => {
     // test costs five sockets instead of forty; the first one keeps a corridor cap above the 16
     // refused clients the program waits on at once, which is what the test above it needs.
     describe('at a cap it cannot exceed', () => {
-      let small;
-      let smallPorts;
+      let small: Gatekeeper;
+      let smallPorts: Ports;
 
       /** One request, on a connection of its own, closed by its answer. Never keeps a slot. */
-      const ask = (port, path) => new Promise((resolve) => {
+      const ask = (port: number, path: string) => new Promise<Answer>((resolve) => {
         const request = track(http.request({ host: '127.0.0.1', port, path, agent: false }, (answer) => {
           let text = '';
-          answer.on('data', (chunk) => { text += chunk; });
+          answer.on('data', (chunk: Buffer) => { text += chunk; });
           answer.on('end', () => resolve({ status: answer.statusCode, body: text }));
         }));
         request.on('error', () => resolve({ status: 0, body: '' }));
         request.end();
       });
 
-      const smallNotes = async (listener) => {
+      const smallNotes = async (listener: string): Promise<JournalRecord[]> => {
         const body = (await ask(smallPorts.control, '/journal')).body || '{"records":[]}';
-        return JSON.parse(body).records.filter((entry) => entry.decision === 'deny:too-many-connections' && entry.listener === listener);
+        return (JSON.parse(body) as Journal).records.filter((entry) => entry.decision === 'deny:too-many-connections' && entry.listener === listener);
       };
 
       /**
@@ -602,7 +648,7 @@ describe('gatekeeper program', () => {
        * kept. What comes back does not matter, only that it came: nothing is answered on a
        * connection that was never accepted.
        */
-      const accepted = (port, line) => new Promise((resolve, reject) => {
+      const accepted = (port: number, line: string) => new Promise<net.Socket>((resolve, reject) => {
         // `allowHalfOpen`, or the corridor's rungs do not hold: a refusal ends the gatekeeper's
         // side of the socket, and a client without it ends its own side in answer and the
         // connection is gone. Measured: two refusals left nothing behind and nothing was dropped.
@@ -618,7 +664,7 @@ describe('gatekeeper program', () => {
        * connections this test had already watched being answered. The close is the observable,
        * and the note is written before it, so nothing here waits on a schedule.
        */
-      const dropped = (port) => new Promise((resolve, reject) => {
+      const dropped = (port: number) => new Promise<string>((resolve, reject) => {
         const socket = track(net.connect({ host: '127.0.0.1', port }));
         let answered = false;
         socket.on('data', () => { answered = true; });
@@ -740,7 +786,7 @@ describe('gatekeeper program', () => {
       });
 
       expect(answer.status).toBe(200);
-      const request = seen.at(-1);
+      const request = seen.at(-1)!;
       expect(request.url).toBe('/v1/messages?stream=true');
       expect(request.headers['x-api-key']).toBe(SECRET);
       expect(request.headers.authorization).toBeUndefined();
@@ -757,7 +803,7 @@ describe('gatekeeper program', () => {
         'x-keep-me': 'yes',
       });
       expect(answer.status).toBe(200);
-      const request = seen.at(-1);
+      const request = seen.at(-1)!;
       expect(request.url).toBe('/npm/-/package/left-pad');
       expect(request.headers.authorization).toBeUndefined();
       expect(request.headers['x-api-key']).toBeUndefined();
@@ -768,13 +814,13 @@ describe('gatekeeper program', () => {
     it('takes the grant\'s own header name away too, so a placeholder the space sends never reaches the upstream', async () => {
       expect((await control('POST', '/grants', { id: 'google', upstream: `http://127.0.0.1:${upstreamPort}/v1`, header: 'X-Goog-Api-Key', secret: SECRET })).status).toBe(200);
       await throughWindow('/model/google/models', { 'X-Goog-Api-Key': 'space-window' });
-      expect(seen.at(-1).headers['x-goog-api-key']).toBe(SECRET);
+      expect(seen.at(-1)!.headers['x-goog-api-key']).toBe(SECRET);
     });
 
     it('sends a bearer token for an OpenAI-style grant', async () => {
       await throughWindow('/model/openai/responses');
-      expect(seen.at(-1).headers.authorization).toBe(`Bearer ${SECRET}`);
-      expect(seen.at(-1).url).toBe('/v1/responses');
+      expect(seen.at(-1)!.headers.authorization).toBe(`Bearer ${SECRET}`);
+      expect(seen.at(-1)!.url).toBe('/v1/responses');
     });
 
     it('keeps no path, no query and no header in its journal', async () => {
@@ -822,7 +868,7 @@ describe('gatekeeper program', () => {
       // A percent sign is not itself the offence. A scoped npm package is fetched exactly like
       // this, and that window is half the reason the rule exists, so refusing every `%` is out.
       expect((await throughWindow('/model/anthropic/@scope%2fname/-/name-1.0.0.tgz')).status).toBe(200);
-      expect(seen.at(-1).url).toBe('/v1/@scope%2fname/-/name-1.0.0.tgz');
+      expect(seen.at(-1)!.url).toBe('/v1/@scope%2fname/-/name-1.0.0.tgz');
       // And the ordinary path still goes through.
       expect((await throughWindow('/model/anthropic/messages')).status).toBe(200);
     });
@@ -833,10 +879,10 @@ describe('gatekeeper program', () => {
       // can watch it pass; the container command carries 300000.
       // A `net.Server` has no `closeAllConnections`, so its sockets are kept and destroyed by
       // hand; a `close()` that waits for one is a hook that never returns.
-      const held = [];
+      const held: net.Socket[] = [];
       const silent = net.createServer((socket) => { socket.on('error', () => {}); held.push(socket); });
-      await new Promise((resolve) => { silent.listen(0, '127.0.0.1', resolve); });
-      const port = silent.address().port;
+      await new Promise<void>((resolve) => { silent.listen(0, '127.0.0.1', resolve); });
+      const port = (silent.address() as AddressInfo).port;
       try {
         await control('POST', '/grants', { id: 'silent', upstream: `http://127.0.0.1:${port}/v1`, header: 'authorization', secret: SECRET });
         const at = await journalMark();
@@ -852,7 +898,7 @@ describe('gatekeeper program', () => {
         expect(since.filter((entry) => entry.decision.startsWith('failed:'))).toHaveLength(1);
       } finally {
         for (const socket of held) socket.destroy();
-        await new Promise((resolve) => {
+        await new Promise<void>((resolve) => {
           const done = setTimeout(resolve, 2_000);
           silent.close(() => { clearTimeout(done); resolve(); });
         });
@@ -910,7 +956,7 @@ describe('gatekeeper program', () => {
 
     it('says what it holds: the mode, the names and the grant ids, and never a secret', async () => {
       expect((await control('POST', '/network', { mode: 'allowlist', domains: ['Example.com.', 'example.org'] })).status).toBe(200);
-      const policy = JSON.parse((await control('GET', '/policy')).body);
+      const policy = JSON.parse((await control('GET', '/policy')).body) as { mode: string; domains: string[]; grants: string[] };
       expect(policy).toMatchObject({ mode: 'allowlist', domains: ['example.com', 'example.org'] });
       expect(policy.grants).toEqual(expect.arrayContaining(['anthropic', 'openai']));
       expect(JSON.stringify(policy)).not.toContain(SECRET);
@@ -950,10 +996,10 @@ describe('gatekeeper program', () => {
       expect(answer.status).toBe(200);
       // The host channel refuses a journal over a megabyte, and a full ring must stay under it.
       expect(answer.body.length).toBeLessThan(1024 * 1024);
-      const records = JSON.parse(answer.body).records;
+      const records = (JSON.parse(answer.body) as Journal).records;
       expect(records).toHaveLength(500);
       for (const entry of records) expect(entry.host.length).toBeLessThanOrEqual(256);
-      expect(records.at(-1).host.length).toBe(256);
+      expect(records.at(-1)!.host.length).toBe(256);
     }, 60_000);
 
     it('separates one attempt from the next by count, not by any clock', async () => {
@@ -972,7 +1018,7 @@ describe('gatekeeper program', () => {
 
       const since = await recordsSince(mark);
       expect(since).toHaveLength(1);
-      expect(since[0].host).toBe(host);
+      expect(since[0]!.host).toBe(host);
       // And a mark taken after everything sees nothing at all, however fast the machine is.
       expect(await recordsSince(await journalMark())).toHaveLength(0);
     });
@@ -995,7 +1041,7 @@ describe('gatekeeper program', () => {
       expect(after.since).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
       expect(after.since).toBe(before.since);
       // The oldest records went, the newest stayed.
-      expect(after.records.at(-1).host).toBe('blocked.test');
+      expect(after.records.at(-1)!.host).toBe('blocked.test');
     }, 60_000);
   });
 });
@@ -1005,7 +1051,7 @@ describe('gatekeeper program', () => {
 // covered, because the corridor takes names only and an address never reaches the range rules
 // through a CONNECT any more.
 describe('the rules of the gatekeeper program', () => {
-  const rules = createRequire(import.meta.url)(PROGRAM);
+  const rules = createRequire(import.meta.url)(PROGRAM) as GatekeeperRules;
 
   describe('isBlockedAddress', () => {
     it.each([
@@ -1065,7 +1111,7 @@ describe('the rules of the gatekeeper program', () => {
   });
 
   describe('refuseTarget', () => {
-    const inMode = (mode, domains = []) => { rules.setNetwork({ mode, domains }); };
+    const inMode = (mode: string, domains: string[] = []) => { rules.setNetwork({ mode, domains }); };
 
     it('refuses auth.openai.com in both modes, whatever the list says', () => {
       inMode('open');
@@ -1132,7 +1178,7 @@ describe('the rules of the gatekeeper program', () => {
   // `http.Server` accepts it, half-open allowed, and the one out as `net.connect` makes it, which
   // the program now also asks for half-open.
   describe('joinSockets', () => {
-    const open = [];
+    const open: { destroy?: () => unknown; close?: (callback: () => void) => unknown }[] = [];
 
     afterEach(async () => {
       const items = open.splice(0);
@@ -1140,17 +1186,17 @@ describe('the rules of the gatekeeper program', () => {
         if (item.destroy) item.destroy();
       }
       for (const item of items) {
-        if (!item.destroy && item.close) await new Promise((resolve) => { item.close(resolve); });
+        if (!item.destroy && item.close) await new Promise<void>((resolve) => { item.close!(resolve); });
       }
     });
 
     /** A listening server and the two ends of one connection to it. */
-    const connectedPair = async ({ server: serverOptions = {}, dial = {} } = {}) => {
+    const connectedPair = async ({ server: serverOptions = {}, dial = {} }: { server?: net.ServerOpts; dial?: { allowHalfOpen?: boolean } } = {}) => {
       const server = net.createServer(serverOptions);
       open.push(server);
-      await new Promise((resolve) => { server.listen(0, '127.0.0.1', resolve); });
-      const accepted = new Promise((resolve) => { server.once('connection', resolve); });
-      const dialled = net.connect({ host: '127.0.0.1', port: server.address().port, ...dial });
+      await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve); });
+      const accepted = new Promise<net.Socket>((resolve) => { server.once('connection', resolve); });
+      const dialled = net.connect({ host: '127.0.0.1', port: (server.address() as AddressInfo).port, ...dial });
       dialled.on('error', () => {});
       await new Promise((resolve) => { dialled.once('connect', resolve); });
       const received = await accepted;
@@ -1165,7 +1211,7 @@ describe('the rules of the gatekeeper program', () => {
      * `originKeepsReading` gives the stand-in upstream half-open, which a server that answers
      * and then keeps reading has to ask for itself.
      */
-    const tunnel = async ({ originKeepsReading = false } = {}) => {
+    const tunnel = async ({ originKeepsReading = false }: { originKeepsReading?: boolean } = {}) => {
       // The stand-in space keeps half-open too, because a client that goes on writing after it
       // has read a FIN has to ask for that itself. That is the client's own choice in
       // production, and what is under test here is only what the corridor does between them.
@@ -1194,10 +1240,10 @@ describe('the rules of the gatekeeper program', () => {
       }, 5);
       // And it reads slowly, so the corridor is still holding bytes when the origin finishes.
       space.pause();
-      const chunks = [];
+      const chunks: Buffer[] = [];
       let received = 0;
       const reading = setInterval(() => {
-        const chunk = space.read(16 * 1024);
+        const chunk = space.read(16 * 1024) as Buffer | null;
         if (chunk) {
           chunks.push(chunk);
           received += chunk.length;
@@ -1205,7 +1251,7 @@ describe('the rules of the gatekeeper program', () => {
       }, 15);
 
       origin.end(payload);
-      await new Promise((resolve) => {
+      await new Promise<void>((resolve) => {
         const check = setInterval(() => {
           if (received >= payload.length || space.destroyed) {
             clearInterval(check);
@@ -1217,7 +1263,7 @@ describe('the rules of the gatekeeper program', () => {
       clearInterval(uploading);
       clearInterval(reading);
       // Whatever is left in the buffer after the last tick.
-      for (let chunk = space.read(); chunk; chunk = space.read()) chunks.push(chunk);
+      for (let chunk = space.read() as Buffer | null; chunk; chunk = space.read() as Buffer | null) chunks.push(chunk);
 
       const bytes = Buffer.concat(chunks);
       expect(bytes).toHaveLength(payload.length);
@@ -1238,9 +1284,9 @@ describe('the rules of the gatekeeper program', () => {
       expect(origin.destroyed).toBe(false);
 
       const answer = 'the answer, after the client half closed';
-      const arrived = new Promise((resolve) => {
-        const chunks = [];
-        space.on('data', (chunk) => {
+      const arrived = new Promise<string>((resolve) => {
+        const chunks: Buffer[] = [];
+        space.on('data', (chunk: Buffer) => {
           chunks.push(chunk);
           if (Buffer.concat(chunks).toString().includes(answer)) resolve(Buffer.concat(chunks).toString());
         });
@@ -1260,9 +1306,9 @@ describe('the rules of the gatekeeper program', () => {
       await heard;
 
       const later = 'what the space sent afterwards';
-      const arrived = new Promise((resolve) => {
-        const chunks = [];
-        origin.on('data', (chunk) => {
+      const arrived = new Promise<string>((resolve) => {
+        const chunks: Buffer[] = [];
+        origin.on('data', (chunk: Buffer) => {
           chunks.push(chunk);
           if (Buffer.concat(chunks).toString().includes(later)) resolve(Buffer.concat(chunks).toString());
         });
@@ -1377,25 +1423,25 @@ describe('the rules of the gatekeeper program', () => {
 });
 
 describe('the gatekeeper program and its bind address', () => {
-  const folders = [];
+  const folders: string[] = [];
   afterAll(() => { for (const folder of folders) fs.rmSync(folder, { recursive: true, force: true }); });
 
   /** Starts the program with `bind` as its first argument and waits for it to listen or to leave. */
-  const startWith = (bind, ports = ['0', '0', '0']) => new Promise((resolve) => {
+  const startWith = (bind: string, ports: (string | number)[] = ['0', '0', '0']) => new Promise<{ exited: number | null; output: string; stop: () => boolean }>((resolve) => {
     const child = spawn(process.execPath, [PROGRAM, bind, ...ports.map(String)], { stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '';
-    const finish = (outcome) => { resolve({ ...outcome, output, stop: () => child.kill() }); };
-    child.stdout.on('data', (chunk) => { output += chunk; if (output.includes('gatekeeper: corridor')) finish({ exited: null }); });
-    child.stderr.on('data', (chunk) => { output += chunk; });
+    const finish = (outcome: { exited: number | null }) => { resolve({ ...outcome, output, stop: () => child.kill() }); };
+    child.stdout.on('data', (chunk: Buffer) => { output += chunk; if (output.includes('gatekeeper: corridor')) finish({ exited: null }); });
+    child.stderr.on('data', (chunk: Buffer) => { output += chunk; });
     child.on('exit', (code) => finish({ exited: code }));
   });
 
   /** One TCP connect: `connected` or the error code. */
-  const tryConnect = (host, port) => new Promise((resolve) => {
+  const tryConnect = (host: string, port: number) => new Promise<string | undefined>((resolve) => {
     const socket = net.connect({ host, port });
     socket.setTimeout(3000, () => { socket.destroy(); resolve('timeout'); });
     socket.on('connect', () => { socket.destroy(); resolve('connected'); });
-    socket.on('error', (error) => resolve(error.code));
+    socket.on('error', (error: NodeJS.ErrnoException) => resolve(error.code));
   });
 
   it('listens on the address the file beside it holds, and on nothing else', async () => {
@@ -1406,7 +1452,7 @@ describe('the gatekeeper program and its bind address', () => {
     folders.push(folder);
     const file = path.join(folder, 'bind');
     fs.writeFileSync(file, '127.0.0.1\n');
-    const ports = [await freePort(), await freePort(), await freePort()];
+    const ports: [number, number, number] = [await freePort(), await freePort(), await freePort()];
     const started = await startWith(file, ports);
     try {
       expect(started.exited).toBeNull();
@@ -1500,7 +1546,7 @@ describe('the gatekeeper program as a file', () => {
   });
 
   it('needs nothing but the standard library', () => {
-    const required = [...source.matchAll(/require\('([^']+)'\)/g)].map((match) => match[1]);
+    const required = [...source.matchAll(/require\('([^']+)'\)/g)].map((match) => match[1]!);
     expect(required.every((name) => name.startsWith('node:'))).toBe(true);
   });
 });

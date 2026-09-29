@@ -13,6 +13,70 @@
  */
 
 import { projectConfigFileStemOf } from '../projects/project-id.js';
+import type { Dirent } from 'node:fs';
+import type fsModule from 'node:fs/promises';
+import type { PlatformPath } from 'node:path';
+
+export type NoteSource = 'manual' | 'selection' | 'agent';
+
+export interface NoteOrigin {
+  sessionId: string;
+  messageId?: string;
+}
+
+export interface ProjectNote {
+  id: string;
+  body: string;
+  createdAt: number;
+  updatedAt: number;
+  source: NoteSource;
+  pinned: boolean;
+  origin?: NoteOrigin | null;
+}
+
+export interface ProjectTodo {
+  id: string;
+  text: string;
+  completed: boolean;
+  createdAt: number;
+}
+
+export interface PlanLink {
+  id: string;
+  file: string;
+  title: string;
+  createdAt: number;
+  pinned: boolean;
+  shared?: boolean;
+}
+
+export interface StoredProjectContext {
+  version: number;
+  notes: ProjectNote[];
+  todos: ProjectTodo[];
+  plans: PlanLink[];
+}
+
+export type PlanSource = 'shared' | 'personal';
+
+export interface ProjectContextRuntimeDeps {
+  fsPromises: Pick<typeof fsModule, 'readFile' | 'writeFile' | 'mkdir' | 'rename' | 'rm' | 'readdir' | 'stat' | 'access' | 'copyFile'>;
+  path: Pick<PlatformPath, 'join' | 'dirname' | 'basename'>;
+  projectsDirPath: string;
+  createId?: () => string;
+  resolveSharedPlansDir?: (projectId: string) => Promise<string | null>;
+}
+
+export interface NoteInput {
+  body?: unknown;
+  source?: unknown;
+  origin?: unknown;
+}
+
+export interface NotePatch {
+  body?: unknown;
+  pinned?: unknown;
+}
 
 const PROJECT_CONTEXT_VERSION = 2;
 const PROJECT_NOTE_BODY_MAX_LENGTH = 3000;
@@ -26,22 +90,22 @@ const PROJECT_PLAN_MAX_ITEMS = 500;
 const PROJECT_ID_PATTERN = /^[a-zA-Z0-9._:-]+$/;
 const PLAN_FILE_PATTERN = /^[a-zA-Z0-9._-]+\.md$/;
 
-const asNonEmptyString = (value) => {
+const asNonEmptyString = (value: unknown): string | null => {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
 };
 
-const clampLength = (value, maxLength) => {
+const clampLength = (value: unknown, maxLength: number): string => {
   if (typeof value !== 'string') return '';
   return value.length > maxLength ? value.slice(0, maxLength) : value;
 };
 
-const isObjectRecord = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+const isObjectRecord = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
-const NOTE_SOURCES = new Set(['manual', 'selection', 'agent']);
+const NOTE_SOURCES = new Set<unknown>(['manual', 'selection', 'agent']);
 
-const sanitizeNoteOrigin = (value) => {
+const sanitizeNoteOrigin = (value: unknown): NoteOrigin | null => {
   if (!isObjectRecord(value)) return null;
   const sessionId = asNonEmptyString(value.sessionId);
   const messageId = asNonEmptyString(value.messageId);
@@ -56,7 +120,7 @@ const sanitizeNoteOrigin = (value) => {
  * separate migration pass so that any read — including one that races another
  * writer — sees the same shape.
  */
-const sanitizeNotes = (value, now) => {
+const sanitizeNotes = (value: unknown, now: number): ProjectNote[] => {
   if (typeof value === 'string') {
     const body = clampLength(value, PROJECT_NOTE_BODY_MAX_LENGTH).trim();
     if (!body) return [];
@@ -72,8 +136,8 @@ const sanitizeNotes = (value, now) => {
 
   if (!Array.isArray(value)) return [];
 
-  const result = [];
-  const seen = new Set();
+  const result: ProjectNote[] = [];
+  const seen = new Set<string>();
   for (const entry of value) {
     if (result.length >= PROJECT_NOTE_MAX_ITEMS) break;
     if (!isObjectRecord(entry)) continue;
@@ -82,14 +146,14 @@ const sanitizeNotes = (value, now) => {
     if (!id || !body || seen.has(id)) continue;
     seen.add(id);
 
-    const createdAt = Number.isFinite(entry.createdAt) && entry.createdAt >= 0 ? entry.createdAt : now;
+    const createdAt = Number.isFinite(entry.createdAt) && (entry.createdAt as number) >= 0 ? (entry.createdAt as number) : now;
     const origin = sanitizeNoteOrigin(entry.origin);
     result.push({
       id,
       body,
       createdAt,
-      updatedAt: Number.isFinite(entry.updatedAt) && entry.updatedAt >= 0 ? entry.updatedAt : createdAt,
-      source: NOTE_SOURCES.has(entry.source) ? entry.source : 'manual',
+      updatedAt: Number.isFinite(entry.updatedAt) && (entry.updatedAt as number) >= 0 ? (entry.updatedAt as number) : createdAt,
+      source: NOTE_SOURCES.has(entry.source) ? (entry.source as NoteSource) : 'manual',
       pinned: entry.pinned === true,
       ...(origin ? { origin } : {}),
     });
@@ -98,10 +162,10 @@ const sanitizeNotes = (value, now) => {
   return result.sort((a, b) => b.createdAt - a.createdAt);
 };
 
-const sanitizeTodos = (value, now) => {
+const sanitizeTodos = (value: unknown, now: number): ProjectTodo[] => {
   if (!Array.isArray(value)) return [];
-  const result = [];
-  const seen = new Set();
+  const result: ProjectTodo[] = [];
+  const seen = new Set<string>();
   for (const entry of value) {
     if (result.length >= PROJECT_TODO_MAX_ITEMS) break;
     if (!isObjectRecord(entry)) continue;
@@ -113,15 +177,15 @@ const sanitizeTodos = (value, now) => {
       id,
       text,
       completed: entry.completed === true,
-      createdAt: Number.isFinite(entry.createdAt) && entry.createdAt >= 0 ? entry.createdAt : now,
+      createdAt: Number.isFinite(entry.createdAt) && (entry.createdAt as number) >= 0 ? (entry.createdAt as number) : now,
     });
   }
   return result;
 };
 
-const sanitizePlanTitle = (value) => clampLength(asNonEmptyString(value) || '', PROJECT_PLAN_TITLE_MAX_LENGTH);
+const sanitizePlanTitle = (value: unknown): string => clampLength(asNonEmptyString(value) || '', PROJECT_PLAN_TITLE_MAX_LENGTH);
 
-export const parsePlanMarkdown = (raw) => {
+export const parsePlanMarkdown = (raw: unknown): { title: string; body: string } => {
   const normalized = (typeof raw === 'string' ? raw : '').replace(/\r\n?/g, '\n');
   const match = normalized.match(/^\s*#\s+(.+?)\s*(?:\n+|$)/);
   if (match) {
@@ -137,13 +201,13 @@ export const parsePlanMarkdown = (raw) => {
   };
 };
 
-const formatPlanMarkdown = (title, body) => {
+const formatPlanMarkdown = (title: string, body: string): string => {
   const normalizedTitle = sanitizePlanTitle(title) || 'Plan';
   const normalizedBody = typeof body === 'string' ? body.trim() : '';
   return normalizedBody ? `# ${normalizedTitle}\n\n${normalizedBody}` : `# ${normalizedTitle}\n`;
 };
 
-const slugifyPlanTitle = (value) => {
+const slugifyPlanTitle = (value: string): string => {
   const normalized = value
     .trim()
     .toLowerCase()
@@ -155,11 +219,11 @@ const slugifyPlanTitle = (value) => {
   return normalized || 'plan';
 };
 
-const sanitizePlanLinks = (value, now) => {
+const sanitizePlanLinks = (value: unknown, now: number): PlanLink[] => {
   if (!Array.isArray(value)) return [];
-  const result = [];
-  const seenIds = new Set();
-  const seenFiles = new Set();
+  const result: PlanLink[] = [];
+  const seenIds = new Set<string>();
+  const seenFiles = new Set<string>();
   for (const entry of value) {
     if (result.length >= PROJECT_PLAN_MAX_ITEMS) break;
     if (!isObjectRecord(entry)) continue;
@@ -176,7 +240,7 @@ const sanitizePlanLinks = (value, now) => {
       id,
       file,
       title: sanitizePlanTitle(entry.title) || 'Plan',
-      createdAt: Number.isFinite(entry.createdAt) && entry.createdAt >= 0 ? entry.createdAt : now,
+      createdAt: Number.isFinite(entry.createdAt) && (entry.createdAt as number) >= 0 ? (entry.createdAt as number) : now,
       pinned: entry.pinned === true,
       // The user's own plan that was moved into the team's folder: it keeps
       // its id (session attachments still point at it) and this flag says
@@ -187,7 +251,7 @@ const sanitizePlanLinks = (value, now) => {
   return result.sort((a, b) => b.createdAt - a.createdAt);
 };
 
-const createEmptyContext = () => ({
+const createEmptyContext = (): StoredProjectContext => ({
   version: PROJECT_CONTEXT_VERSION,
   notes: [],
   todos: [],
@@ -196,7 +260,7 @@ const createEmptyContext = () => ({
 
 const SHARED_PLAN_ID_PREFIX = 'shared:';
 
-export const createProjectContextRuntime = (deps) => {
+export const createProjectContextRuntime = (deps: ProjectContextRuntimeDeps) => {
   const { fsPromises, path, projectsDirPath, createId, resolveSharedPlansDir } = deps;
   // The team's shared plans folder for a project (absolute path) or null; the
   // project config runtime owns that answer (`plansDir` in the shared file).
@@ -210,9 +274,9 @@ export const createProjectContextRuntime = (deps) => {
       ? crypto.randomUUID()
       : `plan_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
 
-  const writeLocks = new Map();
+  const writeLocks = new Map<string, Promise<unknown>>();
 
-  const sanitizeProjectId = (projectId) => {
+  const sanitizeProjectId = (projectId: string): string => {
     const value = asNonEmptyString(projectId);
     if (!value) {
       throw new Error('projectId is required');
@@ -226,29 +290,29 @@ export const createProjectContextRuntime = (deps) => {
   // The folder and the client-owned config file share one bounded stem
   // (`projectConfigFileStemOf`): an id too long for a file name would
   // otherwise fail every read with ENAMETOOLONG instead of reading as empty.
-  const storageStemFor = (projectId) => projectConfigFileStemOf(sanitizeProjectId(projectId));
-  const storageDirFor = (projectId) => path.join(projectsDirPath, storageStemFor(projectId));
-  const contextPathFor = (projectId) => path.join(storageDirFor(projectId), 'context.json');
-  const plansDirFor = (projectId) => path.join(storageDirFor(projectId), 'plans');
-  const legacyConfigPathFor = (projectId) => path.join(projectsDirPath, `${storageStemFor(projectId)}.json`);
+  const storageStemFor = (projectId: string): string => projectConfigFileStemOf(sanitizeProjectId(projectId));
+  const storageDirFor = (projectId: string): string => path.join(projectsDirPath, storageStemFor(projectId));
+  const contextPathFor = (projectId: string): string => path.join(storageDirFor(projectId), 'context.json');
+  const plansDirFor = (projectId: string): string => path.join(storageDirFor(projectId), 'plans');
+  const legacyConfigPathFor = (projectId: string): string => path.join(projectsDirPath, `${storageStemFor(projectId)}.json`);
 
-  const readJson = async (filePath) => {
-    let raw;
+  const readJson = async (filePath: string): Promise<{ missing: true; value: null } | { missing: false; value: Record<string, unknown> } | { missing: false; value: null }> => {
+    let raw: string;
     try {
       raw = await fsPromises.readFile(filePath, 'utf8');
     } catch (error) {
-      if (error && error.code === 'ENOENT') return { missing: true, value: null };
+      if (error && (error as NodeJS.ErrnoException).code === 'ENOENT') return { missing: true, value: null };
       throw error;
     }
     try {
-      const parsed = JSON.parse(raw);
+      const parsed: unknown = JSON.parse(raw);
       return { missing: false, value: isObjectRecord(parsed) ? parsed : null };
     } catch {
       return { missing: false, value: null };
     }
   };
 
-  const writeJsonAtomic = async (filePath, value) => {
+  const writeJsonAtomic = async (filePath: string, value: unknown): Promise<void> => {
     const temporaryPath = `${filePath}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     await fsPromises.mkdir(path.dirname(filePath), { recursive: true });
     try {
@@ -260,11 +324,11 @@ export const createProjectContextRuntime = (deps) => {
     }
   };
 
-  const withWriteLock = async (projectId, mutate) => {
+  const withWriteLock = async <T>(projectId: string, mutate: () => Promise<T>): Promise<T> => {
     const key = sanitizeProjectId(projectId);
     const previous = writeLocks.get(key) || Promise.resolve();
-    let release;
-    const next = new Promise((resolve) => { release = resolve; });
+    let release!: () => void;
+    const next = new Promise<void>((resolve) => { release = resolve; });
     const chained = previous.finally(() => next);
     writeLocks.set(key, chained);
 
@@ -293,7 +357,7 @@ export const createProjectContextRuntime = (deps) => {
    * A failure at any point leaves the legacy keys in place, so the migration
    * simply runs again on the next read.
    */
-  const migrateFromLegacyConfig = async (projectId, now) => {
+  const migrateFromLegacyConfig = async (projectId: string, now: number): Promise<StoredProjectContext | null> => {
     const legacyPath = legacyConfigPathFor(projectId);
     const legacy = await readJson(legacyPath);
     if (!legacy.value) {
@@ -308,7 +372,7 @@ export const createProjectContextRuntime = (deps) => {
     }
 
     const plansDir = plansDirFor(projectId);
-    const links = [];
+    const links: { id: string; file: string; title: string; createdAt: number }[] = [];
     const rawLinks = Array.isArray(legacy.value.projectPlanFiles) ? legacy.value.projectPlanFiles : [];
     for (const entry of rawLinks) {
       if (!isObjectRecord(entry)) continue;
@@ -320,16 +384,16 @@ export const createProjectContextRuntime = (deps) => {
       if (!PLAN_FILE_PATTERN.test(file)) continue;
       const targetPath = path.join(plansDir, file);
 
-      let raw = null;
+      let raw: string | null = null;
       try {
         raw = await fsPromises.readFile(targetPath, 'utf8');
       } catch (error) {
-        if (!error || error.code !== 'ENOENT') throw error;
+        if (!error || (error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
         // Not in the plans directory yet — recover it from the recorded path.
         try {
           raw = await fsPromises.readFile(absolutePath, 'utf8');
         } catch (recoverError) {
-          if (!recoverError || recoverError.code !== 'ENOENT') throw recoverError;
+          if (!recoverError || (recoverError as NodeJS.ErrnoException).code !== 'ENOENT') throw recoverError;
           continue;
         }
         await fsPromises.mkdir(plansDir, { recursive: true });
@@ -340,11 +404,11 @@ export const createProjectContextRuntime = (deps) => {
         id,
         file,
         title: parsePlanMarkdown(raw).title,
-        createdAt: Number.isFinite(entry.createdAt) && entry.createdAt >= 0 ? entry.createdAt : now,
+        createdAt: Number.isFinite(entry.createdAt) && (entry.createdAt as number) >= 0 ? (entry.createdAt as number) : now,
       });
     }
 
-    const migrated = {
+    const migrated: StoredProjectContext = {
       version: PROJECT_CONTEXT_VERSION,
       notes: sanitizeNotes(legacy.value.projectNotes, now),
       todos: sanitizeTodos(legacy.value.projectTodos, now),
@@ -376,7 +440,7 @@ export const createProjectContextRuntime = (deps) => {
    * of identical content, so concurrent migrations converge instead of
    * interleaving.
    */
-  const readStoredContext = async (projectId) => {
+  const readStoredContext = async (projectId: string): Promise<StoredProjectContext> => {
     const now = Date.now();
     const stored = await readJson(contextPathFor(projectId));
 
@@ -406,7 +470,7 @@ export const createProjectContextRuntime = (deps) => {
   };
 
   /** The file name behind a shared plan id, or null when the id is not one. */
-  const sharedPlanFileOf = (planId) => {
+  const sharedPlanFileOf = (planId: unknown): string | null => {
     if (typeof planId !== 'string' || !planId.startsWith(SHARED_PLAN_ID_PREFIX)) return null;
     const file = planId.slice(SHARED_PLAN_ID_PREFIX.length);
     return PLAN_FILE_PATTERN.test(file) ? file : null;
@@ -417,17 +481,17 @@ export const createProjectContextRuntime = (deps) => {
    * addressed by `shared:<file>`. Plans written by other tools have no
    * manifest entry, so the title comes from the file each time.
    */
-  const listSharedPlans = async (projectId, claimedFiles = new Set()) => {
+  const listSharedPlans = async (projectId: string, claimedFiles: Set<string> = new Set()) => {
     const dir = await sharedPlansDirFor(projectId);
     if (!dir) return { dir: null, plans: [] };
-    let entries;
+    let entries: Dirent[];
     try {
       entries = await fsPromises.readdir(dir, { withFileTypes: true });
     } catch (error) {
-      if (error && error.code === 'ENOENT') return { dir, plans: [] };
+      if (error && (error as NodeJS.ErrnoException).code === 'ENOENT') return { dir, plans: [] };
       throw error;
     }
-    const plans = [];
+    const plans: (Omit<PlanLink, 'shared'> & { source: PlanSource })[] = [];
     for (const entry of entries) {
       if (!entry.isFile() || !PLAN_FILE_PATTERN.test(entry.name)) continue;
       // Listed under its own id by the manifest entry that moved it there.
@@ -448,14 +512,14 @@ export const createProjectContextRuntime = (deps) => {
   };
 
   /** What clients see: the stored context plus the team's shared plans, each marked with its source. */
-  const readContext = async (projectId) => {
+  const readContext = async (projectId: string) => {
     const stored = await readStoredContext(projectId);
     const claimed = new Set(stored.plans.filter((plan) => plan.shared).map((plan) => plan.file));
     const shared = await listSharedPlans(projectId, claimed);
     const own = stored.plans
       // A moved plan is only reachable while the project still has a shared folder.
       .filter((plan) => !plan.shared || shared.dir)
-      .map(({ shared: isShared, ...plan }) => ({ ...plan, source: isShared ? 'shared' : 'personal' }));
+      .map(({ shared: isShared, ...plan }): Omit<PlanLink, 'shared'> & { source: PlanSource } => ({ ...plan, source: isShared ? 'shared' : 'personal' }));
     return {
       ...stored,
       plans: [...own, ...shared.plans],
@@ -464,9 +528,9 @@ export const createProjectContextRuntime = (deps) => {
   };
 
   /** The folder a manifest plan's file lives in; null for a moved plan when the project lost its shared folder. */
-  const folderOfLink = async (projectId, link) => (link.shared ? sharedPlansDirFor(projectId) : plansDirFor(projectId));
+  const folderOfLink = async (projectId: string, link: PlanLink): Promise<string | null> => (link.shared ? sharedPlansDirFor(projectId) : plansDirFor(projectId));
 
-  const writeContext = async (projectId, context) => {
+  const writeContext = async (projectId: string, context: StoredProjectContext): Promise<void> => {
     await writeJsonAtomic(contextPathFor(projectId), {
       version: PROJECT_CONTEXT_VERSION,
       notes: context.notes,
@@ -475,7 +539,7 @@ export const createProjectContextRuntime = (deps) => {
     });
   };
 
-  const saveTodos = async (projectId, todos) => {
+  const saveTodos = async (projectId: string, todos: unknown) => {
     return withWriteLock(projectId, async () => {
       const now = Date.now();
       const current = await readStoredContext(projectId);
@@ -493,7 +557,7 @@ export const createProjectContextRuntime = (deps) => {
    * the user is still typing, and an agent-authored note can no longer lose a
    * concurrent todo change.
    */
-  const createNote = async (projectId, value) => {
+  const createNote = async (projectId: string, value: NoteInput) => {
     const body = clampLength(typeof value?.body === 'string' ? value.body : '', PROJECT_NOTE_BODY_MAX_LENGTH).trim();
     if (!body) {
       throw new Error('body is required');
@@ -506,12 +570,12 @@ export const createProjectContextRuntime = (deps) => {
         throw new Error(`A project can hold at most ${PROJECT_NOTE_MAX_ITEMS} notes`);
       }
 
-      const note = {
+      const note: ProjectNote = {
         id: idFactory(),
         body,
         createdAt: now,
         updatedAt: now,
-        source: NOTE_SOURCES.has(value?.source) ? value.source : 'manual',
+        source: NOTE_SOURCES.has(value?.source) ? (value.source as NoteSource) : 'manual',
         pinned: false,
         ...(sanitizeNoteOrigin(value?.origin) ? { origin: sanitizeNoteOrigin(value.origin) } : {}),
       };
@@ -526,7 +590,7 @@ export const createProjectContextRuntime = (deps) => {
    * Patch one note. Omitted fields are left alone, so pinning a note cannot
    * roll back an edit that landed between the two requests.
    */
-  const updateNote = async (projectId, noteId, patch) => {
+  const updateNote = async (projectId: string, noteId: string, patch: NotePatch) => {
     const id = asNonEmptyString(noteId);
     if (!id) {
       throw new Error('noteId is required');
@@ -551,8 +615,8 @@ export const createProjectContextRuntime = (deps) => {
 
       const note = {
         ...existing,
-        ...(hasBody ? { body, updatedAt: now } : {}),
-        ...(hasPinned ? { pinned: patch.pinned } : {}),
+        ...(hasBody ? { body, updatedAt: now } as { body: string; updatedAt: number } : {}),
+        ...(hasPinned ? { pinned: patch.pinned as boolean } : {}),
       };
       const next = { ...current, notes: current.notes.map((entry) => (entry.id === id ? note : entry)) };
       await writeContext(projectId, next);
@@ -560,7 +624,7 @@ export const createProjectContextRuntime = (deps) => {
     });
   };
 
-  const deleteNote = async (projectId, noteId) => {
+  const deleteNote = async (projectId: string, noteId: string) => {
     const id = asNonEmptyString(noteId);
     if (!id) {
       throw new Error('noteId is required');
@@ -577,7 +641,7 @@ export const createProjectContextRuntime = (deps) => {
     });
   };
 
-  const readPlan = async (projectId, planId) => {
+  const readPlan = async (projectId: string, planId: string) => {
     const id = asNonEmptyString(planId);
     if (!id) {
       throw new Error('planId is required');
@@ -586,11 +650,11 @@ export const createProjectContextRuntime = (deps) => {
     if (sharedFile) {
       const dir = await sharedPlansDirFor(projectId);
       if (!dir) return null;
-      let raw;
+      let raw: string;
       try {
         raw = await fsPromises.readFile(path.join(dir, sharedFile), 'utf8');
       } catch (error) {
-        if (error && error.code === 'ENOENT') return null;
+        if (error && (error as NodeJS.ErrnoException).code === 'ENOENT') return null;
         throw error;
       }
       const parsed = parsePlanMarkdown(raw);
@@ -604,11 +668,11 @@ export const createProjectContextRuntime = (deps) => {
 
     const folder = await folderOfLink(projectId, link);
     if (!folder) return null;
-    let raw;
+    let raw: string;
     try {
       raw = await fsPromises.readFile(path.join(folder, link.file), 'utf8');
     } catch (error) {
-      if (error && error.code === 'ENOENT') return null;
+      if (error && (error as NodeJS.ErrnoException).code === 'ENOENT') return null;
       throw error;
     }
 
@@ -628,7 +692,7 @@ export const createProjectContextRuntime = (deps) => {
    * stable identity behind the link, and renaming it would strand the markdown
    * if the manifest write failed afterwards.
    */
-  const updatePlan = async (projectId, planId, value) => {
+  const updatePlan = async (projectId: string, planId: string, value: { raw?: unknown }) => {
     const id = asNonEmptyString(planId);
     if (!id) {
       throw new Error('planId is required');
@@ -648,7 +712,7 @@ export const createProjectContextRuntime = (deps) => {
         try {
           await fsPromises.access(filePath);
         } catch (error) {
-          if (error && error.code === 'ENOENT') return null;
+          if (error && (error as NodeJS.ErrnoException).code === 'ENOENT') return null;
           throw error;
         }
         await fsPromises.writeFile(filePath, raw, 'utf8');
@@ -675,7 +739,7 @@ export const createProjectContextRuntime = (deps) => {
       try {
         await fsPromises.access(filePath);
       } catch (error) {
-        if (error && error.code === 'ENOENT') return null;
+        if (error && (error as NodeJS.ErrnoException).code === 'ENOENT') return null;
         throw error;
       }
 
@@ -702,7 +766,7 @@ export const createProjectContextRuntime = (deps) => {
    * manifest entry pointing at nothing — the orphan is inert, a dangling
    * entry would surface as a broken row in the UI.
    */
-  const createPlan = async (projectId, value) => {
+  const createPlan = async (projectId: string, value: { title?: unknown; body?: unknown }) => {
     const title = sanitizePlanTitle(value?.title) || 'Plan';
     const body = clampLength(typeof value?.body === 'string' ? value.body : '', PROJECT_PLAN_BODY_MAX_LENGTH);
 
@@ -737,7 +801,7 @@ export const createProjectContextRuntime = (deps) => {
    * unreferenced and harmless.
    */
   /** Pin state is patched on its own so it cannot roll back a concurrent edit. */
-  const setPlanPinned = async (projectId, planId, pinned) => {
+  const setPlanPinned = async (projectId: string, planId: string, pinned: unknown) => {
     const id = asNonEmptyString(planId);
     if (!id) {
       throw new Error('planId is required');
@@ -757,7 +821,7 @@ export const createProjectContextRuntime = (deps) => {
     });
   };
 
-  const deletePlan = async (projectId, planId) => {
+  const deletePlan = async (projectId: string, planId: string) => {
     const id = asNonEmptyString(planId);
     if (!id) {
       throw new Error('planId is required');
@@ -770,7 +834,7 @@ export const createProjectContextRuntime = (deps) => {
         const filePath = dir ? path.join(dir, sharedFile) : null;
         const exists = filePath ? await fsPromises.access(filePath).then(() => true, () => false) : false;
         if (!exists) return { deleted: false, context: await readContext(projectId) };
-        await fsPromises.rm(filePath, { force: true });
+        await fsPromises.rm(filePath!, { force: true });
         return { deleted: true, context: await readContext(projectId) };
       });
     }
@@ -791,7 +855,7 @@ export const createProjectContextRuntime = (deps) => {
   };
 
   /** A free file name in `dir`, keeping the wanted base name unless it is taken. */
-  const freeFileNameIn = async (dir, wanted, taken = new Set()) => {
+  const freeFileNameIn = async (dir: string, wanted: string, taken: Set<string> = new Set()): Promise<string> => {
     const base = wanted.replace(/\.md$/, '');
     let file = wanted;
     let attempt = 1;
@@ -802,11 +866,11 @@ export const createProjectContextRuntime = (deps) => {
     return file;
   };
 
-  const moveFile = async (from, to) => {
+  const moveFile = async (from: string, to: string): Promise<void> => {
     try {
       await fsPromises.rename(from, to);
     } catch (error) {
-      if (!error || error.code !== 'EXDEV') throw error;
+      if (!error || (error as NodeJS.ErrnoException).code !== 'EXDEV') throw error;
       await fsPromises.copyFile(from, to);
       await fsPromises.rm(from, { force: true });
     }
@@ -821,7 +885,7 @@ export const createProjectContextRuntime = (deps) => {
    * that `readPlan` reports as gone. Needs a shared plans folder; refused
    * (validation error) when the project has none.
    */
-  const sharePlan = async (projectId, planId) => {
+  const sharePlan = async (projectId: string, planId: string) => {
     const id = asNonEmptyString(planId);
     if (!id) throw new Error('planId is required');
     return withWriteLock(projectId, async () => {
@@ -848,7 +912,7 @@ export const createProjectContextRuntime = (deps) => {
    * `sharePlan`. A plan the user moved keeps its id; a plan that only ever
    * lived in the team's folder (`shared:<file>`) gets a manifest entry now.
    */
-  const unsharePlan = async (projectId, planId) => {
+  const unsharePlan = async (projectId: string, planId: string) => {
     const id = asNonEmptyString(planId);
     if (!id) throw new Error('planId is required');
     return withWriteLock(projectId, async () => {
@@ -859,11 +923,11 @@ export const createProjectContextRuntime = (deps) => {
       const sharedFile = ownLink ? ownLink.file : sharedPlanFileOf(id);
       if (!sharedFile) return null;
       const from = path.join(dir, sharedFile);
-      let raw;
+      let raw: string;
       try {
         raw = await fsPromises.readFile(from, 'utf8');
       } catch (error) {
-        if (error && error.code === 'ENOENT') return null;
+        if (error && (error as NodeJS.ErrnoException).code === 'ENOENT') return null;
         throw error;
       }
       const plansDir = plansDirFor(projectId);

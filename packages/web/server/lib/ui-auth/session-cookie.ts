@@ -10,12 +10,14 @@
  * notification identity extraction (`request-security.js`) share this resolver.
  * A host with no explicit port keeps the bare `oc_ui_session` name.
  */
+import type { IncomingHttpHeaders } from 'node:http';
+
 export const SESSION_COOKIE_BASE = 'oc_ui_session';
 
-const forwardedHost = (headers) => {
+const forwardedHost = (headers: IncomingHttpHeaders): string => {
   const forwarded = headers?.['x-forwarded-host'];
   if (typeof forwarded === 'string' && forwarded.trim().length > 0) {
-    return forwarded.split(',')[0].trim();
+    return forwarded.split(',')[0]!.trim();
   }
   const host = headers?.host;
   return typeof host === 'string' ? host.trim() : '';
@@ -25,7 +27,7 @@ const forwardedHost = (headers) => {
  * Extract the trailing port from a Host authority, or null when there is none.
  * Handles bracketed IPv6 (`[::1]:3000`, `[::1]`) and plain host names.
  */
-const hostPort = (host) => {
+const hostPort = (host: string): string | null | undefined => {
   if (host.startsWith('[')) {
     const end = host.indexOf(']');
     if (end === -1) return null;
@@ -41,7 +43,7 @@ const hostPort = (host) => {
  * Resolve the session cookie name for a request. Returns the bare base name
  * when the host carries no explicit port, otherwise `<base>_<port>`.
  */
-export const sessionCookieNameForRequest = (req, base = SESSION_COOKIE_BASE) => {
+export const sessionCookieNameForRequest = (req: { headers?: IncomingHttpHeaders } | null | undefined, base: string = SESSION_COOKIE_BASE): string => {
   const host = forwardedHost(req?.headers || {});
   const port = host ? hostPort(host) : null;
   if (!port) return base;

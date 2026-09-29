@@ -14,17 +14,25 @@
  */
 
 import express from 'express';
+import type { Express, Request, Response } from 'express';
+import type { createProjectContextRuntime } from './runtime.js';
+
+export interface ProjectContextRouteDependencies {
+  projectContextRuntime: ReturnType<typeof createProjectContextRuntime>;
+}
+
+type Params<Name extends string> = Request<Record<Name, string>, unknown, unknown>;
 
 const parseJsonBody = express.json({ limit: '1mb' });
 
-const isObjectRecord = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+const isObjectRecord = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
-const isValidationError = (error) => {
+const isValidationError = (error: unknown): boolean => {
   const message = error instanceof Error ? error.message : '';
   return message.includes('is required') || message.includes('unsupported characters');
 };
 
-const respondWithError = (res, error, fallbackMessage) => {
+const respondWithError = (res: Response, error: unknown, fallbackMessage: string): Response => {
   const message = error instanceof Error ? error.message : fallbackMessage;
   if (isValidationError(error)) {
     return res.status(400).json({ error: message });
@@ -32,9 +40,9 @@ const respondWithError = (res, error, fallbackMessage) => {
   return res.status(500).json({ error: message || fallbackMessage });
 };
 
-const isValidNoteSource = (value) => value === 'manual' || value === 'selection' || value === 'agent';
+const isValidNoteSource = (value: unknown): boolean => value === 'manual' || value === 'selection' || value === 'agent';
 
-const hasValidTodosShape = (value) => (
+const hasValidTodosShape = (value: unknown): boolean => (
   Array.isArray(value)
   && value.every((todo) => (
     isObjectRecord(todo)
@@ -45,7 +53,7 @@ const hasValidTodosShape = (value) => (
   ))
 );
 
-export const registerProjectContextRoutes = (app, dependencies) => {
+export const registerProjectContextRoutes = (app: Express, dependencies: ProjectContextRouteDependencies): void => {
   const { projectContextRuntime } = dependencies;
 
   app.get('/api/project-context/:projectId', async (req, res) => {
@@ -56,7 +64,7 @@ export const registerProjectContextRoutes = (app, dependencies) => {
     }
   });
 
-  app.put('/api/project-context/:projectId/todos', parseJsonBody, async (req, res) => {
+  app.put('/api/project-context/:projectId/todos', parseJsonBody, async (req: Params<'projectId'>, res) => {
     const body = req.body;
     if (!isObjectRecord(body)) {
       return res.status(400).json({ error: 'Body must be an object' });
@@ -72,7 +80,7 @@ export const registerProjectContextRoutes = (app, dependencies) => {
     }
   });
 
-  app.post('/api/project-context/:projectId/notes', parseJsonBody, async (req, res) => {
+  app.post('/api/project-context/:projectId/notes', parseJsonBody, async (req: Params<'projectId'>, res) => {
     const body = req.body;
     if (!isObjectRecord(body)) {
       return res.status(400).json({ error: 'Body must be an object' });
@@ -99,7 +107,7 @@ export const registerProjectContextRoutes = (app, dependencies) => {
     }
   });
 
-  app.patch('/api/project-context/:projectId/notes/:noteId', parseJsonBody, async (req, res) => {
+  app.patch('/api/project-context/:projectId/notes/:noteId', parseJsonBody, async (req: Params<'projectId' | 'noteId'>, res) => {
     const body = req.body;
     if (!isObjectRecord(body)) {
       return res.status(400).json({ error: 'Body must be an object' });
@@ -140,7 +148,7 @@ export const registerProjectContextRoutes = (app, dependencies) => {
     }
   });
 
-  app.patch('/api/project-context/:projectId/plans/:planId', parseJsonBody, async (req, res) => {
+  app.patch('/api/project-context/:projectId/plans/:planId', parseJsonBody, async (req: Params<'projectId' | 'planId'>, res) => {
     const body = req.body;
     if (!isObjectRecord(body) || typeof body.pinned !== 'boolean') {
       return res.status(400).json({ error: 'pinned must be a boolean' });
@@ -173,7 +181,7 @@ export const registerProjectContextRoutes = (app, dependencies) => {
     }
   });
 
-  app.put('/api/project-context/:projectId/plans/:planId', parseJsonBody, async (req, res) => {
+  app.put('/api/project-context/:projectId/plans/:planId', parseJsonBody, async (req: Params<'projectId' | 'planId'>, res) => {
     const body = req.body;
     if (!isObjectRecord(body)) {
       return res.status(400).json({ error: 'Body must be an object' });
@@ -197,7 +205,7 @@ export const registerProjectContextRoutes = (app, dependencies) => {
     }
   });
 
-  app.post('/api/project-context/:projectId/plans', parseJsonBody, async (req, res) => {
+  app.post('/api/project-context/:projectId/plans', parseJsonBody, async (req: Params<'projectId'>, res) => {
     const body = req.body;
     if (!isObjectRecord(body)) {
       return res.status(400).json({ error: 'Body must be an object' });
@@ -221,7 +229,7 @@ export const registerProjectContextRoutes = (app, dependencies) => {
   });
 
   // Moving a plan between the user's folder and the team's shared folder.
-  for (const [suffix, method] of [['share', 'sharePlan'], ['unshare', 'unsharePlan']]) {
+  for (const [suffix, method] of [['share', 'sharePlan'], ['unshare', 'unsharePlan']] as const) {
     app.post(`/api/project-context/:projectId/plans/:planId/${suffix}`, async (req, res) => {
       try {
         const result = await projectContextRuntime[method](req.params.projectId, req.params.planId);

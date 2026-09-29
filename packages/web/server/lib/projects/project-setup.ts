@@ -21,19 +21,84 @@ const ACTION_DESKTOP_FORWARD_MAX_LENGTH = 300;
 const SETUP_COMMAND_MAX_LENGTH = 4000;
 const SETUP_COMMANDS_MAX = 50;
 
-const ACTION_PLATFORMS = new Set(['macos', 'linux', 'windows']);
-const SETUP_WORKTREE_MODES = new Set(['append', 'replace']);
+const ACTION_PLATFORMS = new Set<string>(['macos', 'linux', 'windows']);
+const SETUP_WORKTREE_MODES = new Set<unknown>(['append', 'replace']);
 
-const isObjectRecord = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+export type ProjectAction = {
+  id: string;
+  name: string;
+  command: string;
+  icon: string | null;
+  autoOpenUrl?: true;
+  openUrl?: string;
+  desktopOpenSshForward?: string;
+  platforms?: string[];
+  runIn?: 'parent';
+};
 
-const clamp = (value, maxLength) => (value.length > maxLength ? value.slice(0, maxLength) : value);
+export type DraftStarter = { type: 'command' | 'skill'; name: string };
 
-const trimmedString = (value) => (typeof value === 'string' ? value.trim() : '');
+export type SetupWorktreeMode = 'append' | 'replace';
+
+export type PersonalProjectSetup = {
+  setupWorktree: string[];
+  setupWorktreeWait: boolean | null;
+  setupWorktreeMode: SetupWorktreeMode;
+  projectActions: ProjectAction[];
+  projectActionsPrimaryId: string | null;
+  draftStarters: DraftStarter[];
+  hiddenSharedActionIds: string[];
+  sharedTrust: { hash: string; trustedAt: number } | null;
+};
+
+export type SharedProjectConfig = {
+  setupWorktree: string[];
+  setupWorktreeWait: boolean | null;
+  projectActions: ProjectAction[];
+  draftStarters: DraftStarter[];
+  plansDir: string | null;
+};
+
+export type SharedProjectConfigRead =
+  | { status: 'missing' }
+  | { status: 'ok'; config: SharedProjectConfig }
+  | { status: 'invalid'; reason: string };
+
+export type ProjectSetupSource = 'shared' | 'personal';
+
+export type ProjectSetupView = {
+  trust: { hash: string | null; trusted: boolean };
+  setupWorktree: string[];
+  setupWorktreeWait: boolean;
+  projectActions: (ProjectAction & { source: ProjectSetupSource })[];
+  projectActionsPrimaryId: string | null;
+  draftStarters: (DraftStarter & { source: ProjectSetupSource })[];
+  shared: SharedProjectConfig & { status: SharedProjectConfigRead['status']; reason?: string; path: string };
+  personal: PersonalProjectSetup;
+};
+
+export type StoredProjectSetupPatch = {
+  'setup-worktree'?: string[];
+  'setup-worktree-wait'?: boolean;
+  setupWorktreeMode?: SetupWorktreeMode;
+  projectActions?: ProjectAction[];
+  projectActionsPrimaryId?: string | undefined;
+  draftStarters?: DraftStarter[];
+  hiddenSharedActionIds?: string[];
+  sharedTrust?: { hash: string; trustedAt: number } | undefined;
+  projectPath?: string;
+};
+
+const isObjectRecord = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+const clamp = (value: string, maxLength: number): string => (value.length > maxLength ? value.slice(0, maxLength) : value);
+
+const trimmedString = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
 
 /** Setup commands: non-empty trimmed strings, capped in count and length. */
-export const sanitizeSetupCommands = (value) => {
+export const sanitizeSetupCommands = (value: unknown): string[] => {
   if (!Array.isArray(value)) return [];
-  const commands = [];
+  const commands: string[] = [];
   for (const entry of value) {
     const command = clamp(trimmedString(entry), SETUP_COMMAND_MAX_LENGTH);
     if (!command) continue;
@@ -43,9 +108,9 @@ export const sanitizeSetupCommands = (value) => {
   return commands;
 };
 
-const sanitizeActionPlatforms = (value) => {
+const sanitizeActionPlatforms = (value: unknown): string[] => {
   if (!Array.isArray(value)) return [];
-  const platforms = [];
+  const platforms: string[] = [];
   for (const entry of value) {
     const platform = trimmedString(entry).toLowerCase();
     if (ACTION_PLATFORMS.has(platform) && !platforms.includes(platform)) platforms.push(platform);
@@ -59,10 +124,10 @@ const sanitizeActionPlatforms = (value) => {
  * carries only what the user set. `runIn` keeps only the one value the UI
  * understands (`parent`); anything else means "run in the worktree".
  */
-export const sanitizeProjectActions = (value) => {
+export const sanitizeProjectActions = (value: unknown): ProjectAction[] => {
   if (!Array.isArray(value)) return [];
-  const actions = [];
-  const seenIds = new Set();
+  const actions: ProjectAction[] = [];
+  const seenIds = new Set<string>();
   for (const entry of value) {
     if (!isObjectRecord(entry)) continue;
     const id = trimmedString(entry.id);
@@ -76,7 +141,7 @@ export const sanitizeProjectActions = (value) => {
     const openUrl = clamp(trimmedString(entry.openUrl), ACTION_OPEN_URL_MAX_LENGTH);
     const desktopOpenSshForward = clamp(trimmedString(entry.desktopOpenSshForward), ACTION_DESKTOP_FORWARD_MAX_LENGTH);
 
-    const action = { id, name, command, icon: icon || null };
+    const action: ProjectAction = { id, name, command, icon: icon || null };
     if (entry.autoOpenUrl === true) action.autoOpenUrl = true;
     if (openUrl) action.openUrl = openUrl;
     if (desktopOpenSshForward) action.desktopOpenSshForward = desktopOpenSshForward;
@@ -88,10 +153,10 @@ export const sanitizeProjectActions = (value) => {
 };
 
 /** Draft starters: `{ type: 'command' | 'skill', name }`, unique by `type:name`. */
-export const sanitizeDraftStarters = (value) => {
+export const sanitizeDraftStarters = (value: unknown): DraftStarter[] => {
   if (!Array.isArray(value)) return [];
-  const starters = [];
-  const seen = new Set();
+  const starters: DraftStarter[] = [];
+  const seen = new Set<string>();
   for (const entry of value) {
     if (!isObjectRecord(entry)) continue;
     const type = entry.type === 'command' || entry.type === 'skill' ? entry.type : null;
@@ -109,9 +174,9 @@ export const sanitizeDraftStarters = (value) => {
  * The client-facing view of a raw config document. A primary action id that
  * names no action is reported as `null`.
  */
-const sanitizeIdList = (value) => {
+const sanitizeIdList = (value: unknown): string[] => {
   if (!Array.isArray(value)) return [];
-  const ids = [];
+  const ids: string[] = [];
   for (const entry of value) {
     const id = trimmedString(entry);
     if (id && !ids.includes(id)) ids.push(id);
@@ -125,14 +190,14 @@ const sanitizeIdList = (value) => {
  * shared value through; `hiddenSharedActionIds` and `setupWorktreeMode` only
  * matter when a shared file exists.
  */
-export const projectSetupViewOf = (raw) => {
-  const document = isObjectRecord(raw) ? raw : {};
+export const projectSetupViewOf = (raw: unknown): PersonalProjectSetup => {
+  const document: Record<string, unknown> = isObjectRecord(raw) ? raw : {};
   const projectActions = sanitizeProjectActions(document.projectActions);
   const primaryRaw = trimmedString(document.projectActionsPrimaryId);
   return {
     setupWorktree: sanitizeSetupCommands(document['setup-worktree']),
     setupWorktreeWait: typeof document['setup-worktree-wait'] === 'boolean' ? document['setup-worktree-wait'] : null,
-    setupWorktreeMode: SETUP_WORKTREE_MODES.has(document.setupWorktreeMode) ? document.setupWorktreeMode : 'append',
+    setupWorktreeMode: SETUP_WORKTREE_MODES.has(document.setupWorktreeMode) ? (document.setupWorktreeMode as SetupWorktreeMode) : 'append',
     projectActions,
     projectActionsPrimaryId: primaryRaw && projectActions.some((action) => action.id === primaryRaw) ? primaryRaw : null,
     draftStarters: sanitizeDraftStarters(document.draftStarters),
@@ -142,11 +207,11 @@ export const projectSetupViewOf = (raw) => {
 };
 
 /** The recorded answer to the trust prompt: which shared commands were trusted, and when. */
-const sharedTrustOf = (value) => {
+const sharedTrustOf = (value: unknown): PersonalProjectSetup['sharedTrust'] => {
   if (!isObjectRecord(value)) return null;
   const hash = trimmedString(value.hash);
   if (!hash) return null;
-  return { hash, trustedAt: Number.isFinite(value.trustedAt) ? value.trustedAt : 0 };
+  return { hash, trustedAt: Number.isFinite(value.trustedAt) ? (value.trustedAt as number) : 0 };
 };
 
 /**
@@ -155,11 +220,11 @@ const sharedTrustOf = (value) => {
  * over the raw document without clearing what the patch did not mention.
  * A key with the wrong shape is a validation error, never silently dropped.
  */
-export const projectSetupPatchToStored = (patch) => {
+export const projectSetupPatchToStored = (patch: unknown): StoredProjectSetupPatch => {
   if (!isObjectRecord(patch)) {
     throw new Error('patch must be an object');
   }
-  const stored = {};
+  const stored: StoredProjectSetupPatch = {};
   if ('setupWorktree' in patch) {
     if (!Array.isArray(patch.setupWorktree)) throw new Error('setupWorktree must be an array of commands');
     stored['setup-worktree'] = sanitizeSetupCommands(patch.setupWorktree);
@@ -187,7 +252,7 @@ export const projectSetupPatchToStored = (patch) => {
   }
   if ('setupWorktreeMode' in patch) {
     if (!SETUP_WORKTREE_MODES.has(patch.setupWorktreeMode)) throw new Error('setupWorktreeMode must be "append" or "replace"');
-    stored.setupWorktreeMode = patch.setupWorktreeMode;
+    stored.setupWorktreeMode = patch.setupWorktreeMode as SetupWorktreeMode;
   }
   if ('sharedTrustHash' in patch) {
     const hash = patch.sharedTrustHash;
@@ -214,7 +279,7 @@ const SHARED_CONFIG_VERSION = 1;
  * drive letters, no `..` segments, forward slashes. Returns the normalized
  * value or `null` when the value is not acceptable.
  */
-export const normalizePlansDir = (value) => {
+export const normalizePlansDir = (value: unknown): string | null => {
   const raw = trimmedString(value).replace(/\\/g, '/');
   if (!raw) return null;
   if (raw.startsWith('/') || /^[A-Za-z]:/.test(raw)) return null;
@@ -223,7 +288,7 @@ export const normalizePlansDir = (value) => {
   return segments.join('/');
 };
 
-const EMPTY_SHARED = Object.freeze({
+const EMPTY_SHARED: Readonly<SharedProjectConfig> = Object.freeze({
   setupWorktree: [],
   setupWorktreeWait: null,
   projectActions: [],
@@ -237,8 +302,8 @@ const EMPTY_SHARED = Object.freeze({
  * the file is broken, not that the project has no shared setup). A `plansDir`
  * that points outside the repo is invalid for the same reason.
  */
-export const parseSharedProjectConfig = (raw) => {
-  let parsed;
+export const parseSharedProjectConfig = (raw: string): SharedProjectConfigRead => {
+  let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch (error) {
@@ -250,7 +315,7 @@ export const parseSharedProjectConfig = (raw) => {
   if ('setupWorktreeWait' in parsed && typeof parsed.setupWorktreeWait !== 'boolean') return { status: 'invalid', reason: 'setupWorktreeWait must be a boolean' };
   if ('projectActions' in parsed && !Array.isArray(parsed.projectActions)) return { status: 'invalid', reason: 'projectActions must be an array' };
   if ('draftStarters' in parsed && !Array.isArray(parsed.draftStarters)) return { status: 'invalid', reason: 'draftStarters must be an array' };
-  let plansDir = null;
+  let plansDir: string | null = null;
   if ('plansDir' in parsed && parsed.plansDir !== null) {
     plansDir = normalizePlansDir(parsed.plansDir);
     if (!plansDir) return { status: 'invalid', reason: 'plansDir must be a relative path inside the repository' };
@@ -267,7 +332,7 @@ export const parseSharedProjectConfig = (raw) => {
   };
 };
 
-const withSource = (entries, source) => entries.map((entry) => ({ ...entry, source }));
+const withSource = <T>(entries: T[], source: ProjectSetupSource): (T & { source: ProjectSetupSource })[] => entries.map((entry) => ({ ...entry, source }));
 
 /**
  * What a trust answer covers: the shared setup commands and the shared
@@ -275,11 +340,11 @@ const withSource = (entries, source) => entries.map((entry) => ({ ...entry, sour
  * of them changes the hash, so the prompt returns for the new commands.
  * `null` when the shared config has nothing that executes.
  */
-export const sharedTrustHashOf = (shared) => {
+export const sharedTrustHashOf = (shared: SharedProjectConfig): string | null => {
   const commands = shared.setupWorktree;
   const actions = shared.projectActions
     .map((action) => {
-      const executable = { id: action.id, command: action.command };
+      const executable: { id: string; command: string; runIn?: 'parent' } = { id: action.id, command: action.command };
       if (action.runIn) executable.runIn = action.runIn;
       return executable;
     })
@@ -301,7 +366,7 @@ export const sharedTrustHashOf = (shared) => {
  * `personal` blocks are returned too so a page can edit one without guessing
  * which entries came from where.
  */
-export const mergeProjectSetup = (personal, sharedRead) => {
+export const mergeProjectSetup = (personal: PersonalProjectSetup, sharedRead: SharedProjectConfigRead): ProjectSetupView => {
   const shared = sharedRead.status === 'ok' ? sharedRead.config : EMPTY_SHARED;
   const hidden = new Set(personal.hiddenSharedActionIds);
   const personalIds = new Set(personal.projectActions.map((action) => action.id));
@@ -327,21 +392,21 @@ export const mergeProjectSetup = (personal, sharedRead) => {
   };
 };
 
-const sharedBlockOf = (sharedRead, shared) => {
-  const block = { status: sharedRead.status, path: SHARED_CONFIG_RELATIVE_PATH, ...shared };
+const sharedBlockOf = (sharedRead: SharedProjectConfigRead, shared: SharedProjectConfig): ProjectSetupView['shared'] => {
+  const block: ProjectSetupView['shared'] = { status: sharedRead.status, path: SHARED_CONFIG_RELATIVE_PATH, ...shared };
   if (sharedRead.status === 'invalid') block.reason = sharedRead.reason;
   return block;
 };
 
 /** An action without an icon is written without the key; readers fall back to the play icon. */
-const withoutEmptyIcon = (action) => {
+const withoutEmptyIcon = (action: ProjectAction): Omit<ProjectAction, 'icon'> & { icon?: string | null } => {
   if (action.icon !== null) return action;
   const { icon: _emptyIcon, ...rest } = action;
   return rest;
 };
 
 /** True when the shared config carries nothing: the file should not exist. */
-export const isSharedProjectConfigEmpty = (config) => (
+export const isSharedProjectConfigEmpty = (config: SharedProjectConfig): boolean => (
   config.setupWorktree.length === 0
   && config.setupWorktreeWait === null
   && config.projectActions.length === 0
@@ -355,8 +420,8 @@ export const isSharedProjectConfigEmpty = (config) => (
  * reviewed, so its diffs must stay readable. Actions lose their `source`
  * mark and keep only the fields the user set.
  */
-export const serializeSharedProjectConfig = (config) => {
-  const document = { version: SHARED_CONFIG_VERSION };
+export const serializeSharedProjectConfig = (config: SharedProjectConfig): string => {
+  const document: Record<string, unknown> = { version: SHARED_CONFIG_VERSION };
   if (config.setupWorktree.length > 0) document.setupWorktree = config.setupWorktree;
   if (config.setupWorktreeWait !== null) document.setupWorktreeWait = config.setupWorktreeWait;
   if (config.projectActions.length > 0) document.projectActions = sanitizeProjectActions(config.projectActions).map(withoutEmptyIcon);
@@ -370,9 +435,9 @@ export const serializeSharedProjectConfig = (config) => {
  * named key replaces the current value; a wrongly shaped key is a validation
  * error, and a `plansDir` outside the repo is refused rather than stored.
  */
-export const applySharedProjectSetupPatch = (current, patch) => {
+export const applySharedProjectSetupPatch = (current: SharedProjectConfig, patch: unknown): SharedProjectConfig => {
   if (!isObjectRecord(patch)) throw new Error('patch must be an object');
-  const next = { ...current };
+  const next: SharedProjectConfig = { ...current };
   if ('setupWorktree' in patch) {
     if (!Array.isArray(patch.setupWorktree)) throw new Error('setupWorktree must be an array of commands');
     next.setupWorktree = sanitizeSetupCommands(patch.setupWorktree);
@@ -403,7 +468,7 @@ export const applySharedProjectSetupPatch = (current, patch) => {
 
 export const EMPTY_SHARED_PROJECT_CONFIG = EMPTY_SHARED;
 
-export const isProjectSetupValidationError = (error) => {
+export const isProjectSetupValidationError = (error: unknown): boolean => {
   const message = error instanceof Error ? error.message : '';
   return message.includes('must be') || message.includes('is required') || message.includes('unsupported characters') || message.includes('not found');
 };

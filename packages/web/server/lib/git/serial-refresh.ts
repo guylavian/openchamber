@@ -8,12 +8,29 @@
 // same follow-up, which caps the work per key at "one running, one pending"
 // no matter how many callers ask.
 
-export function createSerialRefresh({ maxConcurrent = Number.POSITIVE_INFINITY } = {}) {
-  const runs = new Map();
-  let running = 0;
-  const waiting = [];
+interface Follower<TRequest, TResult> {
+  requests: TRequest[];
+  execute: (requests: TRequest[]) => Promise<TResult>;
+  promise: Promise<TResult>;
+  resolve: ((value: TResult) => void) | undefined;
+  reject: ((reason?: unknown) => void) | undefined;
+}
 
-  const acquire = () => new Promise((resolve) => {
+interface Run<TRequest, TResult> {
+  follower: Follower<TRequest, TResult> | null;
+}
+
+export interface SerialRefresh<TRequest, TResult> {
+  run(key: string, request: TRequest, execute: (requests: TRequest[]) => Promise<TResult>): Promise<TResult>;
+  readonly activeKeys: string[];
+}
+
+export function createSerialRefresh<TRequest = unknown, TResult = unknown>({ maxConcurrent = Number.POSITIVE_INFINITY }: { maxConcurrent?: number } = {}): SerialRefresh<TRequest, TResult> {
+  const runs = new Map<string, Run<TRequest, TResult>>();
+  let running = 0;
+  const waiting: (() => void)[] = [];
+
+  const acquire = () => new Promise<void>((resolve) => {
     if (running < maxConcurrent) {
       running += 1;
       resolve();
@@ -31,8 +48,8 @@ export function createSerialRefresh({ maxConcurrent = Number.POSITIVE_INFINITY }
     running -= 1;
   };
 
-  const start = (key, requests, execute, deferred) => {
-    const run = { follower: null };
+  const start = (key: string, requests: TRequest[], execute: (requests: TRequest[]) => Promise<TResult>, deferred?: Follower<TRequest, TResult>): Promise<TResult> => {
+    const run: Run<TRequest, TResult> = { follower: null };
     runs.set(key, run);
     const promise = (async () => {
       await acquire();
@@ -74,9 +91,9 @@ export function createSerialRefresh({ maxConcurrent = Number.POSITIVE_INFINITY }
         return start(key, [request], execute);
       }
       if (!current.follower) {
-        let resolve;
-        let reject;
-        const promise = new Promise((res, rej) => {
+        let resolve: ((value: TResult) => void) | undefined;
+        let reject: ((reason?: unknown) => void) | undefined;
+        const promise = new Promise<TResult>((res, rej) => {
           resolve = res;
           reject = rej;
         });
