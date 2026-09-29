@@ -84,6 +84,9 @@
   "packages/web/server/lib/opencode/input-history-scope.ts": {
     "value as number": 2
   },
+  "packages/web/server/lib/package-root.ts": {
+    "JSON.parse(readFile(path.join(directory, 'package.json'), 'utf8')) as PackageManifest | null": 1
+  },
   "packages/web/server/lib/permission-auto-accept/modes.ts": {
     "value as PermissionMode": 1
   },

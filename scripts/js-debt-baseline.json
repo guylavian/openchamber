@@ -431,7 +431,6 @@
   "packages/web/server/lib/opencode/websearch-config.js": 78,
   "packages/web/server/lib/package-manager.js": 817,
   "packages/web/server/lib/package-manager.test.js": 333,
-  "packages/web/server/lib/package-root.js": 29,
   "packages/web/server/lib/package-root.test.js": 35,
   "packages/web/server/lib/path-realpath-cache.js": 85,
   "packages/web/server/lib/path-realpath-cache.test.js": 75,

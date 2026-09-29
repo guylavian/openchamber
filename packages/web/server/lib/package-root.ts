@@ -2,6 +2,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+interface FindPackageRootOptions {
+  readFile?: (file: string, encoding: 'utf8') => string;
+}
+
+interface PackageManifest {
+  name?: unknown;
+}
+
 /**
  * The directory of the @openchamber/web package: its package.json, the built UI
  * (`dist`), `public`. Found by walking up from this file, so it is the same
@@ -10,11 +18,11 @@ import { fileURLToPath } from 'node:url';
  * Code that needs a package-level file resolves it from here, never by counting
  * `..` from its own location.
  */
-export const findPackageRoot = (start, { readFile = fs.readFileSync } = {}) => {
+export const findPackageRoot = (start: string, { readFile = fs.readFileSync }: FindPackageRootOptions = {}): string => {
   let directory = start;
   for (;;) {
     try {
-      const manifest = JSON.parse(readFile(path.join(directory, 'package.json'), 'utf8'));
+      const manifest = JSON.parse(readFile(path.join(directory, 'package.json'), 'utf8')) as PackageManifest | null;
       if (manifest?.name === '@openchamber/web') return directory;
     } catch {
       // no package.json here, or not readable; keep walking up
