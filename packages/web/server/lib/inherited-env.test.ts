@@ -50,7 +50,7 @@ describe('resolvePosixPtyLaunch', () => {
   it('wraps the shell with env -u for every host-private variable on POSIX', () => {
     if (process.platform === 'win32') return;
     expect(resolvePosixPtyLaunch('/bin/zsh', ['-l'])).toEqual({
-      executable: expect.stringMatching(/\/env$/),
+      executable: expect.stringMatching(/\/env$/) as string,
       args: ['-u', 'ARGV0', '-u', 'NODE_CHANNEL_FD', '/bin/zsh', '-l'],
     });
   });

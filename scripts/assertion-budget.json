@@ -73,6 +73,9 @@
     "match[2]!": 1,
     "withoutHash.split('?')[0]!": 1
   },
+  "packages/web/server/lib/inherited-env.test.ts": {
+    "expect.stringMatching(/\\/env$/) as string": 1
+  },
   "packages/web/server/lib/inherited-env.ts": {
     "require('bun:ffi') as BunFfi": 1
   },
