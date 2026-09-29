@@ -559,7 +559,6 @@
   "packages/web/server/lib/session-work/state.test.js": 34,
   "packages/web/server/lib/skills-catalog/cache.js": 144,
   "packages/web/server/lib/skills-catalog/cache.test.js": 77,
-  "packages/web/server/lib/skills-catalog/disk-cache.js": 52,
   "packages/web/server/lib/skills-catalog/github-meta.js": 139,
   "packages/web/server/lib/skills-catalog/github-meta.test.js": 71,
   "packages/web/server/lib/skills-catalog/install.js": 295,

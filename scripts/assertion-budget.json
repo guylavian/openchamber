@@ -110,6 +110,9 @@
   "packages/web/server/lib/skills-catalog/curated-sources.test.ts": {
     "anthropic!": 1
   },
+  "packages/web/server/lib/skills-catalog/disk-cache.ts": {
+    "parsed as Record<string, unknown>": 1
+  },
   "packages/web/server/lib/skills-catalog/git.ts": {
     "error as GitExecError | null | undefined": 1
   },

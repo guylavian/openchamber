@@ -6,11 +6,11 @@ const resolveDataDir = () => (process.env.OPENCHAMBER_DATA_DIR
   ? path.resolve(process.env.OPENCHAMBER_DATA_DIR)
   : path.join(os.homedir(), '.config', 'openchamber'));
 
-const readJsonFile = (filePath) => {
+const readJsonFile = (filePath: string): Record<string, unknown> | null => {
   try {
     const raw = fs.readFileSync(filePath, 'utf8');
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+    const parsed: unknown = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
   } catch {
     return null;
   }
@@ -20,7 +20,7 @@ const readJsonFile = (filePath) => {
  * Read a persisted cache object from the OpenChamber data directory.
  * Returns null when the file is missing, unreadable, or malformed.
  */
-export const readDiskCache = (fileName) => {
+export const readDiskCache = (fileName: string): Record<string, unknown> | null => {
   try {
     return readJsonFile(path.join(resolveDataDir(), fileName));
   } catch {
@@ -33,7 +33,7 @@ export const readDiskCache = (fileName) => {
  * temp-file rename. Failures are ignored: the in-memory cache stays
  * authoritative and the next successful write retries persistence.
  */
-export const writeDiskCache = (fileName, data) => {
+export const writeDiskCache = (fileName: string, data: unknown): boolean => {
   const filePath = path.join(resolveDataDir(), fileName);
   const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
   try {
