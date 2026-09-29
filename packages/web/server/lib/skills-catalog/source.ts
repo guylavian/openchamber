@@ -1,7 +1,7 @@
 const GITHUB_HOST = 'github.com';
 
 
-function normalizeGitOwnerRepo(owner, repo) {
+function normalizeGitOwnerRepo(owner: string | null | undefined, repo: string | null | undefined): { owner: string; repo: string } | null {
   const normalizedOwner = String(owner || '').trim();
   const normalizedRepo = String(repo || '').trim().replace(/\.git$/i, '');
   if (!normalizedOwner || !normalizedRepo) {
@@ -11,7 +11,7 @@ function normalizeGitOwnerRepo(owner, repo) {
 }
 
 
-export function parseSkillRepoSource(input, options = {}) {
+export function parseSkillRepoSource(input: unknown, options: { subpath?: unknown } = {}) {
   const raw = typeof input === 'string' ? input.trim() : '';
   if (!raw) {
     return { ok: false, error: { kind: 'invalidSource', message: 'Repository source is required' } };
@@ -19,7 +19,7 @@ export function parseSkillRepoSource(input, options = {}) {
   const explicitSubpath = typeof options.subpath === 'string' && options.subpath.trim() ? options.subpath.trim() : null;
 
   const urlFormat = raw.startsWith('https://') ? 'https' : raw.startsWith('git@') ? 'ssh' : 'shorthand';
-  const gitHost = urlFormat === 'https' ? raw.split('/')[2] : urlFormat === 'ssh' ? raw.split('@')[1].split(':')[0] : null;
+  const gitHost = urlFormat === 'https' ? raw.split('/')[2] : urlFormat === 'ssh' ? raw.split('@')[1]!.split(':')[0] : null;
 
   if (gitHost === null && urlFormat !== 'shorthand') {
     return { ok: false, error: { kind: 'invalidSource', message: 'Invalid repository URL format' } };
@@ -28,11 +28,11 @@ export function parseSkillRepoSource(input, options = {}) {
   const pathSegments = urlFormat === 'https'
     ? raw.split('/').slice(3).filter(Boolean)
     : urlFormat === 'ssh'
-      ? (raw.split('@')[1].split(':')[1] ?? '').split('/').filter(Boolean)
+      ? (raw.split('@')[1]!.split(':')[1] ?? '').split('/').filter(Boolean)
       : null;
 
   const repoName = pathSegments && pathSegments.length > 0
-    ? pathSegments[pathSegments.length - 1].replace(/\.git$/i, '')
+    ? pathSegments[pathSegments.length - 1]!.replace(/\.git$/i, '')
     : null;
 
   const gitOwner = pathSegments && pathSegments.length > 1

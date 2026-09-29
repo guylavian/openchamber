@@ -15,7 +15,13 @@ export const DEFAULT_LANGUAGE = 'en';
 // Value is what the prompt says to write in. Naming the language in English
 // keeps the instruction in the same language as the rest of the system prompt,
 // which every model handles more reliably than a switch mid-sentence.
-const LANGUAGE_NAMES = {
+// Open map of supported tags that always holds the default language.
+interface LanguageNames {
+  [tag: string]: string;
+  en: string;
+}
+
+const LANGUAGE_NAMES: LanguageNames = {
   en: 'English',
   de: 'German',
   fr: 'French',
@@ -37,7 +43,7 @@ const LANGUAGE_NAMES = {
  * the request: the language is a preference about prose, and refusing to
  * generate a walkthrough over one is a worse answer than writing it in English.
  */
-export function normalizeLanguage(value) {
+export function normalizeLanguage(value: unknown): string {
   if (typeof value !== 'string' || !value) return DEFAULT_LANGUAGE;
   if (Object.hasOwn(LANGUAGE_NAMES, value)) return value;
 
@@ -56,7 +62,7 @@ export function normalizeLanguage(value) {
 }
 
 /** English name of a normalized tag, for the prompt. */
-export function languageName(language) {
+export function languageName(language: string): string {
   return LANGUAGE_NAMES[language] ?? LANGUAGE_NAMES[DEFAULT_LANGUAGE];
 }
 

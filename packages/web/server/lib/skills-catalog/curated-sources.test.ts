@@ -5,6 +5,6 @@ describe('getCuratedSkillsSources', () => {
   it('includes the Anthropic curated source', () => {
     const anthropic = getCuratedSkillsSources().find((source) => source.id === 'anthropic');
     expect(anthropic).toBeDefined();
-    expect(anthropic.label).toBe('Anthropic');
+    expect(anthropic!.label).toBe('Anthropic');
   });
 });

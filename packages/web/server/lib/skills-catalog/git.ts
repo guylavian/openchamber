@@ -1,12 +1,30 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 
+interface GitIdentity {
+  sshKey?: string | null;
+}
+
+interface RunGitOptions {
+  cwd?: string;
+  timeoutMs?: number;
+  maxBuffer?: number;
+  identity?: GitIdentity | null;
+}
+
+// What execFile rejects with: an Error carrying the captured output and exit status.
+type GitExecError = Error & { stdout?: unknown; stderr?: unknown; code?: unknown; signal?: unknown };
+
+type RunGitResult =
+  | { ok: true; stdout: string; stderr: string }
+  | { ok: false; stdout: string; stderr: string; message: string; code: number | null; signal: string | null };
+
 const execFileAsync = promisify(execFile);
 
 const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_MAX_BUFFER = 4 * 1024 * 1024;
 
-export function looksLikeAuthError(message) {
+export function looksLikeAuthError(message: string | null | undefined): boolean {
   const text = String(message || '');
   return (
     /permission denied/i.test(text) ||
@@ -17,7 +35,7 @@ export function looksLikeAuthError(message) {
   );
 }
 
-export async function runGit(args, options = {}) {
+export async function runGit(args: string[], options: RunGitOptions = {}): Promise<RunGitResult> {
   const cwd = options.cwd;
   const timeoutMs = Number.isFinite(options.timeoutMs) ? options.timeoutMs : DEFAULT_TIMEOUT_MS;
   const maxBuffer = Number.isFinite(options.maxBuffer) ? options.maxBuffer : DEFAULT_MAX_BUFFER;
@@ -52,7 +70,7 @@ export async function runGit(args, options = {}) {
 
     return { ok: true, stdout: stdout || '', stderr: stderr || '' };
   } catch (error) {
-    const err = error;
+    const err = error as GitExecError | null | undefined;
     const stdout = typeof err?.stdout === 'string' ? err.stdout : '';
     const stderr = typeof err?.stderr === 'string' ? err.stderr : '';
     const message = err instanceof Error ? err.message : String(err);

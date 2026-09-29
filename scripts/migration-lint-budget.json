@@ -47,5 +47,80 @@
     "prefer-rest-params": "Replacing the JavaScript's arguments use changes the emitted code.",
     "prefer-spread": "Replacing the JavaScript's .apply() call changes the emitted code."
   },
-  "entries": {}
+  "entries": {
+    "packages/web/server/lib/changelog/update-notes.ts": [
+      {
+        "rule": "@typescript-eslint/no-base-to-string",
+        "text": "const text = (value: unknown): string | null => (value === null || value === undefined ? null : String(value).trim() || null);",
+        "count": 1,
+        "reason": "The JavaScript's own String(value) coerces an arbitrary JSON field from the network; the value is honestly unknown and changing the stringification would change behaviour."
+      }
+    ],
+    "packages/web/server/lib/dictation/audio.ts": [
+      {
+        "rule": "@typescript-eslint/no-unnecessary-type-conversion",
+        "text": "const match = /(?:^|[;,\\s])rate\\s*=\\s*(\\d+)(?:$|[;,\\s])/i.exec(String(format || ''));",
+        "count": 1,
+        "reason": "Typing format as the documented string makes the JavaScript's own String() coercion look unnecessary; removing it would change the emitted code."
+      }
+    ],
+    "packages/web/server/lib/dictation/local/sherpa-loader.ts": [
+      {
+        "rule": "@typescript-eslint/no-unnecessary-type-conversion",
+        "text": "const parts = String(existing ?? '').split(path.delimiter).filter(Boolean);",
+        "count": 1,
+        "reason": "Typing the env value as string | undefined makes the JavaScript's own String() coercion look unnecessary; removing it would change the emitted code."
+      }
+    ],
+    "packages/web/server/lib/magic-prompts/runtime.ts": [
+      {
+        "rule": "@typescript-eslint/no-dynamic-delete",
+        "text": "delete nextOverrides[normalizedId];",
+        "count": 1,
+        "reason": "The JavaScript deletes a dynamic key from its copied overrides map; replacing the delete would change the emitted code."
+      }
+    ],
+    "packages/web/server/lib/skills-catalog/git.ts": [
+      {
+        "rule": "@typescript-eslint/no-unnecessary-type-conversion",
+        "text": "const sshKeyPath = String(identity.sshKey).trim();",
+        "count": 1,
+        "reason": "Typing identity.sshKey as a string makes the JavaScript's own String() coercion look unnecessary; removing it would change the emitted code."
+      },
+      {
+        "rule": "@typescript-eslint/no-unnecessary-type-conversion",
+        "text": "const text = String(message || '');",
+        "count": 1,
+        "reason": "Typing message as string | null | undefined makes the JavaScript's own String() coercion look unnecessary; removing it would change the emitted code."
+      }
+    ],
+    "packages/web/server/lib/skills-catalog/source.ts": [
+      {
+        "rule": "@typescript-eslint/no-unnecessary-type-conversion",
+        "text": "const normalizedOwner = String(owner || '').trim();",
+        "count": 1,
+        "reason": "Typing owner as string | null | undefined makes the JavaScript's own String() coercion look unnecessary; removing it would change the emitted code."
+      },
+      {
+        "rule": "@typescript-eslint/no-unnecessary-type-conversion",
+        "text": "const normalizedRepo = String(repo || '').trim().replace(/\\.git$/i, '');",
+        "count": 1,
+        "reason": "Typing repo as string | null | undefined makes the JavaScript's own String() coercion look unnecessary; removing it would change the emitted code."
+      }
+    ],
+    "packages/web/server/lib/text/summarization.ts": [
+      {
+        "rule": "@typescript-eslint/no-meaningless-void-operator",
+        "text": "void zenModel;",
+        "count": 1,
+        "reason": "The JavaScript's own `void zenModel;` marks the parameter as intentionally unused; removing the statement changes the emitted code."
+      },
+      {
+        "rule": "no-useless-escape",
+        "text": ".replace(/[\\[\\]{}()]/g, '')",
+        "count": 1,
+        "reason": "Removing the escape inside the JavaScript's character class changes the regular expression text the file emits."
+      }
+    ]
+  }
 }

@@ -11,7 +11,26 @@
 
 import path from 'path';
 
-export const LOCAL_STT_MODEL_CATALOG = {
+interface LocalSttModelSpec {
+  type: 'nemo_transducer' | 'whisper';
+  archiveUrl: string;
+  extractedDir: string;
+  files: Record<string, string>;
+  description: string;
+}
+
+interface LocalTtsModelSpec {
+  type: 'kokoro' | 'vits';
+  languages: string[];
+  defaultSpeakerByLanguage?: Record<string, number>;
+  archiveUrl: string;
+  extractedDir: string;
+  files: Record<string, string>;
+  lexicon?: string[];
+  description: string;
+}
+
+export const LOCAL_STT_MODEL_CATALOG: Record<string, LocalSttModelSpec> = {
   'parakeet-tdt-0.6b-v2-int8': {
     type: 'nemo_transducer',
     archiveUrl:
@@ -77,7 +96,7 @@ export const LOCAL_STT_MODEL_CATALOG = {
  * models carry speaker ids (`voices`); a Piper model is one voice for one
  * language. `lexicon` entries are joined with commas for sherpa-onnx.
  */
-export const LOCAL_TTS_MODEL_CATALOG = {
+export const LOCAL_TTS_MODEL_CATALOG: Record<string, LocalTtsModelSpec> = {
   'kokoro-en-v0_19': {
     type: 'kokoro',
     languages: ['en'],
@@ -286,7 +305,7 @@ export const LOCAL_TTS_MODEL_IDS = Object.keys(LOCAL_TTS_MODEL_CATALOG);
  * @param {string} modelId
  * @returns {boolean}
  */
-export function isLocalSttModelId(modelId) {
+export function isLocalSttModelId(modelId: unknown): boolean {
   return typeof modelId === 'string' && Object.hasOwn(LOCAL_STT_MODEL_CATALOG, modelId);
 }
 
@@ -294,7 +313,7 @@ export function isLocalSttModelId(modelId) {
  * @param {string} modelId
  * @returns {boolean}
  */
-export function isLocalTtsModelId(modelId) {
+export function isLocalTtsModelId(modelId: unknown): boolean {
   return typeof modelId === 'string' && Object.hasOwn(LOCAL_TTS_MODEL_CATALOG, modelId);
 }
 
@@ -303,7 +322,7 @@ export function isLocalTtsModelId(modelId) {
  * @param {string} modelId
  * @returns {boolean}
  */
-export function isLocalModelId(modelId) {
+export function isLocalModelId(modelId: unknown): boolean {
   return isLocalSttModelId(modelId) || isLocalTtsModelId(modelId);
 }
 
@@ -311,7 +330,7 @@ export function isLocalModelId(modelId) {
  * Spec lookup across both catalogs (STT and TTS).
  * @param {string} modelId
  */
-export function getLocalSttModelSpec(modelId) {
+export function getLocalSttModelSpec(modelId: string): (LocalSttModelSpec | LocalTtsModelSpec) & { id: string; requiredFiles: string[] } {
   const spec = LOCAL_STT_MODEL_CATALOG[modelId] ?? LOCAL_TTS_MODEL_CATALOG[modelId];
   if (!spec) {
     throw new Error(`Unknown local speech model id: ${modelId}`);
@@ -331,8 +350,8 @@ export function getLocalSttModelSpec(modelId) {
  * @param {string} [preferredModelId]
  * @returns {string | null}
  */
-export function resolveLocalTtsModelForLanguage(language, preferredModelId) {
-  const speaks = (modelId) => LOCAL_TTS_MODEL_CATALOG[modelId]?.languages?.includes(language) === true;
+export function resolveLocalTtsModelForLanguage(language: string, preferredModelId?: string | null): string | null {
+  const speaks = (modelId: string): boolean => LOCAL_TTS_MODEL_CATALOG[modelId]?.languages?.includes(language) === true;
   if (preferredModelId && speaks(preferredModelId)) return preferredModelId;
   const candidate = LOCAL_TTS_MODEL_IDS.find(speaks);
   return candidate ?? null;
@@ -346,7 +365,7 @@ export function resolveLocalTtsModelForLanguage(language, preferredModelId) {
  * @param {string} language
  * @returns {number | undefined}
  */
-export function getLocalTtsDefaultSpeaker(modelId, language) {
+export function getLocalTtsDefaultSpeaker(modelId: string, language: string): number | undefined {
   const speaker = LOCAL_TTS_MODEL_CATALOG[modelId]?.defaultSpeakerByLanguage?.[language];
   return Number.isInteger(speaker) ? speaker : undefined;
 }
@@ -356,6 +375,6 @@ export function getLocalTtsDefaultSpeaker(modelId, language) {
  * @param {string} modelId
  * @returns {string}
  */
-export function getLocalSttModelDir(modelsDir, modelId) {
+export function getLocalSttModelDir(modelsDir: string, modelId: string): string {
   return path.join(modelsDir, getLocalSttModelSpec(modelId).extractedDir);
 }

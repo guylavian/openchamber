@@ -12,12 +12,12 @@
  * @param {number|null} [fallback]
  * @returns {number|null}
  */
-export function parsePcmRateFromFormat(format, fallback = null) {
+export function parsePcmRateFromFormat(format: string, fallback: number | null = null): number | null {
   const match = /(?:^|[;,\s])rate\s*=\s*(\d+)(?:$|[;,\s])/i.exec(String(format || ''));
   if (!match) {
     return fallback;
   }
-  const rate = Number.parseInt(match[1], 10);
+  const rate = Number.parseInt(match[1]!, 10);
   return Number.isFinite(rate) && rate > 0 ? rate : fallback;
 }
 
@@ -28,7 +28,7 @@ export function parsePcmRateFromFormat(format, fallback = null) {
  * @param {Buffer} pcm16le
  * @returns {Int16Array}
  */
-function toInt16Samples(pcm16le) {
+function toInt16Samples(pcm16le: Buffer): Int16Array {
   if (pcm16le.byteOffset % 2 !== 0) {
     const copy = Buffer.from(pcm16le);
     return new Int16Array(copy.buffer, copy.byteOffset, copy.byteLength / 2);
@@ -41,7 +41,7 @@ function toInt16Samples(pcm16le) {
  * @param {Buffer} pcm16le
  * @returns {number}
  */
-export function pcm16lePeakAbs(pcm16le) {
+export function pcm16lePeakAbs(pcm16le: Buffer | null | undefined): number {
   if (!pcm16le || pcm16le.length === 0) {
     return 0;
   }
@@ -51,7 +51,7 @@ export function pcm16lePeakAbs(pcm16le) {
   const samples = toInt16Samples(pcm16le);
   let peak = 0;
   for (let i = 0; i < samples.length; i += 1) {
-    const v = samples[i];
+    const v = samples[i]!;
     const abs = v < 0 ? -v : v;
     if (abs > peak) {
       peak = abs;
@@ -69,14 +69,14 @@ export function pcm16lePeakAbs(pcm16le) {
  * @param {number} [gain]
  * @returns {Float32Array}
  */
-export function pcm16leToFloat32(pcm16le, gain = 1) {
+export function pcm16leToFloat32(pcm16le: Buffer, gain = 1): Float32Array {
   if (pcm16le.length % 2 !== 0) {
     throw new Error(`PCM16 chunk byteLength must be even, got ${pcm16le.length}`);
   }
   const int16 = toInt16Samples(pcm16le);
   const out = new Float32Array(int16.length);
   for (let i = 0; i < int16.length; i += 1) {
-    const v = (int16[i] / 32768.0) * gain;
+    const v = (int16[i]! / 32768.0) * gain;
     out[i] = Math.max(-1, Math.min(1, v));
   }
   return out;
@@ -88,7 +88,7 @@ export function pcm16leToFloat32(pcm16le, gain = 1) {
  * @param {number} sampleRate
  * @returns {Buffer}
  */
-export function pcm16ToWav(pcmBuffer, sampleRate) {
+export function pcm16ToWav(pcmBuffer: Buffer, sampleRate: number): Buffer {
   const channels = 1;
   const bitsPerSample = 16;
   const headerSize = 44;
@@ -120,10 +120,16 @@ export function pcm16ToWav(pcmBuffer, sampleRate) {
  * without seams.
  */
 export class Pcm16MonoResampler {
+  declare inputRate: number;
+  declare outputRate: number;
+  declare step: number;
+  declare pos: number;
+  declare carrySample: number | null;
+
   /**
    * @param {{ inputRate: number, outputRate: number }} params
    */
-  constructor({ inputRate, outputRate }) {
+  constructor({ inputRate, outputRate }: { inputRate: number, outputRate: number }) {
     this.inputRate = inputRate;
     this.outputRate = outputRate;
     this.step = inputRate / outputRate;
@@ -131,7 +137,7 @@ export class Pcm16MonoResampler {
     this.carrySample = null;
   }
 
-  reset() {
+  reset(): void {
     this.pos = 0;
     this.carrySample = null;
   }
@@ -140,7 +146,7 @@ export class Pcm16MonoResampler {
    * @param {Buffer} pcm16le
    * @returns {Buffer}
    */
-  processChunk(pcm16le) {
+  processChunk(pcm16le: Buffer): Buffer {
     if (pcm16le.length === 0) {
       return Buffer.alloc(0);
     }
@@ -153,35 +159,35 @@ export class Pcm16MonoResampler {
     const hasCarry = this.carrySample !== null;
     const srcLen = srcChunk.length + (hasCarry ? 1 : 0);
     if (srcLen < 2) {
-      this.carrySample = srcChunk.length ? srcChunk[srcChunk.length - 1] : this.carrySample;
+      this.carrySample = srcChunk.length ? srcChunk[srcChunk.length - 1]! : this.carrySample;
       return Buffer.alloc(0);
     }
 
     const src = new Float32Array(srcLen);
     let offset = 0;
     if (hasCarry) {
-      src[0] = this.carrySample / 32768;
+      src[0] = this.carrySample! / 32768;
       offset = 1;
     }
     for (let i = 0; i < srcChunk.length; i += 1) {
-      src[offset + i] = srcChunk[i] / 32768;
+      src[offset + i] = srcChunk[i]! / 32768;
     }
 
-    const out = [];
+    const out: number[] = [];
     const maxPos = src.length - 1;
 
     while (this.pos < maxPos) {
       const i = Math.floor(this.pos);
       const frac = this.pos - i;
-      const s0 = src[i];
-      const s1 = src[i + 1];
+      const s0 = src[i]!;
+      const s1 = src[i + 1]!;
       const sample = s0 + (s1 - s0) * frac;
       const clamped = Math.max(-1, Math.min(1, sample));
       out.push(Math.round(clamped * 32767));
       this.pos += this.step;
     }
 
-    this.carrySample = srcChunk[srcChunk.length - 1];
+    this.carrySample = srcChunk[srcChunk.length - 1]!;
 
     const shift = src.length - 1;
     this.pos = this.pos - shift;

@@ -4,6 +4,19 @@
     "error as { code?: unknown }": 4,
     "parsed as SettingsRecord": 1
   },
+  "packages/web/server/lib/dictation/audio.ts": {
+    "int16[i]!": 1,
+    "match[1]!": 1,
+    "samples[i]!": 1,
+    "srcChunk[i]!": 1,
+    "srcChunk[srcChunk.length - 1]!": 2,
+    "src[i + 1]!": 1,
+    "src[i]!": 1,
+    "this.carrySample!": 1
+  },
+  "packages/web/server/lib/dictation/local/sherpa-loader.ts": {
+    "error as ErrorLike": 2
+  },
   "packages/web/server/lib/foreman/execution.ts": {
     "({ verdict: 'idle' }) as ExecutionTruth": 1,
     "eventChange.sessionID as SessionId": 1,
@@ -47,6 +60,10 @@
   "packages/web/server/lib/inherited-env.ts": {
     "require('bun:ffi') as BunFfi": 1
   },
+  "packages/web/server/lib/magic-prompts/runtime.ts": {
+    "JSON.parse(raw) as { overrides?: unknown } | null": 1,
+    "error as { code?: unknown }": 1
+  },
   "packages/web/server/lib/network-defaults.test.ts": {
     "{ setDefaultAutoSelectFamily, setDefaultAutoSelectFamilyAttemptTimeout } as Pick<typeof net, 'setDefaultAutoSelectFamily' | 'setDefaultAutoSelectFamilyAttemptTimeout'>": 1,
     "{} as Pick<typeof net, 'setDefaultAutoSelectFamilyAttemptTimeout'>": 1
@@ -59,5 +76,41 @@
   },
   "packages/web/server/lib/session-lineage.ts": {
     "isChildById.keys().next().value!": 1
+  },
+  "packages/web/server/lib/skills-catalog/curated-sources.test.ts": {
+    "anthropic!": 1
+  },
+  "packages/web/server/lib/skills-catalog/git.ts": {
+    "error as GitExecError | null | undefined": 1
+  },
+  "packages/web/server/lib/skills-catalog/source.ts": {
+    "pathSegments[pathSegments.length - 1]!": 1,
+    "raw.split('@')[1]!": 2
+  },
+  "packages/web/server/lib/text/summarization.ts": {
+    "(sentences[0] || normalized) .split(/[;:()-]\\s+/)[0]!": 1,
+    "(sentences[0] || normalized) .split(/[;:()-]\\s+/)[0]! .split(/,\\s+/)[0]!": 1
+  },
+  "packages/web/server/lib/tts/capability-runtime.ts": {
+    "error as Error": 1,
+    "match[1]!": 1,
+    "match[2]!": 1,
+    "stdout.split('\\n') .filter((line) => line.trim()) .map((line) => { const match = line.match(/^(.+?)\\s+([a-zA-Z]{2}_[a-zA-Z]{2,3})\\s+#/); if (match) { return { name: match[1]!.trim(), locale: match[2]! }; } return null; }) .filter(Boolean) as SayVoice[]": 1
+  },
+  "packages/web/server/lib/tts/language-detect.ts": {
+    "SCRIPT_LANGUAGE[script]!": 1,
+    "locale.split(/[_-]/)[0]!": 1,
+    "matching[0]!": 1,
+    "scores.ru!": 1,
+    "scores.uk!": 1,
+    "scores[bestOf(scores, marked)]!": 1,
+    "scores[marked]!": 1
+  },
+  "packages/web/server/lib/walkthrough/hunks.ts": {
+    "current.hunkDigests!": 2,
+    "hunkMatch[1]!": 1,
+    "hunkMatch[3]!": 1,
+    "match[1]!": 1,
+    "match[2]!": 1
   }
 }

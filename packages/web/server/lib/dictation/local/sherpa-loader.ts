@@ -14,14 +14,21 @@ import { existsSync } from 'fs';
 
 const require = createRequire(import.meta.url);
 
-let cached = null;
+type ErrorLike = { message?: string } | null | undefined;
 
-function sherpaPlatformPackageName(platform = process.platform, arch = process.arch) {
+interface SherpaLoaderEnvResult {
+  key: string | null;
+  libDir: string | null;
+}
+
+let cached: unknown = null;
+
+function sherpaPlatformPackageName(platform = process.platform, arch = process.arch): string {
   const normalizedPlatform = platform === 'win32' ? 'win' : platform;
   return `sherpa-onnx-${normalizedPlatform}-${arch}`;
 }
 
-function sherpaLoaderEnvKey(platform = process.platform) {
+function sherpaLoaderEnvKey(platform = process.platform): string | null {
   if (platform === 'linux') {
     return 'LD_LIBRARY_PATH';
   }
@@ -34,7 +41,7 @@ function sherpaLoaderEnvKey(platform = process.platform) {
   return null;
 }
 
-function prependEnvPath(existing, value) {
+function prependEnvPath(existing: string | undefined, value: string): string {
   const parts = String(existing ?? '').split(path.delimiter).filter(Boolean);
   if (parts.includes(value)) {
     return parts.join(path.delimiter);
@@ -47,7 +54,7 @@ function prependEnvPath(existing, value) {
  * plain object where PATH may be stored as `Path`. Using a hardcoded 'PATH'
  * would create a duplicate key and break the child process PATH.
  */
-function findEnvKey(env, key) {
+function findEnvKey(env: NodeJS.ProcessEnv, key: string): string {
   const lower = key.toLowerCase();
   for (const k of Object.keys(env)) {
     if (k.toLowerCase() === lower) {
@@ -57,7 +64,7 @@ function findEnvKey(env, key) {
   return key;
 }
 
-function resolveSherpaLibDir(platform = process.platform, arch = process.arch) {
+function resolveSherpaLibDir(platform = process.platform, arch = process.arch): string | null {
   const packageName = sherpaPlatformPackageName(platform, arch);
   try {
     const pkgJson = require.resolve(`${packageName}/package.json`);
@@ -78,7 +85,7 @@ function resolveSherpaLibDir(platform = process.platform, arch = process.arch) {
  * Mutates the provided env object.
  * @param {NodeJS.ProcessEnv} env
  */
-export function applySherpaLoaderEnv(env) {
+export function applySherpaLoaderEnv(env: NodeJS.ProcessEnv): SherpaLoaderEnvResult {
   const key = sherpaLoaderEnvKey();
   const libDir = resolveSherpaLibDir();
   if (!key || !libDir) {
@@ -93,18 +100,18 @@ export function applySherpaLoaderEnv(env) {
  * Load the sherpa-onnx-node module, trying the upstream entry first and then
  * the platform addon directly.
  */
-export function loadSherpaOnnxNode() {
+export function loadSherpaOnnxNode(): unknown {
   if (cached) {
     return cached;
   }
 
-  const attempts = [];
+  const attempts: string[] = [];
 
   try {
     cached = require('sherpa-onnx-node');
     return cached;
   } catch (error) {
-    attempts.push(`sherpa-onnx-node: ${error?.message || String(error)}`);
+    attempts.push(`sherpa-onnx-node: ${(error as ErrorLike)?.message || String(error)}`);
   }
 
   const libDir = resolveSherpaLibDir();
@@ -116,7 +123,7 @@ export function loadSherpaOnnxNode() {
         cached = require(addonPath);
         return cached;
       } catch (error) {
-        attempts.push(`${addonPath}: ${error?.message || String(error)}`);
+        attempts.push(`${addonPath}: ${(error as ErrorLike)?.message || String(error)}`);
       }
     } else {
       attempts.push(`${addonPath}: file not found`);

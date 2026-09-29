@@ -12,7 +12,37 @@
 
 export const CHANGELOG_INDEX_URL = 'https://raw.githubusercontent.com/openchamber/openchamber/main/changelog/index.json';
 
-const GROUPS = [
+type GroupKey = 'new' | 'improvements' | 'fixes' | 'sdk' | 'misc';
+
+interface ChangelogEntry {
+  version?: unknown;
+  date?: unknown;
+  title?: unknown;
+  intro?: unknown;
+  app?: Partial<Record<GroupKey, unknown>> | null;
+}
+
+interface ReleaseGroup {
+  heading: string;
+  bullets: string[];
+}
+
+interface Release {
+  version: string;
+  date: string;
+  title: string | null;
+  intro: string | null;
+  groups: ReleaseGroup[];
+}
+
+type CompareVersions = (left: string, right: string) => number;
+
+interface FetchUpdateNotesOptions {
+  fetch?: typeof fetch;
+  timeoutMs?: number;
+}
+
+const GROUPS: ReadonlyArray<readonly [GroupKey, string]> = [
   ['new', 'New'],
   ['improvements', 'Improvements'],
   ['fixes', 'Fixes'],
@@ -26,10 +56,10 @@ const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 // The file crosses a network boundary with no schema library on this side, so
 // each field is coerced into its domain shape here; a release without a valid
 // version and date is dropped.
-const text = (value) => (value === null || value === undefined ? null : String(value).trim() || null);
-const bulletList = (value) => (Array.isArray(value) ? value.map((item) => String(item)) : []);
+const text = (value: unknown): string | null => (value === null || value === undefined ? null : String(value).trim() || null);
+const bulletList = (value: unknown): string[] => (Array.isArray(value) ? value.map((item) => String(item)) : []);
 
-const parseRelease = (entry) => {
+const parseRelease = (entry: ChangelogEntry | null | undefined): Release | null => {
   if (entry === null || entry === undefined) return null;
   const version = text(entry.version);
   const date = text(entry.date);
@@ -44,7 +74,7 @@ const parseRelease = (entry) => {
   };
 };
 
-const renderRelease = (release) => {
+const renderRelease = (release: Release): string => {
   const lines = [`## [${release.version}] - ${release.date}`, ''];
   if (release.title) lines.push(`**${release.title}**`, '');
   if (release.intro) lines.push(release.intro, '');
@@ -59,7 +89,7 @@ const renderRelease = (release) => {
  * Markdown for the releases in (fromVersion, toVersion], newest first, or
  * null when the index holds none of them.
  */
-export function renderUpdateNotes(index, fromVersion, toVersion, compareVersions) {
+export function renderUpdateNotes(index: unknown, fromVersion: string, toVersion: string, compareVersions: CompareVersions): string | null {
   if (!Array.isArray(index)) return null;
   const relevant = index
     .map(parseRelease)
@@ -71,7 +101,7 @@ export function renderUpdateNotes(index, fromVersion, toVersion, compareVersions
 }
 
 /** Fetch the index and render the notes for one update; null on any failure. */
-export async function fetchUpdateNotes(fromVersion, toVersion, compareVersions, options = {}) {
+export async function fetchUpdateNotes(fromVersion: string, toVersion: string, compareVersions: CompareVersions, options: FetchUpdateNotesOptions = {}): Promise<string | null> {
   const fetchImpl = options.fetch ?? fetch;
   try {
     const response = await fetchImpl(CHANGELOG_INDEX_URL, { signal: AbortSignal.timeout(options.timeoutMs ?? 10_000) });

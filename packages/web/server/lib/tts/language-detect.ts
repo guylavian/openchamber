@@ -9,7 +9,12 @@
  * an unknown language falls back to English rather than failing.
  */
 
-const SCRIPT_RANGES = [
+interface DetectedLanguage {
+  language: string;
+  script: string;
+}
+
+const SCRIPT_RANGES: ReadonlyArray<readonly [string, RegExp]> = [
   ['hangul', /[가-힯ᄀ-ᇿ㄰-㆏]/g],
   ['kana', /[぀-ヿ]/g],
   ['han', /[一-鿿㐀-䶿]/g],
@@ -22,7 +27,7 @@ const SCRIPT_RANGES = [
   ['latin', /[A-Za-zÀ-ɏ]/g],
 ];
 
-const SCRIPT_LANGUAGE = {
+const SCRIPT_LANGUAGE: Record<string, string> = {
   hangul: 'ko',
   greek: 'el',
   arabic: 'ar',
@@ -32,7 +37,7 @@ const SCRIPT_LANGUAGE = {
 };
 
 // Letters that only (or overwhelmingly) occur in one language of a script.
-const LATIN_MARKERS = {
+const LATIN_MARKERS: Record<string, RegExp> = {
   pl: /[łęąńśźż]/i,
   cs: /[řěůťďň]/i,
   tr: /[ğışİ]/,
@@ -45,7 +50,7 @@ const LATIN_MARKERS = {
 
 // Frequent function words per language. Scored by whole-word hits; every
 // list has the same length so scores stay comparable.
-const STOPWORDS = {
+const STOPWORDS: Record<string, string[]> = {
   en: ['the', 'and', 'is', 'to', 'of', 'that', 'you', 'with', 'for', 'this', 'are', 'it', 'not', 'have', 'can', 'will', 'your', 'from', 'which', 'when'],
   de: ['und', 'der', 'die', 'das', 'ist', 'nicht', 'mit', 'ein', 'eine', 'auch', 'sich', 'auf', 'für', 'wird', 'werden', 'oder', 'aber', 'wenn', 'sind', 'kann'],
   fr: ['le', 'la', 'les', 'et', 'est', 'une', 'des', 'pour', 'que', 'qui', 'dans', 'pas', 'vous', 'sur', 'avec', 'sont', 'nous', 'cette', 'mais', 'plus'],
@@ -64,13 +69,13 @@ const STOPWORDS = {
 const LATIN_LANGUAGES = ['en', 'de', 'fr', 'es', 'it', 'pt', 'pl', 'nl', 'cs', 'tr', 'sv'];
 const CYRILLIC_LANGUAGES = ['uk', 'ru'];
 
-const countMatches = (text, pattern) => {
+const countMatches = (text: string, pattern: RegExp): number => {
   const matches = text.match(pattern);
   return matches ? matches.length : 0;
 };
 
-const scoreStopwords = (words, languages) => {
-  const scores = {};
+const scoreStopwords = (words: string[], languages: string[]): Record<string, number> => {
+  const scores: Record<string, number> = {};
   for (const language of languages) {
     const list = new Set(STOPWORDS[language]);
     let hits = 0;
@@ -82,7 +87,7 @@ const scoreStopwords = (words, languages) => {
   return scores;
 };
 
-const bestOf = (scores, fallback) => {
+const bestOf = (scores: Record<string, number>, fallback: string): string => {
   let best = fallback;
   let bestScore = 0;
   for (const [language, score] of Object.entries(scores)) {
@@ -94,7 +99,7 @@ const bestOf = (scores, fallback) => {
   return best;
 };
 
-const pickByMarkers = (text, markers) => {
+const pickByMarkers = (text: string, markers: Record<string, RegExp>): string | null => {
   for (const [language, pattern] of Object.entries(markers)) {
     if (pattern.test(text)) return language;
   }
@@ -105,9 +110,9 @@ const pickByMarkers = (text, markers) => {
  * @param {string} text
  * @returns {{ language: string, script: string }} BCP-47 primary language subtag and the dominant script.
  */
-export function detectTextLanguage(text) {
+export function detectTextLanguage(text: unknown): DetectedLanguage {
   const source = typeof text === 'string' ? text : '';
-  const counts = SCRIPT_RANGES.map(([script, pattern]) => [script, countMatches(source, pattern)]);
+  const counts = SCRIPT_RANGES.map(([script, pattern]): [string, number] => [script, countMatches(source, pattern)]);
   const letters = counts.reduce((sum, [, count]) => sum + count, 0);
   if (letters === 0) return { language: 'en', script: 'latin' };
 
@@ -119,7 +124,7 @@ export function detectTextLanguage(text) {
 
   const [script] = counts.reduce((best, entry) => (entry[1] > best[1] ? entry : best));
 
-  if (script in SCRIPT_LANGUAGE) return { language: SCRIPT_LANGUAGE[script], script };
+  if (script in SCRIPT_LANGUAGE) return { language: SCRIPT_LANGUAGE[script]!, script };
 
   const words = source.toLowerCase().split(/[^\p{L}\p{M}']+/u).filter(Boolean);
 
@@ -132,7 +137,7 @@ export function detectTextLanguage(text) {
     // neither set, and a text with no Russian-only letters is far more
     // likely Ukrainian than the reverse, so that tie goes to Ukrainian.
     if (ukMarkers !== ruMarkers) return { language: ukMarkers > ruMarkers ? 'uk' : 'ru', script };
-    if (scores.uk !== scores.ru) return { language: scores.uk > scores.ru ? 'uk' : 'ru', script };
+    if (scores.uk !== scores.ru) return { language: scores.uk! > scores.ru! ? 'uk' : 'ru', script };
     return { language: ruMarkers > 0 ? 'ru' : 'uk', script };
   }
 
@@ -140,7 +145,7 @@ export function detectTextLanguage(text) {
   const marked = pickByMarkers(source, LATIN_MARKERS);
   // A characteristic letter outranks stopword counts unless another language
   // clearly dominates the function words (a German text quoting "façade").
-  if (marked && scores[marked] * 2 >= scores[bestOf(scores, marked)]) {
+  if (marked && scores[marked]! * 2 >= scores[bestOf(scores, marked)]!) {
     return { language: marked, script };
   }
   return { language: bestOf(scores, 'en'), script };
@@ -152,8 +157,8 @@ export function detectTextLanguage(text) {
  * @param {string} language
  * @returns {string[]}
  */
-function localePrefixesForLanguage(language) {
-  const table = {
+function localePrefixesForLanguage(language: string): string[] {
+  const table: Record<string, string[]> = {
     en: ['en_US', 'en_GB', 'en'],
     uk: ['uk_UA', 'uk'],
     ru: ['ru_RU', 'ru'],
@@ -188,13 +193,13 @@ function localePrefixesForLanguage(language) {
  * @param {ReadonlyArray<{ name: string, locale: string }>} voices
  * @returns {string | null}
  */
-export function pickVoiceForLanguage(language, voices) {
+export function pickVoiceForLanguage(language: string, voices: ReadonlyArray<{ name: string, locale: string }>): string | null {
   const prefixes = localePrefixesForLanguage(language);
   for (const prefix of prefixes) {
     const matching = voices.filter((voice) => voice.locale === prefix || voice.locale.startsWith(`${prefix}_`) || (prefix === language && voice.locale.startsWith(`${language}_`)));
     if (matching.length === 0) continue;
     const enhanced = matching.find((voice) => /\((Enhanced|Premium)\)/i.test(voice.name));
-    return (enhanced ?? matching[0]).name;
+    return (enhanced ?? matching[0]!).name;
   }
   return null;
 }
@@ -204,7 +209,7 @@ export function pickVoiceForLanguage(language, voices) {
  * @param {string | null | undefined} locale
  * @returns {string | null}
  */
-export function languageOfLocale(locale) {
+export function languageOfLocale(locale: string | null | undefined): string | null {
   if (typeof locale !== 'string' || !locale) return null;
-  return locale.split(/[_-]/)[0].toLowerCase();
+  return locale.split(/[_-]/)[0]!.toLowerCase();
 }

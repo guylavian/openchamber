@@ -15,8 +15,49 @@ export const MAX_STOPS = 16;
 export const MAX_HUNKS_PER_STOP = 14;
 export const MAX_CHAPTER_TITLE_CHARS = 24;
 
-const CHAPTER_ICONS = ['bug', 'wrench', 'path', 'flask', 'doc', 'gear'];
-const STOP_IMPORTANCE = ['critical', 'normal', 'context'];
+type ChapterIcon = 'bug' | 'wrench' | 'path' | 'flask' | 'doc' | 'gear';
+type StopImportance = 'critical' | 'normal' | 'context';
+
+// What responseSchema asks the model for. The model's JSON is re-checked field
+// by field in normalizeWalkthrough, so this is the contract, not a guarantee.
+interface ModelStop {
+  title: string;
+  hunks: string[];
+  importance: StopImportance;
+  prose: string;
+}
+
+interface ModelChapter {
+  title: string;
+  icon: ChapterIcon;
+  blurb: string;
+  stops: ModelStop[];
+}
+
+interface ModelWalkthrough {
+  title: string;
+  focus: string;
+  chapters: ModelChapter[];
+}
+
+interface WalkthroughStop {
+  id: string;
+  title: string;
+  hunkIds: string[];
+  importance: StopImportance;
+  prose: string;
+}
+
+interface WalkthroughChapter {
+  id: string;
+  title: string;
+  icon: ChapterIcon;
+  blurb: string;
+  stops: WalkthroughStop[];
+}
+
+const CHAPTER_ICONS: ChapterIcon[] = ['bug', 'wrench', 'path', 'flask', 'doc', 'gear'];
+const STOP_IMPORTANCE: StopImportance[] = ['critical', 'normal', 'context'];
 
 export const responseSchema = {
   type: 'object',
@@ -55,7 +96,7 @@ export const responseSchema = {
   additionalProperties: false,
 };
 
-const asString = (value, max) => {
+const asString = (value: unknown, max?: number): string => {
   if (typeof value !== 'string') return '';
   const trimmed = value.trim();
   return max && trimmed.length > max ? trimmed.slice(0, max) : trimmed;
@@ -68,26 +109,26 @@ const asString = (value, max) => {
  * @param {Map<string,string>} idByAlias alias → real hunk id, from the digest
  * @returns {{title: string, focus: string, chapters: Array<object>, droppedAnchors: number}}
  */
-export function normalizeWalkthrough(raw, idByAlias) {
+export function normalizeWalkthrough(raw: ModelWalkthrough | null | undefined, idByAlias: ReadonlyMap<string, string>): { title: string; focus: string; chapters: WalkthroughChapter[]; droppedAnchors: number } {
   if (!raw || typeof raw !== 'object') {
     throw Object.assign(new Error('Model returned no walkthrough object'), { code: 'invalid-walkthrough' });
   }
 
-  const usedIds = new Set();
+  const usedIds = new Set<string>();
   let droppedAnchors = 0;
   let stopCount = 0;
 
-  const chapters = [];
+  const chapters: WalkthroughChapter[] = [];
   for (const [chapterIndex, rawChapter] of (Array.isArray(raw.chapters) ? raw.chapters : []).entries()) {
     if (chapters.length >= MAX_CHAPTERS) break;
     if (!rawChapter || typeof rawChapter !== 'object') continue;
 
-    const stops = [];
+    const stops: WalkthroughStop[] = [];
     for (const rawStop of Array.isArray(rawChapter.stops) ? rawChapter.stops : []) {
       if (stopCount >= MAX_STOPS) break;
       if (!rawStop || typeof rawStop !== 'object') continue;
 
-      const hunkIds = [];
+      const hunkIds: string[] = [];
       for (const alias of Array.isArray(rawStop.hunks) ? rawStop.hunks : []) {
         const id = idByAlias.get(typeof alias === 'string' ? alias.trim() : '');
         if (!id) {
@@ -145,7 +186,7 @@ export function normalizeWalkthrough(raw, idByAlias) {
  * Extract a JSON object from a model response that may or may not honour the
  * schema — some providers wrap it in prose or a fenced block.
  */
-export function parseModelJson(text) {
+export function parseModelJson(text: unknown): unknown {
   if (typeof text !== 'string' || !text.trim()) {
     throw Object.assign(new Error('Model returned an empty response'), { code: 'invalid-walkthrough' });
   }

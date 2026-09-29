@@ -7,7 +7,15 @@
  * - note: distilled project note
  */
 
-export function sanitizeForTTS(text) {
+interface SummarizeTextOptions {
+  text?: string | null;
+  threshold?: number;
+  maxLength?: number;
+  zenModel?: string;
+  mode?: string;
+}
+
+export function sanitizeForTTS(text: unknown): string {
   if (!text || typeof text !== 'string') return '';
 
   return text
@@ -25,7 +33,7 @@ export function sanitizeForTTS(text) {
     .trim();
 }
 
-function sanitizeForNotification(text) {
+function sanitizeForNotification(text: unknown): string {
   if (!text || typeof text !== 'string') return '';
 
   return text
@@ -43,7 +51,7 @@ function sanitizeForNotification(text) {
     .trim();
 }
 
-export function sanitizeForNote(text) {
+export function sanitizeForNote(text: unknown): string {
   if (!text || typeof text !== 'string') return '';
 
   return text
@@ -62,13 +70,13 @@ export function sanitizeForNote(text) {
     .trim();
 }
 
-function sanitizeByMode(text, mode) {
+function sanitizeByMode(text: string, mode: string): string {
   if (mode === 'note') return sanitizeForNote(text);
   if (mode === 'notification') return sanitizeForNotification(text);
   return sanitizeForTTS(text);
 }
 
-function distillNoteFallback(text, maxLength) {
+function distillNoteFallback(text: string, maxLength: number): string {
   const sanitized = sanitizeForNote(text);
   if (!sanitized) return '';
 
@@ -83,8 +91,8 @@ function distillNoteFallback(text, maxLength) {
     .filter(Boolean);
 
   const best = (sentences[0] || normalized)
-    .split(/[;:()-]\s+/)[0]
-    .split(/,\s+/)[0]
+    .split(/[;:()-]\s+/)[0]!
+    .split(/,\s+/)[0]!
     .trim();
   const idealLimit = Math.min(maxLength, Math.max(32, Math.floor(normalized.length * 0.65)));
 
@@ -94,7 +102,7 @@ function distillNoteFallback(text, maxLength) {
   return clipped ? `${clipped}…` : best.slice(0, idealLimit).trim();
 }
 
-function distillNotificationFallback(text, maxLength) {
+function distillNotificationFallback(text: string, maxLength: number): string {
   const sanitized = sanitizeForNotification(text);
   if (!sanitized) return '';
 
@@ -110,13 +118,13 @@ function distillNotificationFallback(text, maxLength) {
   return clipped ? `${clipped}…` : candidate.slice(0, limit).trim();
 }
 
-function fallbackByMode(text, maxLength, mode) {
+function fallbackByMode(text: string, maxLength: number, mode: string): string {
   if (mode === 'note') return distillNoteFallback(text, maxLength);
   if (mode === 'notification') return distillNotificationFallback(text, maxLength);
   return sanitizeByMode(text, mode);
 }
 
-export async function summarizeText({ text, threshold = 200, maxLength = 500, zenModel, mode = 'tts' }) {
+export async function summarizeText({ text, threshold = 200, maxLength = 500, zenModel, mode = 'tts' }: SummarizeTextOptions) {
   void zenModel;
 
   const summary = fallbackByMode(text || '', maxLength, mode);
