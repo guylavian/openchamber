@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { PERMISSION_MODES, isAutoAnsweringMode, isPermissionMode, toPermissionMode } from './modes.js';
+import type { Express, Request } from 'express';
+import type { PermissionMode } from './modes.js';
 
 const SETTINGS_KEY = 'permissionAutoAccept';
 const DEFAULT_MODE_SETTINGS_KEY = 'permissionDefaultMode';
@@ -16,19 +18,77 @@ const storedPolicySchema = z.object({
   revision: z.number().int().nonnegative().catch(0).default(0),
 }).catch({ sessions: {}, revision: 0 });
 
-const readStoredPolicy = (value) => storedPolicySchema.parse(value ?? {});
+const readStoredPolicy = (value: unknown) => storedPolicySchema.parse(value ?? {});
 
 const createdSessionSchema = z.object({ id: z.string().min(1), parentID: z.string().nullish() });
 
-const hasLegacyEntries = (stored) => Object.values(stored.sessions).some((entry) => entry === true || entry === false);
+type StoredPolicy = z.infer<typeof storedPolicySchema>;
+
+interface Policy {
+  sessions: Record<string, PermissionMode>;
+  revision: number;
+}
+
+interface PolicySnapshot {
+  sessions: Record<string, boolean>;
+  modes: Record<string, PermissionMode>;
+  revision: number;
+}
+
+interface PermissionRequest {
+  id?: string;
+  sessionID?: string;
+  directory?: string;
+}
+
+interface SessionInfo {
+  id?: unknown;
+  parentID?: unknown;
+  directory?: unknown;
+  location?: { directory?: unknown } | null;
+}
+
+interface TranslatedPayload {
+  type?: string;
+  properties?: (PermissionRequest & { info?: SessionInfo | null; requestID?: unknown }) | null;
+}
+
+interface GlobalEvent {
+  directory?: unknown;
+  translated?: () => TranslatedPayload[];
+}
+
+interface GlobalEventHub {
+  subscribeEvent: (listener: (event: GlobalEvent | null | undefined) => void) => () => void;
+  subscribeStatus: (listener: (status: { type?: string } | null | undefined) => void) => () => void;
+}
+
+interface PermissionAutoAcceptRuntimeOptions {
+  globalEventHub: GlobalEventHub;
+  buildOpenCodeUrl: (path: string, directory: string) => string;
+  getOpenCodeAuthHeaders: () => Record<string, string>;
+  readSettingsFromDiskMigrated: () => Promise<Record<string, unknown> | null | undefined>;
+  persistSettings: (changes: Record<string, unknown>) => Promise<unknown>;
+  broadcastGlobalUiEvent?: ((event: { type: string; properties: PolicySnapshot }) => void) | null;
+  evaluatePermission?: ((permission: PermissionRequest, directory: string | undefined) => Promise<{ action?: unknown } | null | undefined>) | null;
+  onPermissionReplied?: ((permissionId: string) => void) | null;
+  resolveLegacyEnabledMode?: () => Promise<PermissionMode>;
+  fetchImpl?: typeof fetch;
+  retryDelaysMs?: readonly number[];
+  requestTimeoutMs?: number;
+}
+
+type Thrown = { message?: unknown; status?: unknown } | null | undefined;
+
+const hasLegacyEntries = (stored: StoredPolicy) => Object.values(stored.sessions).some((entry) => entry === true || entry === false);
 
 /**
  * `sessions` maps a session id to its mode. Returns whether any entry was a
  * pre-modes boolean, so the caller can persist the converted policy once.
  */
-const normalizePolicy = (value, legacyEnabledMode = 'auto') => {
+const normalizePolicy = (value?: unknown, legacyEnabledMode: PermissionMode = 'auto') => {
   const stored = readStoredPolicy(value);
-  const sessions = {};
+  const sessions: Record<string, PermissionMode> = {};
   for (const [sessionId, entry] of Object.entries(stored.sessions)) {
     const mode = toPermissionMode(entry, legacyEnabledMode);
     if (mode) sessions[sessionId] = mode;
@@ -36,7 +96,7 @@ const normalizePolicy = (value, legacyEnabledMode = 'auto') => {
   return { policy: { sessions, revision: stored.revision }, hadLegacy: hasLegacyEntries(stored) };
 };
 
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export function createPermissionAutoAcceptRuntime({
   globalEventHub,
@@ -56,23 +116,23 @@ export function createPermissionAutoAcceptRuntime({
   fetchImpl = fetch,
   retryDelaysMs = RETRY_DELAYS_MS,
   requestTimeoutMs = REQUEST_TIMEOUT_MS,
-}) {
-  let policy = normalizePolicy().policy;
+}: PermissionAutoAcceptRuntimeOptions) {
+  let policy: Policy = normalizePolicy().policy;
   let loaded = false;
-  let loadPromise = null;
-  let writePromise = Promise.resolve();
-  const sessions = new Map();
-  const inFlight = new Map();
-  const reconcilePromises = new Map();
+  let loadPromise: Promise<PolicySnapshot> | null = null;
+  let writePromise: Promise<unknown> = Promise.resolve();
+  const sessions = new Map<string, { parentID: string | null; directory: string | undefined }>();
+  const inFlight = new Map<string, Promise<boolean>>();
+  const reconcilePromises = new Map<string, Promise<void>>();
   // What the runtime did with each recent request, so notifications can tell a
   // request the safety net held (the user must hear about it) from one it
   // accepted.
-  const outcomes = new Map();
+  const outcomes = new Map<string, Promise<string>>();
 
   // `sessions` keeps the on/off shape clients from before the modes read;
   // `modes` is the policy itself.
-  const snapshot = () => {
-    const legacySessions = {};
+  const snapshot = (): PolicySnapshot => {
+    const legacySessions: Record<string, boolean> = {};
     for (const [sessionId, mode] of Object.entries(policy.sessions)) legacySessions[sessionId] = isAutoAnsweringMode(mode);
     return { sessions: legacySessions, modes: { ...policy.sessions }, revision: policy.revision };
   };
@@ -102,7 +162,7 @@ export function createPermissionAutoAcceptRuntime({
     return loadPromise;
   };
 
-  const persistUpdate = (update) => {
+  const persistUpdate = (update: (current: Policy) => Policy) => {
     writePromise = writePromise.then(async () => {
       const next = update(policy);
       await persistSettings({ [SETTINGS_KEY]: next });
@@ -122,7 +182,7 @@ export function createPermissionAutoAcceptRuntime({
    * know on/off (clients from before the modes, scheduled tasks) and means
    * `auto` or `ask`.
    */
-  const setSessionPolicy = async (sessionId, mode, directory) => {
+  const setSessionPolicy = async (sessionId: unknown, mode: unknown, directory?: string) => {
     if (typeof sessionId !== 'string' || !sessionId.trim()) throw new TypeError('sessionId is required');
     const next = toPermissionMode(mode);
     if (!next) throw new TypeError('mode must be ask, safety or auto');
@@ -142,7 +202,7 @@ export function createPermissionAutoAcceptRuntime({
    * sessions; a policy the creating flow already set wins. Subagents inherit
    * from their parent instead.
    */
-  const applyDefaultMode = async (sessionId) => {
+  const applyDefaultMode = async (sessionId: string) => {
     await load();
     if (Object.hasOwn(policy.sessions, sessionId)) return;
     const settings = await readSettingsFromDiskMigrated();
@@ -155,7 +215,7 @@ export function createPermissionAutoAcceptRuntime({
     }));
   };
 
-  const rememberSession = (info, directoryHint) => {
+  const rememberSession = (info: SessionInfo | null | undefined, directoryHint: string | undefined) => {
     if (!info || typeof info.id !== 'string' || !info.id) return;
     // v2 session updates are partial (a rename carries only the title), so a
     // field the update does not name keeps what an earlier record said.
@@ -170,11 +230,11 @@ export function createPermissionAutoAcceptRuntime({
     if (previous) sessions.delete(info.id);
     sessions.set(info.id, { parentID, directory });
     if (sessions.size > SESSION_CACHE_LIMIT) {
-      sessions.delete(sessions.keys().next().value);
+      sessions.delete(sessions.keys().next().value!);
     }
   };
 
-  const request = async (path, { directory, method = 'GET', body } = {}) => {
+  const request = async <Answer>(path: string, { directory, method = 'GET', body }: { directory?: string | undefined; method?: string; body?: unknown } = {}) => {
     const url = new URL(buildOpenCodeUrl(path, ''));
     const response = await fetchImpl(url, {
       method,
@@ -190,32 +250,32 @@ export function createPermissionAutoAcceptRuntime({
       signal: AbortSignal.timeout(requestTimeoutMs),
     });
     if (!response.ok) {
-      const error = new Error(`OpenCode request failed (${response.status})`);
+      const error: Error & { status?: number } = new Error(`OpenCode request failed (${response.status})`);
       error.status = response.status;
       throw error;
     }
-    return response.json().catch(() => null);
+    return response.json().catch(() => null) as Promise<Answer | null>;
   };
 
-  const getSession = async (sessionId, directory) => {
+  const getSession = async (sessionId: string, directory: string | undefined) => {
     const cached = sessions.get(sessionId);
     if (cached) return cached;
-    const info = await request(`/api/session/${encodeURIComponent(sessionId)}`, { directory });
+    const info = await request<SessionInfo & { data?: SessionInfo | null }>(`/api/session/${encodeURIComponent(sessionId)}`, { directory });
     rememberSession(info?.data ?? info, directory);
     return sessions.get(sessionId) ?? null;
   };
 
   /** The nearest explicit mode up the session's lineage; unknown lineage fails closed to `ask`. */
-  const resolveSessionMode = async (sessionId, directory) => {
+  const resolveSessionMode = async (sessionId: string, directory: string | undefined): Promise<PermissionMode> => {
     await load();
     // A default being written for a just-created session must be visible to
     // its first permission request.
     await writePromise.catch(() => undefined);
-    const seen = new Set();
-    let current = sessionId;
+    const seen = new Set<string>();
+    let current: string | null = sessionId;
     let currentDirectory = directory;
     while (current && !seen.has(current)) {
-      if (Object.hasOwn(policy.sessions, current)) return policy.sessions[current];
+      if (Object.hasOwn(policy.sessions, current)) return policy.sessions[current]!;
       seen.add(current);
       let info;
       try {
@@ -229,10 +289,10 @@ export function createPermissionAutoAcceptRuntime({
     return 'ask';
   };
 
-  const isSessionAutoAccepting = async (sessionId, directory) => isAutoAnsweringMode(await resolveSessionMode(sessionId, directory));
+  const isSessionAutoAccepting = async (sessionId: string, directory: string | undefined) => isAutoAnsweringMode(await resolveSessionMode(sessionId, directory));
 
   /** `replied`, `held` (left for the user by the safety net), or `ignored` (an `ask` session). */
-  const replyOnce = async (permission, directory) => {
+  const replyOnce = async (permission: PermissionRequest, directory: string | undefined) => {
     if (!permission?.id || !permission?.sessionID) return 'ignored';
     const mode = await resolveSessionMode(permission.sessionID, directory);
     if (mode === 'ask') return 'ignored';
@@ -250,14 +310,14 @@ export function createPermissionAutoAcceptRuntime({
     return 'replied';
   };
 
-  const rememberOutcome = (permissionId, outcome) => {
+  const rememberOutcome = (permissionId: string, outcome: Promise<string>) => {
     outcomes.delete(permissionId);
     outcomes.set(permissionId, outcome);
-    if (outcomes.size > OUTCOME_CACHE_LIMIT) outcomes.delete(outcomes.keys().next().value);
+    if (outcomes.size > OUTCOME_CACHE_LIMIT) outcomes.delete(outcomes.keys().next().value!);
   };
 
   /** Resolves to whether the request was handled here (replied to, or deliberately held). */
-  const processPermission = (permission, directory) => {
+  const processPermission = (permission: PermissionRequest | null | undefined, directory: string | undefined) => {
     if (!permission?.id) return Promise.resolve(false);
     const key = permission.id;
     const existing = inFlight.get(key);
@@ -268,7 +328,7 @@ export function createPermissionAutoAcceptRuntime({
         try {
           return await replyOnce(permission, directory);
         } catch (error) {
-          if (error?.status === 404) return 'replied';
+          if ((error as Thrown)?.status === 404) return 'replied';
         }
       }
       return 'failed';
@@ -283,7 +343,7 @@ export function createPermissionAutoAcceptRuntime({
    * Whether the user can skip hearing about this request: it was, or is being,
    * answered automatically. A held or unanswered request is not.
    */
-  const isPermissionAutoAnswered = async (sessionId, directory, permissionId) => {
+  const isPermissionAutoAnswered = async (sessionId: string, directory: string | undefined, permissionId?: string) => {
     const mode = await resolveSessionMode(sessionId, directory);
     if (mode === 'auto') return true;
     if (mode === 'ask') return false;
@@ -291,9 +351,9 @@ export function createPermissionAutoAcceptRuntime({
     return outcome ? (await outcome) === 'replied' : false;
   };
 
-  async function reconcilePending({ directories = [] } = {}) {
+  async function reconcilePending({ directories = [] }: { directories?: readonly unknown[] } = {}) {
     const normalizedDirectories = Array.from(new Set(
-      directories.filter((directory) => typeof directory === 'string' && directory.trim()).map((directory) => directory.trim()),
+      directories.filter((directory) => typeof directory === 'string' && directory.trim()).map((directory) => (directory as string).trim()),
     ));
     const key = normalizedDirectories.length > 0 ? normalizedDirectories.join('\n') : 'all';
     const existing = reconcilePromises.get(key);
@@ -301,11 +361,11 @@ export function createPermissionAutoAcceptRuntime({
     const task = (async () => {
       await load();
       const scopes = [undefined, ...normalizedDirectories];
-      const pendingById = new Map();
+      const pendingById = new Map<string, { permission: PermissionRequest; directory: string | undefined }>();
       for (const directory of scopes) {
         let payload;
         try {
-          payload = await request('/api/permission/request', { directory });
+          payload = await request<PermissionRequest[] | { data?: PermissionRequest[] }>('/api/permission/request', { directory });
         } catch {
           continue;
         }
@@ -323,7 +383,7 @@ export function createPermissionAutoAcceptRuntime({
     return task;
   }
 
-  const processEvent = (event) => {
+  const processEvent = (event: GlobalEvent | null | undefined) => {
     const directory = typeof event?.directory === 'string' && event.directory !== 'global' ? event.directory : undefined;
     for (const payload of event?.translated?.() ?? []) {
       if (payload.type === 'session.created' || payload.type === 'session.updated') {
@@ -331,8 +391,8 @@ export function createPermissionAutoAcceptRuntime({
         rememberSession(info, directory ?? payload.properties?.directory);
         const created = payload.type === 'session.created' ? createdSessionSchema.safeParse(info) : null;
         if (created?.success && !created.data.parentID) {
-          void applyDefaultMode(created.data.id).catch((error) => {
-            console.warn('[permission-auto-accept] failed to apply the default mode:', error?.message ?? error);
+          void applyDefaultMode(created.data.id).catch((error: unknown) => {
+            console.warn('[permission-auto-accept] failed to apply the default mode:', (error as Thrown)?.message ?? error);
           });
         }
         continue;
@@ -357,8 +417,8 @@ export function createPermissionAutoAcceptRuntime({
     const unsubscribeStatus = globalEventHub.subscribeStatus((status) => {
       if (status?.type === 'connect') void reconcilePending();
     });
-    void load().then(() => reconcilePending()).catch((error) => {
-      console.warn('[permission-auto-accept] failed to load policy:', error?.message ?? error);
+    void load().then(() => reconcilePending()).catch((error: unknown) => {
+      console.warn('[permission-auto-accept] failed to load policy:', (error as Thrown)?.message ?? error);
     });
     return () => {
       unsubscribeEvent();
@@ -379,23 +439,23 @@ export function createPermissionAutoAcceptRuntime({
   };
 }
 
-export function registerPermissionAutoAcceptRoutes(app, runtime) {
+export function registerPermissionAutoAcceptRoutes(app: Express, runtime: Pick<ReturnType<typeof createPermissionAutoAcceptRuntime>, 'load' | 'setSessionPolicy'>) {
   app.get('/api/permission-auto-accept', async (_req, res) => {
     try {
       res.json(await runtime.load());
     } catch (error) {
-      res.status(500).json({ error: error?.message ?? 'Failed to load permission auto-accept policy' });
+      res.status(500).json({ error: (error as Thrown)?.message ?? 'Failed to load permission auto-accept policy' });
     }
   });
 
-  app.put('/api/permission-auto-accept/sessions/:sessionId', async (req, res) => {
+  app.put('/api/permission-auto-accept/sessions/:sessionId', async (req: Request<{ sessionId: string }, unknown, { directory?: unknown; mode?: unknown; enabled?: unknown } | null | undefined>, res) => {
     try {
       const directory = typeof req.body?.directory === 'string' ? req.body.directory : undefined;
       // Clients from before the modes send only `enabled`.
       const mode = req.body?.mode ?? req.body?.enabled;
       res.json(await runtime.setSessionPolicy(req.params.sessionId, mode, directory));
     } catch (error) {
-      res.status(error instanceof TypeError ? 400 : 500).json({ error: error?.message });
+      res.status(error instanceof TypeError ? 400 : 500).json({ error: (error as Thrown)?.message });
     }
   });
 }

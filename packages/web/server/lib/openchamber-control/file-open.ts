@@ -12,15 +12,26 @@ import fsPromises from 'node:fs/promises';
 
 import { OpenChamberControlError } from './error.js';
 
+interface FileOpenRequest {
+  path: string;
+  directory: string | null;
+  sessionId: string | null;
+}
+
+interface FileOpenDependencies {
+  emit: (request: FileOpenRequest) => number;
+  stat?: (target: string) => Promise<{ isFile: () => boolean; size: number }>;
+}
+
 /**
  * @param {{
  *   emit: (request: { path: string, directory: string | null, sessionId: string | null }) => number,
  *   stat?: (target: string) => Promise<{ isFile(): boolean, size: number }>,
  * }} dependencies
  */
-export const createFileOpenRequester = ({ emit, stat = (target) => fsPromises.stat(target) }) => {
+export const createFileOpenRequester = ({ emit, stat = (target) => fsPromises.stat(target) }: FileOpenDependencies) => {
   /** `path` arrives already reduced to a trimmed string or null by the service. */
-  const request = async ({ path: raw, directory, sessionId }) => {
+  const request = async ({ path: raw, directory, sessionId }: { path: string | null; directory?: string | null; sessionId?: string | null }) => {
     if (!raw) throw new OpenChamberControlError('path is required for file.open', 400);
 
     // A relative path means "in the project I am working in"; without a
@@ -38,7 +49,7 @@ export const createFileOpenRequester = ({ emit, stat = (target) => fsPromises.st
     try {
       stats = await stat(absolute);
     } catch (error) {
-      if (error?.code === 'ENOENT') {
+      if ((error as NodeJS.ErrnoException | null | undefined)?.code === 'ENOENT') {
         throw new OpenChamberControlError(`File not found: ${absolute}`, 404);
       }
       throw new OpenChamberControlError(`Cannot read ${absolute}: ${error instanceof Error ? error.message : String(error)}`, 500);

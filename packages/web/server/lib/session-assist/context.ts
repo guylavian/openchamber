@@ -4,17 +4,73 @@ const MAX_PAGES = 8;
 const USER_CHAR_LIMIT = 8_000;
 const ANSWER_CHAR_LIMIT = 16_000;
 
+type QuotedField = 'code' | 'quote' | 'prompt' | 'body' | 'output';
+
+interface QuoteFields extends Map<unknown, QuotedField> {
+  has: (kind: unknown) => kind is string;
+}
+
+interface OpenChamberContext {
+  kind?: unknown;
+  text?: string;
+  code?: string;
+  quote?: string;
+  prompt?: string;
+  body?: string;
+  output?: string;
+  fileLabel?: string;
+  label?: string;
+  pageUrl?: string;
+  terminalLabel?: string;
+  startLine?: number;
+  endLine?: number;
+}
+
+interface MessageRecord {
+  id?: string;
+  type?: string;
+  outcome?: string;
+  text?: string;
+  content?: { type?: unknown; text?: unknown }[];
+  metadata?: {
+    openchamberContext?: OpenChamberContext;
+    opencodeComment?: { comment: string; preview?: string; path?: string } | null;
+  } | null;
+  time?: { created?: number; completed?: unknown };
+  model?: { providerID?: string; id?: string };
+  finish?: string;
+  error?: unknown;
+}
+
+interface MessagePage {
+  data?: MessageRecord[];
+  cursor?: { next?: unknown } | null;
+}
+
+interface PageReader {
+  readPage: (query: { limit: number; cursor: string | undefined }) => Promise<MessagePage | null | undefined>;
+  signal: AbortSignal;
+}
+
+type ReadMessage = ReturnType<typeof readMessage>;
+
+interface Turn {
+  user: ReadMessage;
+  assistant: ReadMessage | null;
+  complete: boolean;
+}
+
 // Mirrors the persisted context contract owned by UI lib/messages/contextParts.ts.
 // Read only the fields needed for model context; malformed attached text fails
 // this generation instead of silently dropping the user's comment.
-const QUOTE_FIELDS = new Map([
+const QUOTE_FIELDS = new Map<unknown, QuotedField>([
   ['code-comment', 'code'], ['file-quote', 'quote'], ['chat-quote', 'quote'],
   ['browser-annotation', 'prompt'], ['pr-comment', 'body'], ['pr-check', 'output'],
   ['terminal', 'output'],
-]);
-const LINK_KINDS = new Set(['github-issue', 'github-pr', 'linear-issue']);
+]) as QuoteFields;
+const LINK_KINDS = new Set<unknown>(['github-issue', 'github-pr', 'linear-issue']);
 
-export function excerpt(text, limit) {
+export function excerpt(text: string, limit: number) {
   if (text.length <= limit) return text;
   const marker = '\n[Content omitted]\n';
   if (limit <= marker.length) return text.slice(0, Math.max(0, limit));
@@ -23,10 +79,10 @@ export function excerpt(text, limit) {
   return text.slice(0, head) + marker + (tail > 0 ? text.slice(-tail) : '');
 }
 
-function attachedText(message) {
+function attachedText(message: MessageRecord) {
   const context = message.metadata?.openchamberContext;
   if (QUOTE_FIELDS.has(context?.kind)) {
-    const source = (context[QUOTE_FIELDS.get(context.kind)] ?? '').trim();
+    const source = (context[QUOTE_FIELDS.get(context.kind)!] ?? '').trim();
     const authored = (context.text ?? '').trim();
     const label = excerpt((context.fileLabel ?? context.label ?? context.pageUrl ?? context.terminalLabel ?? '').trim(), 300);
     const location = Number.isInteger(context.startLine) ? `, lines ${context.startLine}-${context.endLine ?? context.startLine}` : '';
@@ -49,9 +105,9 @@ function attachedText(message) {
 // switches. They are invisible to turn boundaries and to "what is the newest
 // message". An `idle` whose outcome is not `succeeded` is not transparent: it
 // is the evidence that the turn failed or was interrupted.
-const TRANSPARENT_TYPES = new Set(['agent-switched', 'model-switched', 'location-switched']);
+const TRANSPARENT_TYPES = new Set<unknown>(['agent-switched', 'model-switched', 'location-switched']);
 
-function isTransparent(record) {
+function isTransparent(record: MessageRecord | null | undefined) {
   if (record?.type === 'idle') return record.outcome === 'succeeded';
   return TRANSPARENT_TYPES.has(record?.type);
 }
@@ -62,7 +118,7 @@ function isTransparent(record) {
  * Both the assist reader and the pre-write re-check use it so they agree on
  * what "the last message" is.
  */
-export function newestContentId(records) {
+export function newestContentId(records: MessageRecord[] | null | undefined) {
   for (const record of Array.isArray(records) ? records : []) {
     if (!record?.id || isTransparent(record)) continue;
     return record.id;
@@ -76,10 +132,10 @@ export function newestContentId(records) {
  * ride along as `synthetic` text parts are their own `synthetic` messages now.
  * Tool payloads never enter this view.
  */
-function readMessage(message) {
+function readMessage(message: MessageRecord) {
   const role = message.type;
-  const blocks = [];
-  const authored = [];
+  const blocks: string[] = [];
+  const authored: string[] = [];
 
   if (role === 'user') {
     const attached = attachedText(message);
@@ -110,7 +166,7 @@ function readMessage(message) {
   return {
     id: message.id,
     role,
-    created: Number.isFinite(message.time?.created) ? message.time.created : null,
+    created: Number.isFinite(message.time?.created) ? message.time!.created : null,
     transparent: isTransparent(message),
     // v2 has no `parentID` on a message: a turn is the run of messages between
     // one user message and the assistant reply that follows it, which is what
@@ -135,10 +191,10 @@ function readMessage(message) {
  * about to send — v1 carried them as parts of that user message — so they are
  * folded into the next user message instead of opening a turn of their own.
  */
-function collectTurns(messages, limit = TURN_LIMIT) {
-  const turns = [];
-  let active = null;
-  let attached = [];
+function collectTurns(messages: ReadMessage[], limit = TURN_LIMIT) {
+  const turns: Turn[] = [];
+  let active: Turn | null = null;
+  let attached: ReadMessage[] = [];
   for (const message of messages) {
     if (message.transparent) continue;
     if (message.role === 'synthetic') {
@@ -162,7 +218,7 @@ function collectTurns(messages, limit = TURN_LIMIT) {
   return turns.slice(-limit);
 }
 
-const settledTurns = (messages) => collectTurns(messages, Infinity)
+const settledTurns = (messages: ReadMessage[]) => collectTurns(messages, Infinity)
   .filter((turn) => turn.complete)
   .slice(-TURN_LIMIT);
 
@@ -173,17 +229,17 @@ const settledTurns = (messages) => collectTurns(messages, Infinity)
  * is not settled and is left out. Failure is thrown; an empty list means the
  * session has no settled turn yet.
  */
-export async function loadSettledTurns({ readPage, signal }) {
-  let messages = [];
-  let cursor;
-  const cursors = new Set();
-  const ids = new Set();
+export async function loadSettledTurns({ readPage, signal }: PageReader) {
+  let messages: ReadMessage[] = [];
+  let cursor: string | undefined;
+  const cursors = new Set<string>();
+  const ids = new Set<string>();
   for (let pageNumber = 0; pageNumber < MAX_PAGES; pageNumber++) {
     signal.throwIfAborted();
     const page = await readPage({ limit: PAGE_SIZE, cursor });
     signal.throwIfAborted();
     if (!Array.isArray(page?.data)) throw new Error('Session message page is unavailable');
-    const older = [];
+    const older: ReadMessage[] = [];
     for (const record of page.data) {
       if (!record?.id || ids.has(record.id)) continue;
       ids.add(record.id);
@@ -202,18 +258,18 @@ export async function loadSettledTurns({ readPage, signal }) {
 }
 
 /** Failure is thrown; null means no eligible final answer within bounded history. */
-export async function loadAssistContext({ readPage, signal }) {
-  let messages = [];
-  let cursor;
-  const cursors = new Set();
-  const ids = new Set();
+export async function loadAssistContext({ readPage, signal }: PageReader) {
+  let messages: ReadMessage[] = [];
+  let cursor: string | undefined;
+  const cursors = new Set<string>();
+  const ids = new Set<string>();
   for (let pageNumber = 0; pageNumber < MAX_PAGES; pageNumber++) {
     signal.throwIfAborted();
     // v2 pages messages newest first and returns `{ data, cursor }`.
     const page = await readPage({ limit: PAGE_SIZE, cursor });
     signal.throwIfAborted();
     if (!Array.isArray(page?.data)) throw new Error('Session message page is unavailable');
-    const older = [];
+    const older: ReadMessage[] = [];
     for (const record of page.data) {
       if (!record?.id || ids.has(record.id)) continue;
       ids.add(record.id);
@@ -231,7 +287,7 @@ export async function loadAssistContext({ readPage, signal }) {
       if (!last.complete || !last.text) return null;
       const turns = collectTurns(messages);
       if (turns.length === TURN_LIMIT || !next || pageNumber === MAX_PAGES - 1) {
-        if (!turns.at(-1)?.complete || turns.at(-1).assistant.id !== last.id) return null;
+        if (!turns.at(-1)?.complete || turns.at(-1)!.assistant!.id !== last.id) return null;
         return { turns, last };
       }
     }

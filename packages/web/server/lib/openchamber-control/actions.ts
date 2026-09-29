@@ -98,19 +98,19 @@ export const OPENCHAMBER_NOTIFY_ACTIONS = Object.freeze(
  * all of them (`delete` belongs to both schedule and memory), so resolution
  * starts from the tool that asked.
  */
-const ACTIONS_BY_TOOL = Object.freeze({
+const ACTIONS_BY_TOOL: Readonly<Record<string, readonly string[]>> = Object.freeze({
   openchamber: OPENCHAMBER_AGENT_TOOL_ACTIONS,
   openchamber_web: OPENCHAMBER_WEB_ACTIONS,
   openchamber_memory: OPENCHAMBER_MEMORY_ACTIONS,
   openchamber_notify: OPENCHAMBER_NOTIFY_ACTIONS,
 });
 
-const bareName = (action) => {
+const bareName = (action: string) => {
   const separator = action.indexOf('.');
   return separator === -1 ? action : action.slice(separator + 1);
 };
 
-const uniqueMatch = (candidates, requested) => {
+const uniqueMatch = (candidates: readonly string[], requested: string) => {
   const matches = candidates.filter((candidate) => bareName(candidate) === requested);
   return matches.length === 1 ? matches[0] : null;
 };
@@ -121,9 +121,9 @@ const uniqueMatch = (candidates, requested) => {
  * says "unsupported" leaves the model to guess again, which is how one wrong
  * name becomes three.
  */
-export const resolveAgentToolAction = (requested, toolName) => {
+export const resolveAgentToolAction = (requested: unknown, toolName: string | null) => {
   const value = typeof requested === 'string' ? requested.trim() : '';
-  const scoped = ACTIONS_BY_TOOL[toolName] ?? null;
+  const scoped = ACTIONS_BY_TOOL[toolName as string] ?? null;
   const known = scoped ?? OPENCHAMBER_ALL_ACTIONS;
 
   if (value && known.includes(value)) {

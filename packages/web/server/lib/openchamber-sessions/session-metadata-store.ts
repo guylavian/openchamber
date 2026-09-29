@@ -25,23 +25,41 @@ import fsDefault from 'node:fs';
 import pathDefault from 'node:path';
 
 import { createOpenCodeClient as createOpenCodeClientDefault } from './opencode-client.js';
+import type { JsonValue } from '@opencode/client';
 
 const LEGACY_FILE_NAME = 'sessions-metadata.json';
 
-const asNonEmptyString = (value) => {
+type Metadata = { [key: string]: JsonValue };
+
+type Thrown = { code?: unknown; message?: unknown } | null | undefined;
+
+interface SessionMetadataOpenCode {
+  read: (sessionID: string, options?: { directory?: string }) => Promise<Metadata | null>;
+  write: (sessionID: string, metadata: Metadata, options?: { directory?: string }) => Promise<unknown>;
+}
+
+interface SessionMetadataStoreOptions {
+  dataDir: string;
+  openCode: SessionMetadataOpenCode;
+  fsPromises?: typeof fsDefault.promises;
+  path?: typeof pathDefault;
+  now?: () => number;
+}
+
+const asNonEmptyString = (value: unknown) => {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
 };
 
-const isPlainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+const isPlainObject = (value: unknown): value is Metadata => value !== null && typeof value === 'object' && !Array.isArray(value);
 
 /**
  * RFC 7386 merge. Returns a new object; `null` in the patch removes the key,
  * and a non-object patch value replaces whatever was there.
  */
-export const mergeMetadataPatch = (current, patch) => {
-  const base = isPlainObject(current) ? { ...current } : {};
+export const mergeMetadataPatch = (current: unknown, patch: unknown): Metadata => {
+  const base: Metadata = isPlainObject(current) ? { ...current } : {};
   if (!isPlainObject(patch)) return base;
   for (const [key, value] of Object.entries(patch)) {
     if (value === null) {
@@ -53,7 +71,7 @@ export const mergeMetadataPatch = (current, patch) => {
   return base;
 };
 
-const isSessionNotFound = (error) => error?._tag === 'SessionNotFoundError';
+const isSessionNotFound = (error: unknown) => (error as { _tag?: unknown } | null | undefined)?._tag === 'SessionNotFoundError';
 
 /**
  * Reads and writes one session's metadata on OpenCode. `read` resolves `null`
@@ -64,14 +82,18 @@ export const createOpenCodeSessionMetadata = ({
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
   createOpenCodeClient = createOpenCodeClientDefault,
+}: {
+  buildOpenCodeUrl: (path: string, directory: string) => string;
+  getOpenCodeAuthHeaders: () => Record<string, string>;
+  createOpenCodeClient?: typeof createOpenCodeClientDefault;
 }) => {
-  const clientFor = (directory) => createOpenCodeClient({
+  const clientFor = (directory: string) => createOpenCodeClient({
     baseUrl: buildOpenCodeUrl('/', '').replace(/\/$/, ''),
     headers: getOpenCodeAuthHeaders(),
     directory,
   });
   return {
-    read: async (sessionID, { directory = '' } = {}) => {
+    read: async (sessionID: string, { directory = '' }: { directory?: string } = {}) => {
       let session;
       try {
         // The 2.x client unwraps the `{ data }` envelope: this is the record itself.
@@ -82,7 +104,7 @@ export const createOpenCodeSessionMetadata = ({
       }
       return isPlainObject(session?.metadata) ? session.metadata : {};
     },
-    write: (sessionID, metadata, { directory = '' } = {}) =>
+    write: (sessionID: string, metadata: Metadata, { directory = '' }: { directory?: string } = {}) =>
       clientFor(directory).session.update({ sessionID, metadata }),
   };
 };
@@ -101,19 +123,19 @@ export const createSessionMetadataStore = ({
   fsPromises = fsDefault.promises,
   path = pathDefault,
   now = Date.now,
-}) => {
+}: SessionMetadataStoreOptions) => {
   const legacyPath = path.join(dataDir, LEGACY_FILE_NAME);
 
   /** sessionID → metadata from the legacy file that OpenCode does not hold yet. */
-  const unmigrated = new Map();
-  let legacyLoad = null;
+  const unmigrated = new Map<string, Metadata>();
+  let legacyLoad: Promise<void> | null = null;
 
   /**
    * One chain per session: read, merge and write cannot interleave with another
    * write to the same session. Different sessions proceed in parallel.
    */
-  const sessionChains = new Map();
-  const runForSession = (id, work) => {
+  const sessionChains = new Map<string, Promise<void>>();
+  const runForSession = <T>(id: string, work: () => Promise<T>) => {
     const previous = sessionChains.get(id) ?? Promise.resolve();
     const next = previous.then(work, work);
     const settled = next.then(() => undefined, () => undefined);
@@ -126,16 +148,16 @@ export const createSessionMetadataStore = ({
 
   /** Legacy file rewrites, one at a time so an older snapshot never lands last. */
   let fileChain = Promise.resolve();
-  const runFileWrite = (work) => {
+  const runFileWrite = <T>(work: () => Promise<T>) => {
     const next = fileChain.then(work, work);
     fileChain = next.then(() => undefined, () => undefined);
     return next;
   };
 
-  const parseLegacy = (raw) => {
-    const parsed = JSON.parse(raw);
+  const parseLegacy = (raw: string) => {
+    const parsed: unknown = JSON.parse(raw);
     if (!isPlainObject(parsed)) throw new Error('session metadata file is not a JSON object');
-    const result = new Map();
+    const result = new Map<string, Metadata>();
     for (const [sessionID, value] of Object.entries(parsed)) {
       const id = asNonEmptyString(sessionID);
       if (id && isPlainObject(value)) result.set(id, value);
@@ -156,8 +178,8 @@ export const createSessionMetadataStore = ({
         try {
           raw = await fsPromises.readFile(legacyPath, 'utf8');
         } catch (error) {
-          if (error?.code === 'ENOENT') return;
-          throw new Error(`session metadata is unavailable: ${error?.message ?? error}`);
+          if ((error as Thrown)?.code === 'ENOENT') return;
+          throw new Error(`session metadata is unavailable: ${(error as Thrown)?.message ?? error}`);
         }
         try {
           for (const [id, metadata] of parseLegacy(raw)) unmigrated.set(id, metadata);
@@ -165,9 +187,9 @@ export const createSessionMetadataStore = ({
           // Unreadable bytes are kept for the user; there is nothing to migrate.
           const backup = `${legacyPath}.corrupt-${now()}`;
           await fsPromises.rename(legacyPath, backup).catch(() => undefined);
-          console.warn(`[openchamber-sessions] legacy session metadata was unreadable and was moved to ${backup}: ${error?.message ?? error}`);
+          console.warn(`[openchamber-sessions] legacy session metadata was unreadable and was moved to ${backup}: ${(error as Thrown)?.message ?? error}`);
         }
-      })().catch((error) => {
+      })().catch((error: unknown) => {
         legacyLoad = null;
         throw error;
       });
@@ -178,8 +200,8 @@ export const createSessionMetadataStore = ({
   /** Writes what is left to migrate, or retires the file once nothing is. */
   const persistLegacy = () => runFileWrite(async () => {
     if (unmigrated.size === 0) {
-      await fsPromises.rename(legacyPath, `${legacyPath}.migrated`).catch((error) => {
-        if (error?.code !== 'ENOENT') throw error;
+      await fsPromises.rename(legacyPath, `${legacyPath}.migrated`).catch((error: unknown) => {
+        if ((error as Thrown)?.code !== 'ENOENT') throw error;
       });
       return;
     }
@@ -194,10 +216,10 @@ export const createSessionMetadataStore = ({
    * entry then stays on disk and the next start pushes that older copy again;
    * the next rewrite of the file (any other migrated session) clears it first.
    */
-  const forgetLegacy = async (id) => {
+  const forgetLegacy = async (id: string) => {
     unmigrated.delete(id);
-    await persistLegacy().catch((error) => {
-      console.warn('[openchamber-sessions] could not update the legacy session metadata file:', error?.message ?? error);
+    await persistLegacy().catch((error: unknown) => {
+      console.warn('[openchamber-sessions] could not update the legacy session metadata file:', (error as Thrown)?.message ?? error);
     });
   };
 
@@ -206,11 +228,11 @@ export const createSessionMetadataStore = ({
    * be migrated, OpenCode's record otherwise. `{}` for a session OpenCode does
    * not know. Throws when OpenCode could not be asked.
    */
-  const get = async (sessionID, { directory = '' } = {}) => {
+  const get = async (sessionID: unknown, { directory = '' }: { directory?: string } = {}) => {
     const id = asNonEmptyString(sessionID);
     if (!id) return {};
     await loadLegacy();
-    if (unmigrated.has(id)) return unmigrated.get(id);
+    if (unmigrated.has(id)) return unmigrated.get(id)!;
     return (await openCode.read(id, { directory })) ?? {};
   };
 
@@ -219,7 +241,7 @@ export const createSessionMetadataStore = ({
    * Nothing is written when the current record cannot be read, so a patch never
    * replaces fields it could not see.
    */
-  const setSessionMetadata = async (sessionID, patch, { directory = '' } = {}) => {
+  const setSessionMetadata = async (sessionID: unknown, patch: unknown, { directory = '' }: { directory?: string } = {}) => {
     const id = asNonEmptyString(sessionID);
     if (!id) throw new Error('a session id is required to store session metadata');
     if (!isPlainObject(patch)) throw new Error('a session metadata patch must be an object');
@@ -227,7 +249,7 @@ export const createSessionMetadataStore = ({
 
     return runForSession(id, async () => {
       const fromLegacy = unmigrated.has(id);
-      const current = fromLegacy ? unmigrated.get(id) : await openCode.read(id, { directory });
+      const current = fromLegacy ? unmigrated.get(id)! : await openCode.read(id, { directory });
       if (current === null) throw new Error(`session ${id} was not found`);
       const merged = mergeMetadataPatch(current, patch);
       await openCode.write(id, merged, { directory });
@@ -244,14 +266,14 @@ export const createSessionMetadataStore = ({
    * request) cannot be overtaken between its read and its write this way.
    * Resolves `{ metadata, changed }`.
    */
-  const updateSessionMetadata = async (sessionID, decide, { directory = '' } = {}) => {
+  const updateSessionMetadata = async (sessionID: unknown, decide: (current: Metadata) => unknown, { directory = '' }: { directory?: string } = {}) => {
     const id = asNonEmptyString(sessionID);
     if (!id) throw new Error('a session id is required to store session metadata');
     await loadLegacy();
 
     return runForSession(id, async () => {
       const fromLegacy = unmigrated.has(id);
-      const current = fromLegacy ? unmigrated.get(id) : await openCode.read(id, { directory });
+      const current = fromLegacy ? unmigrated.get(id)! : await openCode.read(id, { directory });
       if (current === null) throw new Error(`session ${id} was not found`);
       const patch = decide(current);
       if (!isPlainObject(patch)) return { metadata: current, changed: false };
@@ -277,10 +299,10 @@ export const createSessionMetadataStore = ({
       // A write that ran first already migrated it.
       if (!unmigrated.has(id)) return;
       try {
-        await openCode.write(id, unmigrated.get(id));
+        await openCode.write(id, unmigrated.get(id)!);
       } catch (error) {
         if (!isSessionNotFound(error)) {
-          console.warn(`[openchamber-sessions] could not migrate metadata for ${id}:`, error?.message ?? error);
+          console.warn(`[openchamber-sessions] could not migrate metadata for ${id}:`, (error as Thrown)?.message ?? error);
           return;
         }
       }

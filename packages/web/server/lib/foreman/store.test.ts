@@ -4,10 +4,12 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { FOREMAN_FILE_NAME, createForemanStore, foremanFileSchema } from './store.js';
+import type { ForemanState, ForemanStoreOptions, TaskWorkspace } from './store.js';
+import type { JobId, RunId, SessionId, TaskId } from './types.js';
 
 const tempDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'foreman-store-'));
 
-const makeStore = (dataDir, overrides = {}) => {
+const makeStore = (dataDir: string, overrides: Partial<ForemanStoreOptions> = {}) => {
   let tick = 1_000;
   let ids = 0;
   return createForemanStore({
@@ -19,7 +21,7 @@ const makeStore = (dataDir, overrides = {}) => {
   });
 };
 
-const readState = (dataDir) => JSON.parse(fs.readFileSync(path.join(dataDir, FOREMAN_FILE_NAME), 'utf8'));
+const readState = (dataDir: string) => JSON.parse(fs.readFileSync(path.join(dataDir, FOREMAN_FILE_NAME), 'utf8')) as ForemanState;
 
 describe('foreman store: default state', () => {
   it('a data dir with no Foreman file is an empty state, and reading it writes nothing', async () => {
@@ -67,7 +69,7 @@ describe('foreman store: jobs, tasks and runs', () => {
     const job = await store.createJob({ title: 'job' });
     const task = await store.createTask(job.id, { title: 'task', instructions: 'do it' });
     expect(task).toMatchObject({ id: 'id-2', jobId: job.id, title: 'task', instructions: 'do it', status: 'ready', dependsOn: [] });
-    await expect(store.createTask('nope', { title: 'orphan' })).rejects.toMatchObject({ code: 'not_found' });
+    await expect(store.createTask('nope' as JobId, { title: 'orphan' })).rejects.toMatchObject({ code: 'not_found' });
     expect((await store.snapshot()).tasks).toHaveLength(1);
   });
 
@@ -75,13 +77,13 @@ describe('foreman store: jobs, tasks and runs', () => {
     const store = makeStore(tempDir());
     const job = await store.createJob({ title: 'Job' });
     const task = await store.createTask(job.id, { title: 'First' });
-    const dependent = await store.createTask(job.id, { title: 'Next', dependsOn: [task.id] });
-    const run = await store.createRun(task.id);
+    const dependent = await store.createTask(job.id, { title: 'Next', dependsOn: [task!.id] });
+    const run = await store.createRun(task!.id);
     await store.updateRun(run.id, { status: 'failed' });
-    await store.deleteTask(task.id);
+    await store.deleteTask(task!.id);
     const snapshot = await store.snapshot();
     expect(snapshot.tasks).toHaveLength(1);
-    expect(snapshot.tasks[0]).toMatchObject({ id: dependent.id, dependsOn: [], status: 'ready' });
+    expect(snapshot.tasks[0]).toMatchObject({ id: dependent!.id, dependsOn: [], status: 'ready' });
     expect(snapshot.runs).toEqual([]);
   });
 
@@ -89,7 +91,7 @@ describe('foreman store: jobs, tasks and runs', () => {
     const store = makeStore(tempDir());
     const job = await store.createJob({ title: 'Job', directory: '/repo' });
     const task = await store.createTask(job.id, { title: 'Task' });
-    const run = await store.createRun(task.id);
+    const run = await store.createRun(task!.id);
     await store.updateRun(run.id, { status: 'failed' });
     const workspaceMemory = await store.createMemory(job.id, '/repo', { scope: 'workspace', type: 'fact', content: 'Shared' });
     const jobMemory = await store.createMemory(job.id, '/repo', { scope: 'job', type: 'fact', content: 'Local' });
@@ -99,7 +101,7 @@ describe('foreman store: jobs, tasks and runs', () => {
     expect(snapshot.tasks).toEqual([]);
     expect(snapshot.runs).toEqual([]);
     expect((await store.listMemoriesForJob((await store.createJob({ title: 'Other', directory: '/repo' })).id, '/repo')).map((entry) => entry.id)).toContain(workspaceMemory.id);
-    expect((await store.snapshot()).memories).toBeUndefined();
+    expect(((await store.snapshot()) as { memories?: unknown }).memories).toBeUndefined();
     expect(jobMemory.id).toBeDefined();
   });
 
@@ -107,8 +109,8 @@ describe('foreman store: jobs, tasks and runs', () => {
     const store = makeStore(tempDir());
     const job = await store.createJob({ title: 'Job' });
     const task = await store.createTask(job.id, { title: 'Task' });
-    await store.createRun(task.id);
-    await expect(store.deleteTask(task.id)).rejects.toMatchObject({ code: 'conflict' });
+    await store.createRun(task!.id);
+    await expect(store.deleteTask(task!.id)).rejects.toMatchObject({ code: 'conflict' });
     await expect(store.deleteJob(job.id)).rejects.toMatchObject({ code: 'conflict' });
     expect((await store.snapshot()).tasks).toHaveLength(1);
   });
@@ -117,10 +119,10 @@ describe('foreman store: jobs, tasks and runs', () => {
     const store = makeStore(tempDir());
     const job = await store.createJob({ title: 'job' });
     const task = await store.createTask(job.id, { title: 'task' });
-    const run = await store.createRun(task.id);
-    expect(run).toEqual({ id: 'id-3', taskId: task.id, status: 'queued', createdAt: 1_003, updatedAt: 1_003 });
-    await expect(store.createRun('nope')).rejects.toMatchObject({ code: 'not_found' });
-    await expect(store.createRun(task.id, { sessionId: 'ses_1' })).rejects.toMatchObject({ code: 'invalid_input' });
+    const run = await store.createRun(task!.id);
+    expect(run).toEqual({ id: 'id-3', taskId: task!.id, status: 'queued', createdAt: 1_003, updatedAt: 1_003 });
+    await expect(store.createRun('nope' as TaskId)).rejects.toMatchObject({ code: 'not_found' });
+    await expect(store.createRun(task!.id, { sessionId: 'ses_1' })).rejects.toMatchObject({ code: 'invalid_input' });
   });
 
   it('a retried create with the same requestId lands once', async () => {
@@ -128,12 +130,12 @@ describe('foreman store: jobs, tasks and runs', () => {
     const job = await store.createJob({ title: 'job' });
     const task = await store.createTask(job.id, { title: 'task' });
     const [a, b] = await Promise.all([
-      store.createRun(task.id, { requestId: 'click-1' }),
-      store.createRun(task.id, { requestId: 'click-1' }),
+      store.createRun(task!.id, { requestId: 'click-1' }),
+      store.createRun(task!.id, { requestId: 'click-1' }),
     ]);
     expect(a.id).toBe(b.id);
     await store.updateRun(a.id, { status: 'failed' });
-    const other = await store.createRun(task.id, { requestId: 'click-2' });
+    const other = await store.createRun(task!.id, { requestId: 'click-2' });
     expect(other.id).not.toBe(a.id);
     expect((await store.snapshot()).runs).toHaveLength(2);
   });
@@ -142,11 +144,11 @@ describe('foreman store: jobs, tasks and runs', () => {
     const store = makeStore(tempDir());
     const job = await store.createJob({ title: 'DAG' });
     const a = await store.createTask(job.id, { title: 'A' });
-    const b = await store.createTask(job.id, { title: 'B', dependsOn: [a.id] });
+    const b = await store.createTask(job.id, { title: 'B', dependsOn: [a!.id] });
     await expect(store.createTask(job.id, { title: 'missing', dependsOn: ['no-task'] })).rejects.toMatchObject({ code: 'invalid_input' });
-    await expect(store.createTask(job.id, { title: 'duplicate', dependsOn: [a.id, a.id] })).rejects.toMatchObject({ code: 'invalid_input' });
-    await expect(store.updateTask(a.id, { dependsOn: [a.id] })).rejects.toMatchObject({ code: 'invalid_input' });
-    await expect(store.updateTask(a.id, { dependsOn: [b.id] })).rejects.toMatchObject({ code: 'invalid_input' });
+    await expect(store.createTask(job.id, { title: 'duplicate', dependsOn: [a!.id, a!.id] })).rejects.toMatchObject({ code: 'invalid_input' });
+    await expect(store.updateTask(a!.id, { dependsOn: [a!.id] })).rejects.toMatchObject({ code: 'invalid_input' });
+    await expect(store.updateTask(a!.id, { dependsOn: [b!.id] })).rejects.toMatchObject({ code: 'invalid_input' });
     expect((await store.snapshot()).tasks.map(({ status }) => status)).toEqual(['ready', 'blocked']);
   });
 
@@ -155,16 +157,16 @@ describe('foreman store: jobs, tasks and runs', () => {
     const job = await store.createJob({ title: 'DAG' });
     const a = await store.createTask(job.id, { title: 'A' });
     const b = await store.createTask(job.id, { title: 'B' });
-    const c = await store.createTask(job.id, { title: 'C', dependsOn: [a.id, b.id] });
-    expect((await store.snapshot()).tasks.find(({ id }) => id === c.id)).toMatchObject({ status: 'blocked', blockedByTaskIds: [a.id, b.id], blockingReason: 'dependency_incomplete' });
-    const runA = await store.createRun(a.id);
-    const runB = await store.createRun(b.id);
+    const c = await store.createTask(job.id, { title: 'C', dependsOn: [a!.id, b!.id] });
+    expect((await store.snapshot()).tasks.find(({ id }) => id === c!.id)).toMatchObject({ status: 'blocked', blockedByTaskIds: [a!.id, b!.id], blockingReason: 'dependency_incomplete' });
+    const runA = await store.createRun(a!.id);
+    const runB = await store.createRun(b!.id);
     await store.updateRun(runA.id, { status: 'completed' });
     await store.updateRun(runB.id, { status: 'failed' });
-    expect((await store.snapshot()).tasks.find(({ id }) => id === c.id)).toMatchObject({ status: 'blocked', blockingReason: 'dependency_failed' });
-    const retryB = await store.createRun(b.id);
+    expect((await store.snapshot()).tasks.find(({ id }) => id === c!.id)).toMatchObject({ status: 'blocked', blockingReason: 'dependency_failed' });
+    const retryB = await store.createRun(b!.id);
     await store.updateRun(retryB.id, { status: 'completed' });
-    expect((await store.snapshot()).tasks.find(({ id }) => id === c.id)).toMatchObject({ status: 'ready' });
+    expect((await store.snapshot()).tasks.find(({ id }) => id === c!.id)).toMatchObject({ status: 'ready' });
   });
 
   it('allows concurrent Runs for independent Tasks and only one active Run per Task', async () => {
@@ -172,9 +174,9 @@ describe('foreman store: jobs, tasks and runs', () => {
     const job = await store.createJob({ title: 'Parallel' });
     const a = await store.createTask(job.id, { title: 'A' });
     const b = await store.createTask(job.id, { title: 'B' });
-    const runA = await store.createRun(a.id);
-    expect((await store.createRun(b.id)).status).toBe('queued');
-    await expect(store.createRun(a.id)).rejects.toMatchObject({ code: 'conflict' });
+    const runA = await store.createRun(a!.id);
+    expect((await store.createRun(b!.id)).status).toBe('queued');
+    await expect(store.createRun(a!.id)).rejects.toMatchObject({ code: 'conflict' });
     expect((await store.snapshot()).runs).toHaveLength(2);
     expect(runA.status).toBe('queued');
   });
@@ -183,8 +185,8 @@ describe('foreman store: jobs, tasks and runs', () => {
     const store = makeStore(tempDir());
     const job = await store.createJob({ title: 'job' });
     const task = await store.createTask(job.id, { title: 'task' });
-    const run = await store.createRun(task.id);
-    await store.applyExecutionChange(run.id, () => ({ execution: { type: 'opencode-session', id: 'ses_1', createdAt: 1 } }));
+    const run = await store.createRun(task!.id);
+    await store.applyExecutionChange(run.id, () => ({ execution: { type: 'opencode-session', id: 'ses_1' as SessionId, createdAt: 1 } }));
     await expect(store.updateRun(run.id, { status: 'completed' })).rejects.toMatchObject({ code: 'conflict' });
   });
 
@@ -192,7 +194,7 @@ describe('foreman store: jobs, tasks and runs', () => {
     const store = makeStore(tempDir());
     const job = await store.createJob({ title: 'job' });
     const task = await store.createTask(job.id, { title: 'task' });
-    const run = await store.createRun(task.id);
+    const run = await store.createRun(task!.id);
     const failed = await store.applyExecutionChange(run.id, () => ({ status: 'failed', error: { stage: 'dispatch', message: 'x' } }));
     expect(failed.run.error).toEqual({ stage: 'dispatch', message: 'x' });
     expect(failed.run.finishedAt).toBeDefined();
@@ -207,8 +209,8 @@ describe('foreman store: jobs, tasks and runs', () => {
     const store = makeStore(tempDir());
     const job = await store.createJob({ title: 'job' });
     const task = await store.createTask(job.id, { title: 'task' });
-    const run = await store.createRun(task.id);
-    await store.applyExecutionChange(run.id, () => ({ execution: { type: 'opencode-session', id: 's1', createdAt: 1 } }));
+    const run = await store.createRun(task!.id);
+    await store.applyExecutionChange(run.id, () => ({ execution: { type: 'opencode-session', id: 's1' as SessionId, createdAt: 1 } }));
     await store.addRunActivity(run.id, { type: 'run_started', message: 'Run started' });
     await store.addRunActivity(run.id, { type: 'session_created', message: 'OpenCode session created' });
     await store.applyExecutionChange(run.id, () => ({ status: 'running' }));
@@ -229,17 +231,17 @@ describe('foreman store: jobs, tasks and runs', () => {
     expect(updated.updatedAt).toBeGreaterThan(job.updatedAt);
     expect(updated.goal).toBeUndefined();
     await expect(store.updateJob(job.id, { status: 'done' })).rejects.toMatchObject({ code: 'invalid_input' });
-    await expect(store.updateJob('nope', { status: 'running' })).rejects.toMatchObject({ code: 'not_found' });
+    await expect(store.updateJob('nope' as JobId, { status: 'running' })).rejects.toMatchObject({ code: 'not_found' });
     const task = await store.createTask(job.id, { title: 't' });
-    await expect(store.updateTask(task.id, { status: 'blocked' })).rejects.toMatchObject({ code: 'invalid_input' });
-    expect((await store.snapshot()).tasks[0].status).toBe('ready');
+    await expect(store.updateTask(task!.id, { status: 'blocked' })).rejects.toMatchObject({ code: 'invalid_input' });
+    expect((await store.snapshot()).tasks[0]!.status).toBe('ready');
   });
 
   it('a run records when it started and finished, once', async () => {
     const store = makeStore(tempDir());
     const job = await store.createJob({ title: 'job' });
     const task = await store.createTask(job.id, { title: 't' });
-    const run = await store.createRun(task.id);
+    const run = await store.createRun(task!.id);
     const running = await store.updateRun(run.id, { status: 'running' });
     expect(running.startedAt).toBe(running.updatedAt);
     const failed = await store.updateRun(run.id, { status: 'failed' });
@@ -253,7 +255,7 @@ describe('foreman store: jobs, tasks and runs', () => {
     const store = makeStore(tempDir());
     const job = await store.createJob({ title: 'job' });
     const task = await store.createTask(job.id, { title: 't' });
-    const run = await store.createRun(task.id);
+    const run = await store.createRun(task!.id);
     const waiting = await store.updateRun(run.id, {
       status: 'waiting_for_user',
       attention: { type: 'permission', message: 'May I run the tests?' },
@@ -277,16 +279,16 @@ describe('foreman store: persistence', () => {
     const store = makeStore(dir);
     const job = await store.createJob({ title: 'job', goal: 'g' });
     const task = await store.createTask(job.id, { title: 'task' });
-    const run = await store.createRun(task.id);
+    const run = await store.createRun(task!.id);
     await store.updateRun(run.id, { status: 'waiting_for_user', attention: { type: 'question' } });
-    await store.applyExecutionChange(run.id, () => ({ execution: { type: 'opencode-session', id: 's1', directory: '/repo', createdAt: 5 } }));
+    await store.applyExecutionChange(run.id, () => ({ execution: { type: 'opencode-session', id: 's1' as SessionId, directory: '/repo', createdAt: 5 } }));
 
     const reloaded = makeStore(dir);
     const snapshot = await reloaded.snapshot();
     expect(snapshot.version).toBe(2);
     expect(snapshot.jobs).toEqual([job]);
-    expect(snapshot.tasks[0]).toMatchObject({ id: task.id, status: 'waiting', currentRunId: run.id });
-    expect(snapshot.runs[0]).toMatchObject({ id: run.id, taskId: task.id, status: 'waiting_for_user', attention: { type: 'question' }, execution: { type: 'opencode-session', id: 's1', directory: '/repo', createdAt: 5 } });
+    expect(snapshot.tasks[0]).toMatchObject({ id: task!.id, status: 'waiting', currentRunId: run.id });
+    expect(snapshot.runs[0]).toMatchObject({ id: run.id, taskId: task!.id, status: 'waiting_for_user', attention: { type: 'question' }, execution: { type: 'opencode-session', id: 's1', directory: '/repo', createdAt: 5 } });
     expect(foremanFileSchema.safeParse(readState(dir)).success).toBe(true);
   });
 
@@ -295,10 +297,10 @@ describe('foreman store: persistence', () => {
     const store = makeStore(dir);
     const job = await store.createJob({ title: 'Job', directory: '/repo' });
     const task = await store.createTask(job.id, { title: 'Task' });
-    const workspace = { kind: 'git-worktree', directory: path.join(dir, 'foreman-worktrees', 'task-one'), createdAt: 10 };
-    await store.setTaskWorkspace(task.id, workspace);
+    const workspace: TaskWorkspace = { kind: 'git-worktree', directory: path.join(dir, 'foreman-worktrees', 'task-one'), createdAt: 10 };
+    await store.setTaskWorkspace(task!.id, workspace);
     const restarted = makeStore(dir);
-    expect((await restarted.snapshot()).tasks[0]).toMatchObject({ id: task.id, workspace });
+    expect((await restarted.snapshot()).tasks[0]).toMatchObject({ id: task!.id, workspace });
   });
 
   it('run activity persists across store restart and stays isolated between Runs', async () => {
@@ -306,9 +308,9 @@ describe('foreman store: persistence', () => {
     const store = makeStore(dir);
     const job = await store.createJob({ title: 'job' });
     const task = await store.createTask(job.id, { title: 'task' });
-    const first = await store.createRun(task.id);
+    const first = await store.createRun(task!.id);
     const secondTask = await store.createTask(job.id, { title: 'other task' });
-    const second = await store.createRun(secondTask.id);
+    const second = await store.createRun(secondTask!.id);
     const event = await store.addRunActivity(first.id, { type: 'validation', message: '13 tests passed' });
     const reloaded = makeStore(dir);
     expect(await reloaded.activityForRun(first.id)).toEqual([event]);
@@ -320,10 +322,10 @@ describe('foreman store: persistence', () => {
     const v3 = { version: 3, jobs: [{ id: 'j', title: 'J', status: 'pending', createdAt: 1, updatedAt: 1 }], tasks: [{ id: 't', jobId: 'j', title: 'T', status: 'pending', createdAt: 1, updatedAt: 1 }], runs: [{ id: 'r', taskId: 't', status: 'queued', createdAt: 1, updatedAt: 1 }], memories: [] };
     fs.writeFileSync(path.join(dir, FOREMAN_FILE_NAME), JSON.stringify(v3));
     const store = makeStore(dir);
-    await store.addRunActivity('r', { type: 'run_started', message: 'Run started' });
+    await store.addRunActivity('r' as RunId, { type: 'run_started', message: 'Run started' });
     const migrated = readState(dir);
     expect(migrated.version).toBe(5);
-    expect(migrated.runs[0].activity).toHaveLength(1);
+    expect(migrated.runs[0]!.activity).toHaveLength(1);
     expect(migrated.jobs[0]).toMatchObject({ ...v3.jobs[0], maxParallelTasks: 3 });
     expect(migrated.tasks[0]).toMatchObject({ ...v3.tasks[0], dependsOn: [] });
     expect(migrated.memories).toEqual([]);
@@ -337,8 +339,8 @@ describe('foreman store: persistence', () => {
     expect((await store.snapshot()).tasks[0]).toMatchObject({ dependsOn: [], status: 'ready' });
     await store.createJob({ title: 'next' });
     expect(readState(dir).version).toBe(5);
-    expect(readState(dir).jobs[0].maxParallelTasks).toBe(3);
-    expect(readState(dir).tasks[0].dependsOn).toEqual([]);
+    expect(readState(dir).jobs[0]!.maxParallelTasks).toBe(3);
+    expect(readState(dir).tasks[0]!.dependsOn).toEqual([]);
   });
 
   it('workspace and job memories survive restart, remain scoped, and outlive runs', async () => {
@@ -347,7 +349,7 @@ describe('foreman store: persistence', () => {
     const first = await store.createJob({ title: 'API refactor', directory: '/repo' });
     const second = await store.createJob({ title: 'Docs', directory: '/repo' });
     const firstTask = await store.createTask(first.id, { title: 'Update API client' });
-    const run = await store.createRun(firstTask.id);
+    const run = await store.createRun(firstTask!.id);
     const workspaceMemory = await store.createMemory(first.id, '/repo', {
       scope: 'workspace', type: 'architecture', content: 'API client lives under packages/ui/src/lib/api.', tags: ['api', 'packages/ui/src/lib/api'],
     });
@@ -385,7 +387,7 @@ describe('foreman store: persistence', () => {
     const store = makeStore(dir, {
       fsPromises: {
         ...fs.promises,
-        writeFile: async (...args) => {
+        writeFile: async (...args: Parameters<typeof fs.promises.writeFile>) => {
           if (fail) throw new Error('disk full');
           return fs.promises.writeFile(...args);
         },
@@ -411,7 +413,7 @@ describe('foreman store: persistence', () => {
   it('an unreadable file is moved aside and the store starts empty', async () => {
     const dir = tempDir();
     fs.writeFileSync(path.join(dir, FOREMAN_FILE_NAME), '{ not json');
-    const warnings = [];
+    const warnings: string[] = [];
     const store = makeStore(dir, { warn: (message) => warnings.push(message) });
     expect(await store.snapshot()).toEqual({ version: 2, globalConcurrency: 3, jobs: [], tasks: [], runs: [] });
     expect(fs.readdirSync(dir).some((name) => name.startsWith(`${FOREMAN_FILE_NAME}.corrupt-`))).toBe(true);
@@ -440,11 +442,11 @@ describe('foreman store: persistence', () => {
     const store = makeStore(dir);
     const snapshot = await store.snapshot();
     expect(snapshot.version).toBe(2);
-    expect(snapshot.jobs[0].maxParallelTasks).toBe(3);
-    expect(snapshot.tasks[0].dependsOn).toEqual([]);
-    expect(snapshot.runs[0].execution).toBeUndefined();
-    expect(snapshot.runs[1].execution).toEqual({ type: 'opencode-session', id: 'ses_9', createdAt: 3 });
-    expect(snapshot.runs[1].sessionId).toBeUndefined();
+    expect(snapshot.jobs[0]!.maxParallelTasks).toBe(3);
+    expect(snapshot.tasks[0]!.dependsOn).toEqual([]);
+    expect(snapshot.runs[0]!.execution).toBeUndefined();
+    expect(snapshot.runs[1]!.execution).toEqual({ type: 'opencode-session', id: 'ses_9', createdAt: 3 });
+    expect((snapshot.runs[1] as { sessionId?: unknown }).sessionId).toBeUndefined();
     // Reading converts in memory only; the file changes on the next write.
     expect(readState(dir).version).toBe(1);
     await store.createJob({ title: 'next' });
@@ -458,7 +460,7 @@ describe('foreman store: persistence', () => {
     const store = makeStore(dir);
     expect((await store.snapshot()).jobs[0]).toMatchObject({ ...v2.jobs[0], maxParallelTasks: 3 });
     expect((await store.snapshot()).tasks[0]).toMatchObject({ ...v2.tasks[0], dependsOn: [], status: 'ready' });
-    await store.createMemory('j', '/repo', { scope: 'workspace', type: 'fact', content: 'persisted' });
+    await store.createMemory('j' as JobId, '/repo', { scope: 'workspace', type: 'fact', content: 'persisted' });
     expect(readState(dir).version).toBe(5);
     expect(readState(dir).memories).toHaveLength(1);
   });

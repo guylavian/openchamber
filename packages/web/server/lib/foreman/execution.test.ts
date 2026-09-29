@@ -5,6 +5,10 @@ import path from 'node:path';
 
 import { createForemanExecution, runChangeForEvent, taskPrompt } from './execution.js';
 import { createForemanStore } from './store.js';
+import type { ForemanExecutionOptions } from './execution.js';
+import type { ExecutionTruth } from './execution-truth.js';
+import type { ExecutionChange, Run } from './store.js';
+import type { SessionId } from './types.js';
 
 const CODE_INTELLIGENCE_INSTRUCTION = 'For code work, use available LSP/language-server or other structured code-intelligence tools first. If none are available, search for and read only files relevant to this task. Use shell for execution, tests, builds, Git, and runtime commands. Do not start with repository-wide discovery.';
 
@@ -18,28 +22,36 @@ const tempDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'foreman-exec-'));
 const createFakeSessionService = ({
   failCreate = false, failSend = false, notQueued = false, createDelayMs = 0,
   interruptResult = { interrupted: true, missing: false }, failInterrupt = false, interruptDelayMs = 0,
+}: {
+  failCreate?: boolean;
+  failSend?: boolean;
+  notQueued?: boolean;
+  createDelayMs?: number;
+  interruptResult?: { interrupted: boolean; missing: boolean };
+  failInterrupt?: boolean;
+  interruptDelayMs?: number;
 } = {}) => {
-  const sessions = [];
-  const sends = [];
-  const interrupts = [];
+  const sessions: { sessionId: string; directory: string; title: string }[] = [];
+  const sends: { sessionId: string; prompt: string; directory: string }[] = [];
+  const interrupts: { sessionId: string; directory: string }[] = [];
   return {
     sessions,
     sends,
     interrupts,
-    async interrupt(sessionId, { directory }) {
+    async interrupt(sessionId: string, { directory }: { directory: string }) {
       interrupts.push({ sessionId, directory });
       if (interruptDelayMs) await new Promise((resolve) => setTimeout(resolve, interruptDelayMs));
       if (failInterrupt) throw new Error('OpenCode did not answer');
       return interruptResult;
     },
-    async create({ directory, title }) {
+    async create({ directory, title }: { directory: string; title: string }) {
       if (createDelayMs) await new Promise((resolve) => setTimeout(resolve, createDelayMs));
       if (failCreate) throw new Error('OpenCode is not running');
       const sessionId = `ses_${sessions.length + 1}`;
       sessions.push({ sessionId, directory, title });
       return { sessionId, directory };
     },
-    async send(sessionId, { prompt, directory }) {
+    async send(sessionId: string, { prompt, directory }: { prompt: string; directory: string }) {
       if (failSend) throw new Error('No model is configured or available for the requested directory');
       sends.push({ sessionId, prompt, directory });
       return notQueued
@@ -49,19 +61,30 @@ const createFakeSessionService = ({
   };
 };
 
-const createFakeProbe = ({ active = {}, workingChildren = false } = {}) => ({
+const createFakeProbe = ({ active = {}, workingChildren = false }: { active?: Record<string, unknown> | null; workingChildren?: boolean } = {}) => ({
   active,
   workingChildren,
   async fetchActiveSessionStatuses() { return this.active; },
   async hasWorkingChildren() { return this.workingChildren; },
 });
 
-const setup = async ({ directory, service = createFakeSessionService(), probe = createFakeProbe(), outcome = 'unknown', jobDirectory } = {}) => {
+type FakeSessionService = ReturnType<typeof createFakeSessionService>;
+type FakeProbe = ReturnType<typeof createFakeProbe>;
+
+interface SetupOptions {
+  directory?: string;
+  service?: FakeSessionService;
+  probe?: FakeProbe;
+  outcome?: string | undefined;
+  jobDirectory?: string;
+}
+
+const setup = async ({ directory, service = createFakeSessionService(), probe = createFakeProbe(), outcome = 'unknown', jobDirectory }: SetupOptions = {}) => {
   const dataDir = tempDir();
   const workspace = directory ?? tempDir();
   const store = createForemanStore({ dataDir, warn: () => {} });
-  const broadcasts = [];
-  const make = (overrides = {}) => createForemanExecution({
+  const broadcasts: unknown[] = [];
+  const make = (overrides: Partial<ForemanExecutionOptions> = {}) => createForemanExecution({
     store,
     sessionService: service,
     validateDirectoryPath: async (dir) => (dir && fs.existsSync(dir)
@@ -69,7 +92,7 @@ const setup = async ({ directory, service = createFakeSessionService(), probe = 
       : { ok: false, error: 'Directory does not exist' }),
     activityProbe: probe,
     readSessionOutcome: async () => outcome,
-    executionTruthProbe: { readExecutionTruth: async () => ({ verdict: 'idle' }) },
+    executionTruthProbe: { readExecutionTruth: async () => ({ verdict: 'idle' }) as ExecutionTruth },
     broadcast: (event) => broadcasts.push(event),
     warn: () => {},
     ...overrides,
@@ -77,14 +100,14 @@ const setup = async ({ directory, service = createFakeSessionService(), probe = 
   const execution = make();
   const job = await store.createJob({ title: 'Fix average', directory: jobDirectory === undefined ? workspace : jobDirectory || undefined });
   const task = await store.createTask(job.id, { title: 'Empty list', instructions: 'Make average([]) return None and run the tests.' });
-  const run = await store.createRun(task.id);
+  const run = await store.createRun(task!.id);
   return { dataDir, workspace, store, execution, make, service, probe, broadcasts, job, task, run };
 };
 
 /** Lets the per-session event queue drain. */
 const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
 
-const event = (type, properties) => ({ type, properties });
+const event = (type: string, properties: Record<string, unknown>) => ({ type, properties });
 
 describe('starting a run', () => {
   it('creates exactly one session in the job directory, sends the task instructions, and records the link', async () => {
@@ -100,7 +123,7 @@ describe('starting a run', () => {
     expect(started.status).toBe('running');
     expect(started.startedAt).toBeGreaterThan(0);
     expect(started.execution).toMatchObject({ type: 'opencode-session', id: 'ses_1', directory: workspace });
-    expect((await store.snapshot()).runs[0].execution.id).toBe('ses_1');
+    expect((await store.snapshot()).runs[0]!.execution!.id).toBe('ses_1');
     expect((await store.activityForRun(run.id)).map(({ type }) => type)).toEqual(['run_started', 'session_created']);
     expect(broadcasts.length).toBeGreaterThan(0);
   });
@@ -117,7 +140,7 @@ describe('starting a run', () => {
       scope: 'workspace', type: 'fact', content: 'Unrelated billing module owns invoices.', tags: ['billing'],
     });
     await execution.startRun(run.id);
-    const prompt = service.sends[0].prompt;
+    const prompt = service.sends[0]!.prompt;
     expect(prompt).toContain(workspaceMemory.content);
     expect(prompt).toContain(jobMemory.content);
     expect(prompt).not.toContain('Unrelated billing');
@@ -145,14 +168,14 @@ describe('starting a run', () => {
     const results = await Promise.all([execution.startRun(run.id), execution.startRun(run.id), execution.startRun(run.id)]);
     expect(service.sessions).toHaveLength(1);
     expect(service.sends).toHaveLength(1);
-    expect(new Set(results.map((result) => result.run.execution.id))).toEqual(new Set(['ses_1']));
+    expect(new Set(results.map((result) => result.run.execution!.id))).toEqual(new Set(['ses_1']));
     expect(results.filter((result) => !result.alreadyStarted)).toHaveLength(1);
   });
 
   it('applies the configured global concurrency cap to real start requests', async () => {
     const { store, job, task, run, service, make } = await setup();
     const otherTask = await store.createTask(job.id, { title: 'Second task' });
-    const otherRun = await store.createRun(otherTask.id);
+    const otherRun = await store.createRun(otherTask!.id);
     const execution = make({
       globalConcurrency: 1,
       taskWorkspaceManager: { prepare: async ({ taskId }) => ({ kind: 'git-worktree', directory: `/worktrees/${taskId}`, createdAt: 1 }) },
@@ -168,7 +191,7 @@ describe('starting a run', () => {
     await execution.startRun(run.id);
     const again = await execution.startRun(run.id);
     expect(again.alreadyStarted).toBe(true);
-    expect(again.run.execution.id).toBe('ses_1');
+    expect(again.run.execution!.id).toBe('ses_1');
     expect(service.sessions).toHaveLength(1);
   });
 
@@ -185,7 +208,7 @@ describe('starting a run', () => {
     const { execution, service, store, run } = await setup({ jobDirectory: '' });
     await expect(execution.startRun(run.id)).rejects.toMatchObject({ code: 'invalid_input' });
     expect(service.sessions).toHaveLength(0);
-    const stored = (await store.snapshot()).runs[0];
+    const stored = (await store.snapshot()).runs[0]!;
     expect(stored.status).toBe('queued');
     expect(stored.execution).toBeUndefined();
   });
@@ -194,7 +217,7 @@ describe('starting a run', () => {
     const { execution, service, store, run } = await setup({ jobDirectory: '/definitely/not/here' });
     await expect(execution.startRun(run.id)).rejects.toThrow('not usable');
     expect(service.sessions).toHaveLength(0);
-    expect((await store.snapshot()).runs[0].status).toBe('queued');
+    expect((await store.snapshot()).runs[0]!.status).toBe('queued');
   });
 
   it('session creation failing gives a failed run with no link, never running', async () => {
@@ -213,8 +236,8 @@ describe('starting a run', () => {
     const { run: result } = await execution.startRun(run.id);
     expect(service.sessions).toHaveLength(1);
     expect(result.status).toBe('failed');
-    expect(result.error.stage).toBe('dispatch');
-    expect(result.execution.id).toBe('ses_1');
+    expect(result.error!.stage).toBe('dispatch');
+    expect(result.execution!.id).toBe('ses_1');
     expect(result.startedAt).toBeUndefined();
     expect((await store.activityForRun(run.id)).map(({ type }) => type)).toEqual(['run_started', 'session_created', 'run_failed']);
   });
@@ -223,7 +246,7 @@ describe('starting a run', () => {
     const { execution, run } = await setup({ service: createFakeSessionService({ notQueued: true }) });
     const { run: result } = await execution.startRun(run.id);
     expect(result.status).toBe('failed');
-    expect(result.error.message).toMatch(/no queued message/);
+    expect(result.error!.message).toMatch(/no queued message/);
   });
 
   it('only a queued run starts: a finished one needs a new run', async () => {
@@ -238,15 +261,15 @@ describe('starting a run', () => {
     const { run: result } = await execution.startRun(run.id);
     expect(service.sessions).toHaveLength(0);
     expect(result.status).toBe('failed');
-    expect(result.error.stage).toBe('session');
+    expect(result.error!.stage).toBe('session');
   });
 });
 
 describe('status follows the session', () => {
-  const startedRun = async (options) => {
+  const startedRun = async (options?: SetupOptions) => {
     const context = await setup(options);
     await context.execution.startRun(context.run.id);
-    const current = async () => (await context.store.snapshot()).runs[0];
+    const current = async () => (await context.store.snapshot()).runs[0]!;
     return { ...context, current };
   };
 
@@ -327,7 +350,7 @@ describe('status follows the session', () => {
     execution.processPayload(event('permission.asked', { sessionID: 'ses_other', id: 'p' }));
     await settle();
     expect((await current()).status).toBe('running');
-    expect(await store.runsForExecution('opencode-session', 'ses_other')).toEqual([]);
+    expect(await store.runsForExecution('opencode-session', 'ses_other' as SessionId)).toEqual([]);
   });
 
   it('events apply in order even when one needs a slow OpenCode lookup', async () => {
@@ -349,7 +372,7 @@ describe('status follows the session', () => {
     await settle();
     const run = await current();
     expect(run).toMatchObject({ status: 'failed', error: { stage: 'execution' }, execution: { id: 'ses_1' } });
-    expect(run.execution.deletedAt).toBeGreaterThan(0);
+    expect(run.execution!.deletedAt).toBeGreaterThan(0);
   });
 
   it('a deleted session leaves a finished run finished, but marks the reference deleted', async () => {
@@ -360,7 +383,7 @@ describe('status follows the session', () => {
     await settle();
     const run = await current();
     expect(run.status).toBe('completed');
-    expect(run.execution.deletedAt).toBeGreaterThan(0);
+    expect(run.execution!.deletedAt).toBeGreaterThan(0);
   });
 
   it('the event mapping ignores what it cannot trust', () => {
@@ -371,16 +394,22 @@ describe('status follows the session', () => {
 });
 
 describe('restart reconciliation', () => {
-  const afterRestart = async ({ status = 'running', active = {}, outcome, workingChildren = false, execution: executionRef } = {}) => {
+  const afterRestart = async ({ status = 'running', active = {}, outcome, workingChildren = false, execution: executionRef }: {
+    status?: Run['status'];
+    active?: Record<string, unknown> | null;
+    outcome?: string;
+    workingChildren?: boolean;
+    execution?: NonNullable<Run['execution']>;
+  } = {}) => {
     const context = await setup({ outcome, probe: createFakeProbe({ active, workingChildren }) });
     await context.store.applyExecutionChange(context.run.id, () => {
-      const next = { execution: executionRef ?? { type: 'opencode-session', id: 'ses_1', directory: context.workspace, createdAt: 1 } };
+      const next: ExecutionChange = { execution: executionRef ?? { type: 'opencode-session', id: 'ses_1' as SessionId, directory: context.workspace, createdAt: 1 } };
       if (status !== 'queued') next.status = status;
       return next;
     });
     const restarted = context.make();
     await restarted.reconcile();
-    return { ...context, run: (await context.store.snapshot()).runs[0] };
+    return { ...context, run: (await context.store.snapshot()).runs[0]! };
   };
 
   it('a session still running keeps the run running', async () => {
@@ -397,7 +426,7 @@ describe('restart reconciliation', () => {
   it('a session that no longer exists fails the run and keeps the reference', async () => {
     const { run } = await afterRestart({ outcome: 'missing' });
     expect(run).toMatchObject({ status: 'failed', error: { stage: 'execution' }, execution: { id: 'ses_1' } });
-    expect(run.execution.deletedAt).toBeGreaterThan(0);
+    expect(run.execution!.deletedAt).toBeGreaterThan(0);
   });
 
   it('an unknown outcome leaves the run as it was', async () => {
@@ -413,10 +442,10 @@ describe('restart reconciliation', () => {
   it('when OpenCode cannot be asked nothing changes', async () => {
     const context = await setup({ probe: createFakeProbe({ active: null }), outcome: 'missing' });
     await context.store.applyExecutionChange(context.run.id, () => ({
-      execution: { type: 'opencode-session', id: 'ses_1', createdAt: 1 }, status: 'running',
+      execution: { type: 'opencode-session', id: 'ses_1' as SessionId, createdAt: 1 }, status: 'running',
     }));
     await context.make().reconcile();
-    expect((await context.store.snapshot()).runs[0].status).toBe('running');
+    expect((await context.store.snapshot()).runs[0]!.status).toBe('running');
   });
 
   it('reconciliation never creates a session', async () => {
@@ -427,10 +456,10 @@ describe('restart reconciliation', () => {
 });
 
 describe('stopping a run', () => {
-  const running = async (options) => {
+  const running = async (options?: SetupOptions) => {
     const context = await setup(options);
     await context.execution.startRun(context.run.id);
-    const current = async () => (await context.store.snapshot()).runs[0];
+    const current = async () => (await context.store.snapshot()).runs[0]!;
     return { ...context, current };
   };
 
@@ -442,7 +471,7 @@ describe('stopping a run', () => {
     expect(stopped.status).toBe('cancelled');
     expect(stopped.stoppedAt).toBeGreaterThan(0);
     expect(stopped.finishedAt).toBeGreaterThan(0);
-    expect((await current()).execution.id).toBe('ses_1');
+    expect((await current()).execution!.id).toBe('ses_1');
   });
 
   it('a run waiting for the user stops too, and its attention goes', async () => {
@@ -484,12 +513,12 @@ describe('stopping a run', () => {
     await execution.stopRun(run.id);
     const stopped = await current();
     expect(stopped.status).toBe('cancelled');
-    expect(stopped.execution.deletedAt).toBeGreaterThan(0);
+    expect(stopped.execution!.deletedAt).toBeGreaterThan(0);
   });
 
   it('a session already known deleted is cancelled without asking OpenCode', async () => {
     const { execution, service, store, run, current } = await running();
-    await store.applyExecutionChange(run.id, (r) => ({ execution: { ...r.execution, deletedAt: 5 } }));
+    await store.applyExecutionChange(run.id, (r) => ({ execution: { ...r.execution!, deletedAt: 5 } }));
     await execution.stopRun(run.id);
     expect(service.interrupts).toHaveLength(0);
     expect((await current()).status).toBe('cancelled');

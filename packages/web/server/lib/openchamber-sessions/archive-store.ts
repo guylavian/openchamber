@@ -16,18 +16,31 @@ import pathDefault from 'node:path';
 
 const ARCHIVE_FILE_NAME = 'sessions-archive.json';
 
-const asNonEmptyString = (value) => {
+type ArchiveEntries = Map<string, number | null>;
+
+type ReadResult = { ok: true; stored: ArchiveEntries } | { ok: false; stored: null };
+
+type Thrown = { code?: unknown; message?: unknown } | null | undefined;
+
+interface ArchiveStoreOptions {
+  dataDir: string;
+  fsPromises?: typeof fsDefault.promises;
+  path?: typeof pathDefault;
+  now?: () => number;
+}
+
+const asNonEmptyString = (value: unknown) => {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
 };
 
-const asTimestamp = (value) => (Number.isSafeInteger(value) && value > 0 ? value : null);
+const asTimestamp = (value: unknown) => (Number.isSafeInteger(value) && (value as number) > 0 ? (value as number) : null);
 
-const asIdList = (ids) => {
+const asIdList = (ids: unknown) => {
   if (!Array.isArray(ids)) return [];
-  const seen = new Set();
-  const result = [];
+  const seen = new Set<string>();
+  const result: string[] = [];
   for (const value of ids) {
     const id = asNonEmptyString(value);
     if (!id || seen.has(id)) continue;
@@ -49,13 +62,13 @@ export const createArchiveStore = ({
   fsPromises = fsDefault.promises,
   path = pathDefault,
   now = Date.now,
-}) => {
+}: ArchiveStoreOptions) => {
   const filePath = path.join(dataDir, ARCHIVE_FILE_NAME);
 
   /** sessionID → archivedAt (ms). Authoritative once `loaded` is true. */
-  const entries = new Map();
+  const entries: ArchiveEntries = new Map();
   let loaded = false;
-  let loadPromise = null;
+  let loadPromise: Promise<{ ok: boolean; entries: Record<string, number | null> }> | null = null;
   /**
    * Writes stay disabled until one load has told us what is already on disk.
    * A failed read is not evidence that nothing is archived, and writing over
@@ -69,7 +82,7 @@ export const createArchiveStore = ({
    * its bytes stay on disk, and the next write would then erase the bytes too.
    */
   let transactionChain = Promise.resolve();
-  const runExclusive = (work) => {
+  const runExclusive = <T>(work: () => Promise<T>) => {
     const next = transactionChain.then(work, work);
     transactionChain = next.then(() => undefined, () => undefined);
     return next;
@@ -77,12 +90,12 @@ export const createArchiveStore = ({
 
   const snapshot = () => Object.fromEntries(entries);
 
-  const parseStored = (raw) => {
-    const parsed = JSON.parse(raw);
+  const parseStored = (raw: string) => {
+    const parsed: unknown = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       throw new Error('archive file is not a JSON object');
     }
-    const result = new Map();
+    const result: ArchiveEntries = new Map();
     for (const [sessionID, value] of Object.entries(parsed)) {
       const id = asNonEmptyString(sessionID);
       if (!id) continue;
@@ -96,15 +109,15 @@ export const createArchiveStore = ({
     return result;
   };
 
-  const readFile = async () => {
+  const readFile = async (): Promise<ReadResult> => {
     let raw;
     try {
       raw = await fsPromises.readFile(filePath, 'utf8');
     } catch (error) {
       // No file yet is the normal first run: nothing is archived, and writing
       // is safe because there is no state to lose.
-      if (error?.code === 'ENOENT') return { ok: true, stored: new Map() };
-      console.warn('[openchamber-sessions] could not read the archive file:', error?.message ?? error);
+      if ((error as Thrown)?.code === 'ENOENT') return { ok: true, stored: new Map() };
+      console.warn('[openchamber-sessions] could not read the archive file:', (error as Thrown)?.message ?? error);
       return { ok: false, stored: null };
     }
 
@@ -117,7 +130,7 @@ export const createArchiveStore = ({
       const backup = `${filePath}.corrupt-${now()}`;
       await fsPromises.rename(filePath, backup).catch(() => undefined);
       console.warn(
-        `[openchamber-sessions] archive file was unreadable and was moved to ${backup}: ${error?.message ?? error}`,
+        `[openchamber-sessions] archive file was unreadable and was moved to ${backup}: ${(error as Thrown)?.message ?? error}`,
       );
       return { ok: true, stored: new Map() };
     }
@@ -157,19 +170,19 @@ export const createArchiveStore = ({
   };
 
   /** Applies a batch and rolls the memory back when the file write fails. */
-  const applyBatch = async (ids, archivedAt) => {
+  const applyBatch = async (ids: unknown, archivedAt: number | null) => {
     const targets = asIdList(ids);
     if (targets.length === 0) return { applied: [], failedIds: [] };
     return runExclusive(() => applyBatchExclusive(targets, archivedAt));
   };
 
-  const applyBatchExclusive = async (targets, archivedAt) => {
+  const applyBatchExclusive = async (targets: string[], archivedAt: number | null) => {
     const loadResult = await load();
     if (!loadResult.ok || !writable) {
       return { applied: [], failedIds: targets };
     }
 
-    const previous = targets.map((id) => [id, entries.has(id) ? { value: entries.get(id) } : undefined]);
+    const previous = targets.map((id): [string, { value: number | null } | undefined] => [id, entries.has(id) ? { value: entries.get(id) as number | null } : undefined]);
     // `null` is kept as an entry on purpose: it tells the overlay to drop an
     // archived stamp OpenCode still carries (migrated v1 sessions).
     for (const id of targets) entries.set(id, archivedAt);
@@ -181,7 +194,7 @@ export const createArchiveStore = ({
         if (restore === undefined) entries.delete(id);
         else entries.set(id, restore.value);
       }
-      console.warn('[openchamber-sessions] failed to persist archive state:', error?.message ?? error);
+      console.warn('[openchamber-sessions] failed to persist archive state:', (error as Thrown)?.message ?? error);
       return { applied: [], failedIds: targets };
     }
 
@@ -198,24 +211,24 @@ export const createArchiveStore = ({
     getAll,
     list: getAll,
     isLoaded: () => loaded,
-    isArchived: async (id) => {
+    isArchived: async (id: unknown) => {
       const sessionID = asNonEmptyString(id);
       if (!sessionID) return false;
       await load();
       return typeof entries.get(sessionID) === 'number';
     },
-    archivedAt: async (id) => {
+    archivedAt: async (id: unknown) => {
       const sessionID = asNonEmptyString(id);
       if (!sessionID) return null;
       await load();
       return entries.get(sessionID) ?? null;
     },
-    archive: async (ids, archivedAt) => {
+    archive: async (ids: unknown, archivedAt?: unknown) => {
       const stamp = asTimestamp(archivedAt) ?? now();
       const { applied, failedIds } = await applyBatch(ids, stamp);
       return { archived: applied.map((id) => ({ id, archivedAt: stamp })), failedIds };
     },
-    unarchive: async (ids) => {
+    unarchive: async (ids: unknown) => {
       const { applied, failedIds } = await applyBatch(ids, null);
       return { restored: applied.map((id) => ({ id, archivedAt: null })), failedIds };
     },

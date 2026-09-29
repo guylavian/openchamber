@@ -22,15 +22,15 @@ const goalsDir = () => path.join(
   'goals',
 );
 
-const objectiveFilePath = (sessionId) => path.join(goalsDir(), `${sessionId}.md`);
+const objectiveFilePath = (sessionId: string) => path.join(goalsDir(), `${sessionId}.md`);
 
-export const isValidObjectiveKey = (sessionId) =>
+export const isValidObjectiveKey = (sessionId: unknown): sessionId is string =>
   typeof sessionId === 'string' && SESSION_ID_PATTERN.test(sessionId);
 
-const clampContent = (content) => String(content ?? '').trim().slice(0, GOAL_OBJECTIVE_CHAR_LIMIT);
+const clampContent = (content: unknown) => String(content ?? '').trim().slice(0, GOAL_OBJECTIVE_CHAR_LIMIT);
 
 /** Write (or overwrite — a new goal replaces the old one) the session's objective. */
-export const writeObjective = async (sessionId, content) => {
+export const writeObjective = async (sessionId: unknown, content: unknown) => {
   if (!isValidObjectiveKey(sessionId)) {
     throw Object.assign(new Error('invalid session id'), { statusCode: 400 });
   }
@@ -44,7 +44,7 @@ export const writeObjective = async (sessionId, content) => {
 };
 
 /** Returns the objective text, or null when missing/invalid. */
-export const readObjective = async (sessionId) => {
+export const readObjective = async (sessionId: unknown) => {
   if (!isValidObjectiveKey(sessionId)) return null;
   try {
     const raw = await fs.promises.readFile(objectiveFilePath(sessionId), 'utf8');
@@ -55,7 +55,7 @@ export const readObjective = async (sessionId) => {
 };
 
 /** Best-effort delete; missing files are fine. */
-export const deleteObjective = async (sessionId) => {
+export const deleteObjective = async (sessionId: unknown) => {
   if (!isValidObjectiveKey(sessionId)) return;
   await fs.promises.unlink(objectiveFilePath(sessionId)).catch(() => undefined);
 };

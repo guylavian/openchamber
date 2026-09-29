@@ -27,7 +27,13 @@ const IGNORED_PORTS = new Set([
   9229,  // node inspector
 ]);
 
-const splitHostPort = (value) => {
+export interface Listener {
+  port: number;
+  pid: number | null;
+  command: string;
+}
+
+const splitHostPort = (value: string | undefined) => {
   const raw = String(value || '').trim();
   if (!raw) return null;
 
@@ -46,7 +52,7 @@ const splitHostPort = (value) => {
   return { host: raw.slice(0, separator), port: raw.slice(separator + 1) };
 };
 
-const toPort = (value) => {
+const toPort = (value: string) => {
   const port = Number.parseInt(String(value || '').trim(), 10);
   return Number.isInteger(port) && port > 0 && port <= 65535 ? port : null;
 };
@@ -56,12 +62,12 @@ const toPort = (value) => {
  * A socket bound to a specific LAN address only is intentionally excluded:
  * `http://localhost:<port>` would not reach it.
  */
-export const isLocallyReachableHost = (host) => {
+export const isLocallyReachableHost = (host: string | null | undefined) => {
   const value = String(host || '').trim().toLowerCase();
   return LOOPBACK_TOKENS.has(value) || WILDCARD_TOKENS.has(value);
 };
 
-const isIgnoredDevPort = (port) => IGNORED_PORTS.has(port);
+const isIgnoredDevPort = (port: number) => IGNORED_PORTS.has(port);
 
 /**
  * Parses `lsof -iTCP -sTCP:LISTEN -P -n -F pcn`.
@@ -71,9 +77,9 @@ const isIgnoredDevPort = (port) => IGNORED_PORTS.has(port);
  * belongs to it until the next `p`. A single process commonly reports the same
  * port twice (IPv4 and IPv6), so results are de-duplicated by port.
  */
-export const parseLsofListeners = (output) => {
-  const byPort = new Map();
-  let pid = null;
+export const parseLsofListeners = (output: string | null | undefined) => {
+  const byPort = new Map<number, Listener>();
+  let pid: number | null = null;
   let command = '';
 
   for (const line of String(output || '').split('\n')) {
@@ -117,14 +123,14 @@ export const parseLsofListeners = (output) => {
  * available without a second call; `command` stays empty and callers fall back
  * to the port alone.
  */
-export const parseNetstatListeners = (output) => {
-  const byPort = new Map();
+export const parseNetstatListeners = (output: string | null | undefined) => {
+  const byPort = new Map<number, Listener>();
 
   for (const line of String(output || '').split('\n')) {
     const parts = line.trim().split(/\s+/);
     if (parts.length < 4) continue;
-    if (!/^tcp$/i.test(parts[0])) continue;
-    if (!/^LISTENING$/i.test(parts[3])) continue;
+    if (!/^tcp$/i.test(parts[0]!)) continue;
+    if (!/^LISTENING$/i.test(parts[3]!)) continue;
 
     const parsed = splitHostPort(parts[1]);
     if (!parsed) continue;
@@ -146,7 +152,7 @@ export const parseNetstatListeners = (output) => {
  * `ownPorts` removes OpenChamber's own listeners — offering the user a preview
  * of the app they are already looking at is pure noise.
  */
-export const selectDevServerCandidates = (listeners, { ownPorts = [], ownPids = [] } = {}) => {
+export const selectDevServerCandidates = (listeners: Listener[], { ownPorts = [], ownPids = [] }: { ownPorts?: readonly number[]; ownPids?: readonly number[] } = {}) => {
   const excludedPorts = new Set(ownPorts.filter((port) => Number.isInteger(port)));
   const excludedPids = new Set(ownPids.filter((pid) => Number.isInteger(pid)));
 
@@ -176,8 +182,8 @@ const PROC_LOOPBACK_ADDRESSES = new Set(['0100007F', '00000000000000000000000001
  * No process name or pid: mapping a socket to its owner means walking every
  * /proc/<pid>/fd, which is far more work than the label is worth.
  */
-export const parseProcNetTcpListeners = (output) => {
-  const byPort = new Map();
+export const parseProcNetTcpListeners = (output: string | null | undefined) => {
+  const byPort = new Map<number, Listener>();
 
   for (const line of String(output || '').split('\n')) {
     const parts = line.trim().split(/\s+/);

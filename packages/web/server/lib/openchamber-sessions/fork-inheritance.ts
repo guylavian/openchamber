@@ -25,34 +25,53 @@ const NamespaceSchema = z.looseObject({
 });
 const FileBackedGoalSchema = z.looseObject({ id: z.string().min(1), objectiveFile: z.literal(true) });
 
-const openChamberNamespace = (metadata) => {
+interface NamespacePatch {
+  btwSessionID?: null;
+  reviewSessionID?: null;
+  kind?: null;
+  originalSessionID?: null;
+  btwBoundaryMessageID?: null;
+  goal?: { status?: string; statusReason?: string; objective?: string; objectiveFile?: boolean };
+}
+
+interface ForkInheritanceOptions {
+  sourceSessionID: string;
+  fork: { id: string; metadata?: unknown };
+  readObjective: (sessionID: string) => Promise<string | null>;
+  writeObjective: (sessionID: string, content: string) => Promise<unknown>;
+  writeMetadata: (sessionID: string, patch: { openchamber: NamespacePatch }) => Promise<unknown>;
+}
+
+type Thrown = { message?: unknown } | null | undefined;
+
+const openChamberNamespace = (metadata: unknown) => {
   const parsed = z.looseObject({ openchamber: NamespaceSchema }).safeParse(metadata);
   return parsed.success ? parsed.data.openchamber : null;
 };
 
 /** Merge patch (RFC 7386) removing source-owned links; null when there are none. */
-export const sourceOwnedLinksPatch = (metadata) => {
+export const sourceOwnedLinksPatch = (metadata: unknown) => {
   const namespace = openChamberNamespace(metadata);
   if (!namespace) return null;
-  const patch = {};
-  for (const key of ['btwSessionID', 'reviewSessionID']) {
+  const patch: NamespacePatch = {};
+  for (const key of ['btwSessionID', 'reviewSessionID'] as const) {
     if (key in namespace) patch[key] = null;
   }
   if (namespace.kind === 'btw') {
-    for (const key of ['kind', 'originalSessionID', 'btwBoundaryMessageID']) {
+    for (const key of ['kind', 'originalSessionID', 'btwBoundaryMessageID'] as const) {
       if (key in namespace) patch[key] = null;
     }
   }
   // A fork must not pursue the source's goal in parallel: an active goal
   // arrives paused and the user resumes it (same rule as UI forks).
   const goal = namespace.goal;
-  if (goal && typeof goal === 'object' && !Array.isArray(goal) && goal.status === 'active') {
+  if (goal && typeof goal === 'object' && !Array.isArray(goal) && (goal as { status?: unknown }).status === 'active') {
     patch.goal = { status: 'paused', statusReason: 'paused in fork' };
   }
   return Object.keys(patch).length > 0 ? patch : null;
 };
 
-const fileBackedGoal = (metadata) => {
+const fileBackedGoal = (metadata: unknown) => {
   const parsed = FileBackedGoalSchema.safeParse(openChamberNamespace(metadata)?.goal);
   return parsed.success ? parsed.data : null;
 };
@@ -68,10 +87,10 @@ const fileBackedGoal = (metadata) => {
  * @param {(sessionID: string, content: string) => Promise<unknown>} options.writeObjective Throws on failure.
  * @param {(sessionID: string, patch: object) => Promise<unknown>} options.writeMetadata
  */
-export const applyForkInheritance = async ({ sourceSessionID, fork, readObjective, writeObjective, writeMetadata }) => {
+export const applyForkInheritance = async ({ sourceSessionID, fork, readObjective, writeObjective, writeMetadata }: ForkInheritanceOptions) => {
   const metadata = fork?.metadata;
   const goal = fileBackedGoal(metadata);
-  let inlineObjective = null;
+  let inlineObjective: string | null = null;
   if (goal) {
     try {
       const content = await readObjective(sourceSessionID);
@@ -81,12 +100,12 @@ export const applyForkInheritance = async ({ sourceSessionID, fork, readObjectiv
         try {
           await writeObjective(fork.id, content);
         } catch (error) {
-          console.warn('[fork] failed to copy the goal objective file; inlining it', error?.message ?? error);
+          console.warn('[fork] failed to copy the goal objective file; inlining it', (error as Thrown)?.message ?? error);
           inlineObjective = content;
         }
       }
     } catch (error) {
-      console.warn('[fork] failed to read the source goal objective', error?.message ?? error);
+      console.warn('[fork] failed to read the source goal objective', (error as Thrown)?.message ?? error);
     }
   }
 
@@ -98,6 +117,6 @@ export const applyForkInheritance = async ({ sourceSessionID, fork, readObjectiv
   try {
     await writeMetadata(fork.id, { openchamber: namespacePatch });
   } catch (error) {
-    console.warn('[fork] failed to update the fork metadata', error?.message ?? error);
+    console.warn('[fork] failed to update the fork metadata', (error as Thrown)?.message ?? error);
   }
 };

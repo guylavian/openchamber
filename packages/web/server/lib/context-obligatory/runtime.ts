@@ -1,14 +1,64 @@
 import { unwrapOpenCodeResponse } from '../opencode/response-envelope.js';
+import type { createSessionKnowledgeRuntime } from '../session-knowledge/runtime.js';
 const FETCH_TIMEOUT_MS = 15_000;
 const MESSAGE_FETCH_LIMIT = 20;
 
-const isRecord = (value) => Boolean(value && typeof value === 'object' && !Array.isArray(value));
+interface PinnedMessage {
+  id: string;
+  createdAt: number;
+  role: 'user' | 'assistant';
+}
 
-const readContextState = (session) => {
+interface ContentPart {
+  type?: unknown;
+  text?: unknown;
+}
+
+interface OpenCodeMessage {
+  id?: string;
+  type?: string;
+  status?: string;
+  time?: { completed?: number };
+}
+
+interface OpenCodeRecord {
+  parentID?: unknown;
+  data?: OpenCodeMessage[];
+  content?: ContentPart[];
+  text?: unknown;
+}
+
+interface OpenCodeFetchOptions {
+  directory?: string;
+  method?: string;
+  body?: unknown;
+  query?: Record<string, string>;
+}
+
+type SessionKnowledgeRuntime = Pick<ReturnType<typeof createSessionKnowledgeRuntime>, 'resolvePending' | 'readPins' | 'metadataKey'>;
+
+interface ContextObligatoryRuntimeOptions {
+  buildOpenCodeUrl: (path: string, directory: string) => string;
+  getOpenCodeAuthHeaders: () => Record<string, string>;
+  sessionKnowledgeRuntime?: SessionKnowledgeRuntime | null;
+  persistContextCursor?: ((sessionId: string, directory: string, patch: { openchamber: Record<string, string> }) => Promise<unknown>) | null;
+  readSessionMetadata?: ((sessionId: string) => Promise<unknown>) | null;
+}
+
+interface ContextPayload {
+  type?: string;
+  properties?: { sessionID?: unknown; directory?: string };
+}
+
+type Thrown = { message?: unknown } | null | undefined;
+
+const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value && typeof value === 'object' && !Array.isArray(value));
+
+const readContextState = (session: { metadata: unknown }) => {
   const metadata = isRecord(session?.metadata) ? session.metadata : {};
   const openchamber = isRecord(metadata.openchamber) ? metadata.openchamber : {};
   const messages = Array.isArray(openchamber.context_obligatory_messages)
-    ? openchamber.context_obligatory_messages.filter((item) =>
+    ? openchamber.context_obligatory_messages.filter((item): item is PinnedMessage =>
       isRecord(item)
       && typeof item.id === 'string'
       && typeof item.createdAt === 'number'
@@ -17,7 +67,7 @@ const readContextState = (session) => {
   return { metadata, openchamber, messages };
 };
 
-const buildContextPrompt = (entries) => {
+const buildContextPrompt = (entries: { pinned: PinnedMessage; text: string }[]) => {
   const timeline = entries.map(({ pinned, text }) => {
     const timestamp = new Date(pinned.createdAt).toISOString();
     return `## ${pinned.role} — ${timestamp}\n\n${text}`;
@@ -45,11 +95,11 @@ export const createContextObligatoryRuntime = ({
   sessionKnowledgeRuntime = null,
   persistContextCursor = null,
   readSessionMetadata = null,
-}) => {
-  const inflight = new Set();
+}: ContextObligatoryRuntimeOptions) => {
+  const inflight = new Set<string>();
   let stopped = false;
 
-  const openCodeFetch = async (fetchPath, { directory, method = 'GET', body, query } = {}) => {
+  const openCodeFetch = async (fetchPath: string, { directory, method = 'GET', body, query }: OpenCodeFetchOptions = {}) => {
     const params = new URLSearchParams(query || {});
     if (directory) params.set('directory', directory);
     const search = params.toString();
@@ -64,14 +114,14 @@ export const createContextObligatoryRuntime = ({
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     if (!response.ok) throw new Error(`OpenCode ${method} ${fetchPath} failed with ${response.status}`);
-    return unwrapOpenCodeResponse(await response.json().catch(() => null));
+    return unwrapOpenCodeResponse(await response.json().catch(() => null)) as OpenCodeRecord | null;
   };
 
-  const tick = async (sessionId, directory) => {
+  const tick = async (sessionId: string, directory: string) => {
     const session = await openCodeFetch(`/api/session/${encodeURIComponent(sessionId)}`, { directory });
     if (session?.parentID) return;
     // Pins and the cursor are OpenChamber's, not OpenCode's.
-    const stored = { metadata: await readSessionMetadata(sessionId) };
+    const stored = { metadata: await readSessionMetadata!(sessionId) };
     const state = readContextState(stored);
 
     /**
@@ -117,7 +167,7 @@ export const createContextObligatoryRuntime = ({
         ? message.content
         : (typeof message?.text === 'string' ? [{ type: 'text', text: message.text }] : []);
       const text = parts
-        .filter((part) => part?.type === 'text' && typeof part.text === 'string')
+        .filter((part): part is { type: 'text'; text: string } => part?.type === 'text' && typeof part.text === 'string')
         .map((part) => part.text.trim())
         .filter(Boolean)
         .join('\n\n');
@@ -125,7 +175,7 @@ export const createContextObligatoryRuntime = ({
     }));
     const entries = fetched
       .filter((result) => result.status === 'fulfilled' && result.value.text)
-      .map((result) => result.value)
+      .map((result) => (result as PromiseFulfilledResult<{ pinned: PinnedMessage; text: string }>).value)
       .sort((left, right) => left.pinned.createdAt - right.pinned.createdAt);
     if (entries.length === 0 && !knowledge.text) return;
 
@@ -145,17 +195,17 @@ export const createContextObligatoryRuntime = ({
     // A merge patch: the store folds this into whatever else the session's
     // `openchamber` namespace holds, so a concurrent goal or assist write is
     // not clobbered.
-    const patch = { context_obligatory_last_compaction_message_id: summary.id };
+    const patch: Record<string, string> = { context_obligatory_last_compaction_message_id: summary.id };
     if (knowledge.signature) {
       // Recorded together with the cursor: the session now carries this
       // knowledge again, so the next send must not repeat it.
-      patch[sessionKnowledgeRuntime.metadataKey] = knowledge.signature;
+      patch[sessionKnowledgeRuntime!.metadataKey] = knowledge.signature;
     }
-    await persistContextCursor(sessionId, directory, { openchamber: patch });
+    await persistContextCursor!(sessionId, directory, { openchamber: patch });
   };
 
   let parkedNoticeLogged = false;
-  const processPayload = (payload, directoryHint = '') => {
+  const processPayload = (payload: ContextPayload | null | undefined, directoryHint = '') => {
     if (stopped) return;
     if (typeof persistContextCursor !== 'function' || typeof readSessionMetadata !== 'function') {
       if (!parkedNoticeLogged) {
@@ -170,7 +220,7 @@ export const createContextObligatoryRuntime = ({
     const directory = payload?.properties?.directory || directoryHint;
     inflight.add(sessionId);
     return tick(sessionId, directory)
-      .catch((error) => console.warn('[context-obligatory] injection failed:', error?.message || error))
+      .catch((error: unknown) => console.warn('[context-obligatory] injection failed:', (error as Thrown)?.message || error))
       .finally(() => inflight.delete(sessionId));
   };
 

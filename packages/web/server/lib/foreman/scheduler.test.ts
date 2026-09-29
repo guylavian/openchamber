@@ -16,9 +16,9 @@ describe('Foreman task scheduler', () => {
     const taskA = await store.createTask(jobA.id, { title: 'A1' });
     const taskA2 = await store.createTask(jobA.id, { title: 'A2' });
     const taskB = await store.createTask(jobB.id, { title: 'B1' });
-    const runA = await store.createRun(taskA.id);
-    const runA2 = await store.createRun(taskA2.id);
-    const runB = await store.createRun(taskB.id);
+    const runA = await store.createRun(taskA!.id);
+    const runA2 = await store.createRun(taskA2!.id);
+    const runB = await store.createRun(taskB!.id);
     const scheduler = createForemanScheduler({ store, globalLimit: 2 });
     const reservationA = await scheduler.reserve(runA.id);
     await expect(scheduler.reserve(runA2.id)).rejects.toMatchObject({ code: 'conflict' });
@@ -45,8 +45,8 @@ describe('Foreman task scheduler', () => {
     const job = await store.createJob({ title: 'Configured' });
     const first = await store.createTask(job.id, { title: 'First' });
     const second = await store.createTask(job.id, { title: 'Second' });
-    const firstRun = await store.createRun(first.id);
-    const secondRun = await store.createRun(second.id);
+    const firstRun = await store.createRun(first!.id);
+    const secondRun = await store.createRun(second!.id);
     const scheduler = createForemanScheduler({ store, globalLimit: foremanGlobalConcurrency('1') });
     const reservation = await scheduler.reserve(firstRun.id);
     await expect(scheduler.reserve(secondRun.id)).rejects.toThrow(/global parallel limit \(1\)/);

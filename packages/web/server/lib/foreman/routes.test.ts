@@ -6,12 +6,58 @@ import path from 'node:path';
 import { registerForemanRoutes } from './routes.js';
 import { createForemanStore } from './store.js';
 import { createForemanExecution } from './execution.js';
+import type { Express } from 'express';
+import type { DirectoryValidation } from './execution.js';
+import type { ForemanRouteDependencies } from './routes.js';
+import type { TaskWorkspace } from './store.js';
+import type { TaskId } from './types.js';
+
+interface FakeRequest {
+  params: Record<string, string>;
+  body: unknown;
+}
+
+interface FakeResponse {
+  statusCode: number;
+  body?: unknown;
+  status: (code: number) => FakeResponse;
+  json: (payload: unknown) => FakeResponse;
+}
+
+type Handler = (req: FakeRequest, res: FakeResponse) => unknown;
+
+interface Answer {
+  id: string;
+  jobId: string;
+  directory: string;
+  content: string;
+  code: string;
+  alreadyStarted: boolean;
+  attention: unknown;
+  finishedAt: number;
+  run: unknown;
+  memory: { id: string };
+  memories: unknown[];
+  activity: unknown[];
+  jobs: unknown[];
+  tasks: { id: string; jobId: string }[];
+  runs: { taskId: string }[];
+}
+
+type FakeApp = Record<'get' | 'post' | 'patch' | 'delete', (routePath: string, ...handlers: Handler[]) => void>;
+
+interface Harness {
+  app: FakeApp;
+  call: (method: string, routePath: string, options?: { params?: Record<string, string>; body?: unknown }) => Promise<FakeResponse & { body: Answer }>;
+}
+
+type RemoveWorkspace = NonNullable<ForemanRouteDependencies['taskWorkspaceManager']>['remove'];
 
 // Express is not started: handlers are captured and invoked directly, the
 // body parser skipped, as the other route tests in this server do.
-const createApp = () => {
-  const routes = new Map();
-  const register = (method) => (routePath, ...handlers) => {
+const createApp = (): Harness => {
+  const routes = new Map<string, Handler | undefined>();
+  const register = (method: string) => (routePath: string, ...handlers: Handler[]) => {
     routes.set(`${method} ${routePath}`, handlers[handlers.length - 1]);
   };
   return {
@@ -19,24 +65,24 @@ const createApp = () => {
     async call(method, routePath, { params = {}, body } = {}) {
       const handler = routes.get(`${method} ${routePath}`);
       if (!handler) throw new Error(`no route ${method} ${routePath}`);
-      const res = {
+      const res: FakeResponse = {
         statusCode: 200,
         body: null,
         status(code) { this.statusCode = code; return this; },
         json(payload) { this.body = payload; return this; },
       };
       await handler({ params, body }, res);
-      return res;
+      return res as FakeResponse & { body: Answer };
     },
   };
 };
 
-const setup = ({ removeWorkspace = async () => {} } = {}) => {
+const setup = ({ removeWorkspace = async () => {} }: { removeWorkspace?: RemoveWorkspace } = {}) => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'foreman-routes-'));
   const store = createForemanStore({ dataDir, warn: () => {} });
-  const sessions = [];
-  const prompts = [];
-  const interrupts = [];
+  const sessions: string[] = [];
+  const prompts: string[] = [];
+  const interrupts: string[] = [];
   const execution = createForemanExecution({
     store,
     sessionService: {
@@ -44,15 +90,15 @@ const setup = ({ removeWorkspace = async () => {} } = {}) => {
       send: async (_sessionId, { prompt }) => { prompts.push(prompt); return { promptDispatched: true }; },
       interrupt: async (sessionId) => { interrupts.push(sessionId); return { interrupted: true, missing: false }; },
     },
-    validateDirectoryPath: async (directory) => ({ ok: Boolean(directory), directory }),
+    validateDirectoryPath: async (directory) => ({ ok: Boolean(directory), directory }) as DirectoryValidation,
     activityProbe: { fetchActiveSessionStatuses: async () => ({}), hasWorkingChildren: async () => false },
     readSessionOutcome: async () => 'unknown',
     warn: () => {},
   });
   const harness = createApp();
-  registerForemanRoutes(harness.app, {
+  registerForemanRoutes(harness.app as Express, {
     store, execution, taskWorkspaceManager: { remove: removeWorkspace },
-    validateDirectoryPath: async (directory) => ({ ok: Boolean(directory), directory }),
+    validateDirectoryPath: async (directory) => ({ ok: Boolean(directory), directory }) as DirectoryValidation,
   });
   return { ...harness, dataDir, store, sessions, prompts, interrupts };
 };
@@ -71,8 +117,8 @@ describe('foreman routes', () => {
 
     const state = await call('GET', '/api/foreman/state');
     expect(state.body.jobs).toHaveLength(1);
-    expect(state.body.tasks[0].jobId).toBe(job.body.id);
-    expect(state.body.runs[0].taskId).toBe(task.body.id);
+    expect(state.body.tasks[0]!.jobId).toBe(job.body.id);
+    expect(state.body.runs[0]!.taskId).toBe(task.body.id);
   });
 
   it('maps store errors to status codes', async () => {
@@ -102,7 +148,7 @@ describe('foreman routes', () => {
     // The test validator accepts nonempty paths; a missing directory is rejected before store access.
     const noWorkspace = (await call('POST', '/api/foreman/jobs', { body: { title: 'No workspace' } })).body;
     expect((await call('POST', '/api/foreman/jobs/:jobId/memories', { params: { jobId: noWorkspace.id }, body: { scope: 'workspace', type: 'fact', content: 'x' } })).statusCode).toBe(400);
-    expect(JSON.parse(fs.readFileSync(path.join(dataDir, 'foreman.json'), 'utf8')).memories).toEqual([]);
+    expect((JSON.parse(fs.readFileSync(path.join(dataDir, 'foreman.json'), 'utf8')) as { memories?: unknown }).memories).toEqual([]);
     expect(job.directory).toBe('/repo');
   });
 
@@ -120,12 +166,12 @@ describe('foreman routes', () => {
   });
 
   it('Task deletion removes its inactive worktree and preserves Foreman state if cleanup fails', async () => {
-    const removed = [];
+    const removed: Parameters<RemoveWorkspace>[0][] = [];
     const { call, store } = setup({ removeWorkspace: async (value) => { removed.push(value); } });
     const job = (await call('POST', '/api/foreman/jobs', { body: { title: 'Job' } })).body;
     const task = (await call('POST', '/api/foreman/jobs/:jobId/tasks', { params: { jobId: job.id }, body: { title: 'Task' } })).body;
-    const workspace = { kind: 'git-worktree', directory: '/managed/task-worktree', createdAt: 1 };
-    await store.setTaskWorkspace(task.id, workspace);
+    const workspace: TaskWorkspace = { kind: 'git-worktree', directory: '/managed/task-worktree', createdAt: 1 };
+    await store.setTaskWorkspace(task.id as TaskId, workspace);
     const deleted = await call('DELETE', '/api/foreman/tasks/:taskId', { params: { taskId: task.id } });
     expect(deleted.statusCode).toBe(200);
     expect(removed).toHaveLength(1);
@@ -137,7 +183,7 @@ describe('foreman routes', () => {
     const retained = (await failing.call('POST', '/api/foreman/jobs/:jobId/tasks', { params: { jobId: retainedJob.id }, body: { title: 'Retained' } })).body;
     const failure = await failing.call('DELETE', '/api/foreman/tasks/:taskId', { params: { taskId: retained.id } });
     expect(failure.statusCode).toBe(500);
-    expect((await failing.call('GET', '/api/foreman/state')).body.tasks[0].id).toBe(retained.id);
+    expect((await failing.call('GET', '/api/foreman/state')).body.tasks[0]!.id).toBe(retained.id);
   });
 
   it('refuses Task deletion while its Run is active before calling cleanup', async () => {
@@ -145,7 +191,7 @@ describe('foreman routes', () => {
     const { call, store } = setup({ removeWorkspace: async () => { cleanupCalls += 1; } });
     const job = (await call('POST', '/api/foreman/jobs', { body: { title: 'Job' } })).body;
     const task = (await call('POST', '/api/foreman/jobs/:jobId/tasks', { params: { jobId: job.id }, body: { title: 'Task' } })).body;
-    await store.setTaskWorkspace(task.id, { kind: 'git-worktree', directory: '/managed/task-worktree', createdAt: 1 });
+    await store.setTaskWorkspace(task.id as TaskId, { kind: 'git-worktree', directory: '/managed/task-worktree', createdAt: 1 });
     await call('POST', '/api/foreman/tasks/:taskId/runs', { params: { taskId: task.id }, body: {} });
     const result = await call('DELETE', '/api/foreman/tasks/:taskId', { params: { taskId: task.id } });
     expect(result.statusCode).toBe(409);
@@ -154,13 +200,13 @@ describe('foreman routes', () => {
   });
 
   it('Job deletion removes all Task worktrees and retains the Job on a cleanup failure', async () => {
-    const removed = [];
+    const removed: Parameters<RemoveWorkspace>[0][] = [];
     const { call, store } = setup({ removeWorkspace: async (value) => { removed.push(value); } });
     const job = (await call('POST', '/api/foreman/jobs', { body: { title: 'Job' } })).body;
     const first = (await call('POST', '/api/foreman/jobs/:jobId/tasks', { params: { jobId: job.id }, body: { title: 'One' } })).body;
     const second = (await call('POST', '/api/foreman/jobs/:jobId/tasks', { params: { jobId: job.id }, body: { title: 'Two' } })).body;
-    await store.setTaskWorkspace(first.id, { kind: 'git-worktree', directory: '/managed/one', createdAt: 1 });
-    await store.setTaskWorkspace(second.id, { kind: 'git-worktree', directory: '/managed/two', createdAt: 1 });
+    await store.setTaskWorkspace(first.id as TaskId, { kind: 'git-worktree', directory: '/managed/one', createdAt: 1 });
+    await store.setTaskWorkspace(second.id as TaskId, { kind: 'git-worktree', directory: '/managed/two', createdAt: 1 });
     const deleted = await call('DELETE', '/api/foreman/jobs/:jobId', { params: { jobId: job.id } });
     expect(deleted.statusCode).toBe(200);
     expect(removed).toHaveLength(2);
@@ -173,7 +219,7 @@ describe('foreman routes', () => {
     const failure = await failing.call('DELETE', '/api/foreman/jobs/:jobId', { params: { jobId: keep.id } });
     expect(failure.statusCode).toBe(500);
     expect((await failing.call('GET', '/api/foreman/state')).body.jobs).toHaveLength(1);
-    expect((await failing.call('GET', '/api/foreman/state')).body.tasks[0].id).toBe(keepTask.id);
+    expect((await failing.call('GET', '/api/foreman/state')).body.tasks[0]!.id).toBe(keepTask.id);
   });
 
   it('a state file from a newer version answers 409 everywhere and stays untouched', async () => {

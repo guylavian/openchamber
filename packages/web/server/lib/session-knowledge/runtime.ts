@@ -21,9 +21,65 @@ const PINS_METADATA_KEY = 'project_context_pins';
 /** Total budget for the assembled block; anything past it is cut, loudly. */
 const KNOWLEDGE_MAX_LENGTH = 8000;
 
-const isRecord = (value) => Boolean(value && typeof value === 'object' && !Array.isArray(value));
+export interface Pins {
+  notes: string[];
+  plans: string[];
+}
 
-const truncate = (value, budget) => (
+interface MemoryEntry {
+  id: string;
+  title: string;
+  type?: unknown;
+  createdAt: number;
+  updatedAt: number;
+  flagged?: boolean;
+}
+
+interface Note {
+  id: string;
+  body: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+interface PinnedPlan {
+  id: string;
+  title: string;
+  body: string;
+}
+
+interface MemoryIndex {
+  global: MemoryEntry[];
+  project: MemoryEntry[];
+  enabled?: boolean;
+  complete?: boolean;
+}
+
+interface Knowledge {
+  notes: Note[];
+  plans: PinnedPlan[];
+  memory: MemoryIndex;
+}
+
+type StoredSession = { metadata?: unknown } | null | undefined;
+
+interface SessionKnowledgeDependencies {
+  projectContextRuntime: {
+    readContext: (projectId: string) => Promise<{ notes?: Note[] | null; plans?: { id: string; title: string }[] | null }>;
+    readPlan: (projectId: string, planId: string) => Promise<{ body?: string | null } | null | undefined>;
+  };
+  agentMemoryRuntime: {
+    readAll: (projectId: string | null) => Promise<{ global: MemoryEntry[]; project: MemoryEntry[]; globalFailed?: boolean; projectFailed?: boolean }>;
+  };
+  resolveProjectId: (directory: string) => Promise<string | null>;
+  isAgentMemoryEnabled?: () => Promise<boolean>;
+  readSessionMetadata?: ((sessionId: string) => Promise<unknown>) | null;
+  persistSessionMetadata?: ((sessionId: string, directory: string, patch: { openchamber: Record<string, unknown> }) => Promise<unknown>) | null;
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value && typeof value === 'object' && !Array.isArray(value));
+
+const truncate = (value: string, budget: number) => (
   value.length <= budget ? value : `${value.slice(0, Math.max(0, budget - 1))}…`
 );
 
@@ -31,7 +87,7 @@ const truncate = (value, budget) => (
  * Identity of everything the session should be carrying, content revisions
  * included: editing a pinned note must re-send it, not merely renaming one.
  */
-export const buildKnowledgeSignature = ({ notes, plans, memory }) => {
+export const buildKnowledgeSignature = ({ notes, plans, memory }: Knowledge) => {
   const parts = [
     ...notes.map((note) => `n:${note.id}:${note.updatedAt}`),
     ...plans.map((plan) => `p:${plan.id}:${plan.title}`),
@@ -44,7 +100,7 @@ export const buildKnowledgeSignature = ({ notes, plans, memory }) => {
   return parts.length === 0 ? '' : parts.sort().join('|');
 };
 
-const renderMemorySection = (entries) => entries
+const renderMemorySection = (entries: MemoryEntry[]) => entries
   .slice()
   .sort((a, b) => a.createdAt - b.createdAt)
   .map((entry) => `- [${entry.type}] ${entry.title}`)
@@ -67,8 +123,8 @@ const MEMORY_SAVE_GUIDANCE = 'You have memory that persists across sessions, thr
  * Titles only for memory, never bodies: an index carrying full text grows
  * without bound until it crowds out the conversation it was meant to inform.
  */
-const buildMemoryBlock = ({ global, project, enabled = false, complete = false }) => {
-  const sections = [];
+const buildMemoryBlock = ({ global, project, enabled = false, complete = false }: MemoryIndex) => {
+  const sections: string[] = [];
   if (global.length > 0) sections.push(`### About the user\n\n${renderMemorySection(global)}`);
   if (project.length > 0) sections.push(`### About this project\n\n${renderMemorySection(project)}`);
   if (sections.length === 0) {
@@ -96,8 +152,8 @@ const buildMemoryBlock = ({ global, project, enabled = false, complete = false }
   ].join('\n\n');
 };
 
-const buildPinnedBlock = ({ notes, plans }) => {
-  const sections = [];
+const buildPinnedBlock = ({ notes, plans }: Pick<Knowledge, 'notes' | 'plans'>) => {
+  const sections: string[] = [];
   if (notes.length > 0) {
     const rendered = notes
       .slice()
@@ -121,7 +177,7 @@ const buildPinnedBlock = ({ notes, plans }) => {
   ].join('\n\n');
 };
 
-export const buildKnowledgeText = ({ notes, plans, memory }) => {
+export const buildKnowledgeText = ({ notes, plans, memory }: Knowledge) => {
   const blocks = [buildPinnedBlock({ notes, plans }), buildMemoryBlock(memory)].filter(Boolean);
   if (blocks.length === 0) return '';
 
@@ -131,7 +187,7 @@ export const buildKnowledgeText = ({ notes, plans, memory }) => {
     : `${truncate(assembled, KNOWLEDGE_MAX_LENGTH)}\n\n(project knowledge truncated)`;
 };
 
-export const createSessionKnowledgeRuntime = (dependencies) => {
+export const createSessionKnowledgeRuntime = (dependencies: SessionKnowledgeDependencies) => {
   const {
     projectContextRuntime,
     agentMemoryRuntime,
@@ -150,28 +206,28 @@ export const createSessionKnowledgeRuntime = (dependencies) => {
   };
 
   /** The session shape the readers below expect, built from our own store. */
-  const readStoredSession = async (sessionId) => ({ metadata: await readSessionMetadata(sessionId) });
+  const readStoredSession = async (sessionId: string) => ({ metadata: await readSessionMetadata!(sessionId) });
 
   /**
    * Everything the session should be carrying, read fresh. A failure in one
    * source never blanks the rest: a memory store that will not load must not
    * take the user's pinned notes down with it.
    */
-  const readPins = (session) => {
+  const readPins = (session: StoredSession): Pins => {
     const metadata = isRecord(session?.metadata) ? session.metadata : {};
     const openchamber = isRecord(metadata.openchamber) ? metadata.openchamber : {};
     const pins = isRecord(openchamber[PINS_METADATA_KEY]) ? openchamber[PINS_METADATA_KEY] : {};
-    const strings = (value) => Array.isArray(value)
-      ? [...new Set(value.filter((entry) => typeof entry === 'string' && entry.trim()).map((entry) => entry.trim()))]
+    const strings = (value: unknown) => Array.isArray(value)
+      ? [...new Set(value.filter((entry) => typeof entry === 'string' && entry.trim()).map((entry) => (entry as string).trim()))]
       : [];
     return { notes: strings(pins.notes), plans: strings(pins.plans) };
   };
 
-  const collect = async (directory, pins = { notes: [], plans: [] }) => {
+  const collect = async (directory: string, pins: Pins = { notes: [], plans: [] }): Promise<Knowledge> => {
     const projectId = directory ? await resolveProjectId(directory) : '';
 
-    let notes = [];
-    let plans = [];
+    let notes: Note[] = [];
+    let plans: PinnedPlan[] = [];
     if (projectId) {
       try {
         const context = await projectContextRuntime.readContext(projectId);
@@ -193,7 +249,7 @@ export const createSessionKnowledgeRuntime = (dependencies) => {
       }
     }
 
-    let memory = { global: [], project: [], enabled: false, complete: false };
+    let memory: MemoryIndex = { global: [], project: [], enabled: false, complete: false };
     const memoryEnabled = typeof isAgentMemoryEnabled === 'function'
       ? await isAgentMemoryEnabled().catch(() => false)
       : true;
@@ -206,7 +262,7 @@ export const createSessionKnowledgeRuntime = (dependencies) => {
         // Flagged entries are withheld from the model but left in the store, so
         // the user can see what was caught. Dropping them would hide the
         // attempt from the only person able to judge it.
-        const visible = (entries) => entries.filter((entry) => !entry.flagged);
+        const visible = (entries: MemoryEntry[]) => entries.filter((entry) => !entry.flagged);
         memory = {
           global: stored.globalFailed ? [] : visible(stored.global),
           project: stored.projectFailed ? [] : visible(stored.project),
@@ -227,13 +283,13 @@ export const createSessionKnowledgeRuntime = (dependencies) => {
    * off disk to show a number would make opening a panel cost what sending a
    * message costs.
    */
-  const collectSummary = async (directory, pins = { notes: [], plans: [] }) => {
+  const collectSummary = async (directory: string, pins: Pins = { notes: [], plans: [] }) => {
     const projectId = directory ? await resolveProjectId(directory) : '';
     const empty = { notes: [], plans: [], memory: { global: 0, project: 0 } };
     if (!projectId) return empty;
 
-    let notes = [];
-    let plans = [];
+    let notes: { id: string; body: string }[] = [];
+    let plans: { id: string; title: string }[] = [];
     try {
       const context = await projectContextRuntime.readContext(projectId);
       const noteIds = new Set(pins.notes);
@@ -266,7 +322,7 @@ export const createSessionKnowledgeRuntime = (dependencies) => {
     return { notes, plans, memory };
   };
 
-  const readDeliveredSignature = (session) => {
+  const readDeliveredSignature = (session: StoredSession) => {
     const metadata = isRecord(session?.metadata) ? session.metadata : {};
     const openchamber = isRecord(metadata.openchamber) ? metadata.openchamber : {};
     const delivered = openchamber[KNOWLEDGE_METADATA_KEY];
@@ -277,7 +333,7 @@ export const createSessionKnowledgeRuntime = (dependencies) => {
    * The text this session still owes, or an empty string when it is already
    * carrying it. `deliveredSignature` comes from the session's metadata.
    */
-  const resolvePending = async (directory, deliveredSignature, pins = { notes: [], plans: [] }) => {
+  const resolvePending = async (directory: string, deliveredSignature: string, pins: Pins = { notes: [], plans: [] }) => {
     const collected = await collect(directory, pins);
     const signature = buildKnowledgeSignature(collected);
     if (!signature || signature === deliveredSignature) {
@@ -289,17 +345,17 @@ export const createSessionKnowledgeRuntime = (dependencies) => {
   /**
    * What this session still owes, read from its own stored signature.
    */
-  const resolvePendingForSession = async (sessionId, directory) => {
+  const resolvePendingForSession = async (sessionId: string, directory: string) => {
     const session = await readStoredSession(sessionId).catch(() => null);
     return resolvePending(directory, readDeliveredSignature(session), readPins(session));
   };
 
-  const collectSummaryForSession = async (sessionId, directory) => {
+  const collectSummaryForSession = async (sessionId: string, directory: string) => {
     const session = await readStoredSession(sessionId).catch(() => null);
     return collectSummary(directory, readPins(session));
   };
 
-  const setPin = async (sessionId, directory, kind, id, pinned) => {
+  const setPin = async (sessionId: string, directory: string, kind: string, id: string, pinned: boolean) => {
     requireMetadataStore();
     const pins = readPins(await readStoredSession(sessionId));
     const key = kind === 'note' ? 'notes' : 'plans';
@@ -308,7 +364,7 @@ export const createSessionKnowledgeRuntime = (dependencies) => {
     else next.delete(id);
     // Clearing the delivered signature is what makes the next send carry the
     // changed pin set; the merge patch leaves neighbouring state alone.
-    await persistSessionMetadata(sessionId, directory, {
+    await persistSessionMetadata!(sessionId, directory, {
       openchamber: {
         [PINS_METADATA_KEY]: { ...pins, [key]: [...next] },
         [KNOWLEDGE_METADATA_KEY]: '',
@@ -326,9 +382,9 @@ export const createSessionKnowledgeRuntime = (dependencies) => {
    * OpenChamber state — pinned messages among it — and a blind write would
    * drop whatever changed in between.
    */
-  const recordDelivered = async (sessionId, directory, signature) => {
+  const recordDelivered = async (sessionId: string, directory: string, signature: string) => {
     requireMetadataStore();
-    await persistSessionMetadata(sessionId, directory, {
+    await persistSessionMetadata!(sessionId, directory, {
       openchamber: { [KNOWLEDGE_METADATA_KEY]: signature },
     });
   };

@@ -17,25 +17,69 @@
  * which is also what the user means by "this project".
  */
 
-const MEMORY_TYPES = new Set(['fact', 'preference', 'reference']);
+const MEMORY_TYPES = new Set<unknown>(['fact', 'preference', 'reference']);
 
-const asNonEmptyString = (value) => {
+type MemoryScope = 'global' | 'project';
+
+interface MemoryTarget {
+  scope: MemoryScope;
+  projectId?: string;
+}
+
+interface MemoryEntry {
+  id: string;
+  title: string;
+  type?: unknown;
+  body: string;
+  flagged?: boolean;
+}
+
+interface AgentMemoryRuntime {
+  readAll: (projectId: string | null) => Promise<{
+    global: MemoryEntry[];
+    project: MemoryEntry[];
+    globalFailed?: boolean;
+    projectFailed?: boolean;
+  }>;
+  read: (target: MemoryTarget) => Promise<{ entries: MemoryEntry[] }>;
+  create: (target: MemoryTarget, value: { title: string; body: string; type: unknown; sessionId: string | null }) => Promise<{ entry: MemoryEntry; replaced: boolean }>;
+  remove: (target: MemoryTarget, memoryId: string) => Promise<{ deleted: boolean }>;
+}
+
+interface AgentMemoryActionsDependencies {
+  agentMemoryRuntime: AgentMemoryRuntime;
+  createError: (message: string, status: number) => Error;
+  onMemoryChanged?: (event: { scope: MemoryScope; projectId?: string }) => void;
+  resolveProjectId: (directory: string) => Promise<string | null>;
+  isAgentMemoryEnabled?: () => Promise<boolean>;
+}
+
+interface MemoryActionInput {
+  scope?: unknown;
+  memoryId?: unknown;
+  title?: unknown;
+  body?: unknown;
+  type?: unknown;
+  sessionId?: unknown;
+}
+
+const asNonEmptyString = (value: unknown): string | null => {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
 };
 
 /** Everything the agent is told about an entry it has not opened yet. */
-const toSummary = (entry, scope) => ({
+const toSummary = (entry: MemoryEntry, scope: MemoryScope) => ({
   memoryId: entry.id,
   title: entry.title,
   type: entry.type,
   scope,
 });
 
-const toFullEntry = (entry, scope) => ({ ...toSummary(entry, scope), body: entry.body });
+const toFullEntry = (entry: MemoryEntry, scope: MemoryScope) => ({ ...toSummary(entry, scope), body: entry.body });
 
-export const createAgentMemoryActions = (dependencies) => {
+export const createAgentMemoryActions = (dependencies: AgentMemoryActionsDependencies) => {
   const {
     agentMemoryRuntime,
     createError,
@@ -52,7 +96,7 @@ export const createAgentMemoryActions = (dependencies) => {
    * Never allowed to fail the action: the memory is already on disk, and a
    * broken notification must not report the write as failed.
    */
-  const announce = (scope, projectId) => {
+  const announce = (scope: MemoryScope, projectId: string | undefined) => {
     if (typeof onMemoryChanged !== 'function') return;
     try {
       onMemoryChanged({ scope, ...(projectId ? { projectId } : {}) });
@@ -61,11 +105,11 @@ export const createAgentMemoryActions = (dependencies) => {
     }
   };
 
-  const fail = (message, status = 400) => {
+  const fail: (message: string, status?: number) => never = (message, status = 400) => {
     throw createError(message, status);
   };
 
-  const resolveProjectId = async (contextDirectory) => {
+  const resolveProjectId = async (contextDirectory: unknown) => {
     const directory = asNonEmptyString(contextDirectory);
     const projectId = directory ? await resolveProjectIdForDirectory(directory) : '';
     if (!projectId) {
@@ -74,7 +118,7 @@ export const createAgentMemoryActions = (dependencies) => {
     return projectId;
   };
 
-  const resolveTarget = async (input, contextDirectory) => {
+  const resolveTarget = async (input: MemoryActionInput, contextDirectory: unknown): Promise<MemoryTarget> => {
     const scope = asNonEmptyString(input.scope);
     if (scope === 'global') return { scope: 'global' };
     if (scope === 'project') {
@@ -83,7 +127,7 @@ export const createAgentMemoryActions = (dependencies) => {
     return fail('scope must be global or project', 400);
   };
 
-  const listBothScopes = async (contextDirectory) => {
+  const listBothScopes = async (contextDirectory: unknown) => {
     const directory = asNonEmptyString(contextDirectory);
     const projectId = directory ? await resolveProjectIdForDirectory(directory) : null;
     const result = await agentMemoryRuntime.readAll(projectId);
@@ -100,7 +144,7 @@ export const createAgentMemoryActions = (dependencies) => {
     };
   };
 
-  const list = async (input, contextDirectory) => {
+  const list = async (input: MemoryActionInput, contextDirectory: unknown) => {
     const scope = asNonEmptyString(input.scope);
     if (!scope || scope === 'both') {
       return listBothScopes(contextDirectory);
@@ -120,16 +164,16 @@ export const createAgentMemoryActions = (dependencies) => {
    * open, and demanding it turned a legible request into an error the model had
    * to recover from. Omitted, both stores are searched.
    */
-  const read = async (input, contextDirectory) => {
+  const read = async (input: MemoryActionInput, contextDirectory: unknown) => {
     const memoryId = asNonEmptyString(input.memoryId);
     const title = asNonEmptyString(input.title);
     if (!memoryId && !title) {
       fail('memory.read requires memoryId or title', 400);
     }
 
-    const matches = (entry) => (memoryId
+    const matches = (entry: MemoryEntry) => (memoryId
       ? entry.id === memoryId
-      : entry.title.toLowerCase() === title.toLowerCase());
+      : entry.title.toLowerCase() === title!.toLowerCase());
 
     const requestedScope = asNonEmptyString(input.scope);
     if (requestedScope === 'global' || requestedScope === 'project') {
@@ -164,7 +208,7 @@ export const createAgentMemoryActions = (dependencies) => {
     fail('No memory matches that id or title', 404);
   };
 
-  const save = async (input, contextDirectory) => {
+  const save = async (input: MemoryActionInput, contextDirectory: unknown) => {
     const target = await resolveTarget(input, contextDirectory);
     const title = asNonEmptyString(input.title);
     const body = asNonEmptyString(input.body);
@@ -196,7 +240,7 @@ export const createAgentMemoryActions = (dependencies) => {
     };
   };
 
-  const remove = async (input, contextDirectory) => {
+  const remove = async (input: MemoryActionInput, contextDirectory: unknown) => {
     const target = await resolveTarget(input, contextDirectory);
     const memoryId = asNonEmptyString(input.memoryId);
     if (!memoryId) fail('memoryId is required for memory.delete', 400);
@@ -209,7 +253,7 @@ export const createAgentMemoryActions = (dependencies) => {
     return { deleted: true, memoryId };
   };
 
-  const execute = async (action, input = {}, contextDirectory) => {
+  const execute = async (action: string, input: MemoryActionInput = {}, contextDirectory?: unknown) => {
     /**
      * The tool lives in the managed OpenCode child and only disappears when
      * that child restarts, so between switching memory off and restarting it

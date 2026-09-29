@@ -12,16 +12,27 @@
  */
 
 import express from 'express';
+import type { Express, Request } from 'express';
+import type { createSessionKnowledgeRuntime } from './runtime.js';
+
+type SessionKnowledgeRuntime = Pick<
+  ReturnType<typeof createSessionKnowledgeRuntime>,
+  'resolvePendingForSession' | 'resolvePending' | 'collectSummaryForSession' | 'collectSummary' | 'setPin' | 'recordDelivered'
+>;
+
+type JsonBodyRequest = Request<Record<string, never>, unknown, unknown>;
+
+type Thrown = { message?: unknown } | null | undefined;
 
 const parseJsonBody = express.json({ limit: '1mb' });
 
-const isRecord = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
-const asNonEmptyString = (value) => (
+const asNonEmptyString = (value: unknown) => (
   typeof value === 'string' && value.trim().length > 0 ? value.trim() : ''
 );
 
-export const registerSessionKnowledgeRoutes = (app, dependencies) => {
+export const registerSessionKnowledgeRoutes = (app: Express, dependencies: { sessionKnowledgeRuntime: SessionKnowledgeRuntime }) => {
   const { sessionKnowledgeRuntime } = dependencies;
 
   /**
@@ -45,7 +56,7 @@ export const registerSessionKnowledgeRoutes = (app, dependencies) => {
     } catch (error) {
       // Never fails the caller's send: a message without its background is far
       // better than no message at all.
-      return res.json({ text: '', signature: '', unavailable: true, reason: error?.message ?? 'unknown' });
+      return res.json({ text: '', signature: '', unavailable: true, reason: (error as Thrown)?.message ?? 'unknown' });
     }
   });
 
@@ -66,7 +77,7 @@ export const registerSessionKnowledgeRoutes = (app, dependencies) => {
     }
   });
 
-  app.post('/api/session-knowledge/pin', parseJsonBody, async (req, res) => {
+  app.post('/api/session-knowledge/pin', parseJsonBody, async (req: JsonBodyRequest, res) => {
     const body = req.body;
     if (!isRecord(body)) return res.status(400).json({ error: 'Body must be an object' });
     const sessionId = asNonEmptyString(body.sessionId);
@@ -79,11 +90,11 @@ export const registerSessionKnowledgeRoutes = (app, dependencies) => {
     try {
       return res.json({ pins: await sessionKnowledgeRuntime.setPin(sessionId, directory, kind, id, body.pinned) });
     } catch (error) {
-      return res.status(500).json({ error: error?.message ?? 'Unable to update pin' });
+      return res.status(500).json({ error: (error as Thrown)?.message ?? 'Unable to update pin' });
     }
   });
 
-  app.post('/api/session-knowledge/delivered', parseJsonBody, async (req, res) => {
+  app.post('/api/session-knowledge/delivered', parseJsonBody, async (req: JsonBodyRequest, res) => {
     const body = req.body;
     if (!isRecord(body)) {
       return res.status(400).json({ error: 'Body must be an object' });
@@ -101,7 +112,7 @@ export const registerSessionKnowledgeRoutes = (app, dependencies) => {
     } catch (error) {
       // The message is already sent; failing here only means the block may be
       // sent once more, which is far better than reporting the send as failed.
-      return res.json({ recorded: false, reason: error?.message ?? 'unknown' });
+      return res.json({ recorded: false, reason: (error as Thrown)?.message ?? 'unknown' });
     }
   });
 };

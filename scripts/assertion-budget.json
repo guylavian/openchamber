@@ -4,11 +4,26 @@
     "error as { code?: unknown }": 4,
     "parsed as SettingsRecord": 1
   },
+  "packages/web/server/lib/agent-memory/actions.ts": {
+    "title!": 1
+  },
   "packages/web/server/lib/agent-memory/routes.ts": {
     "body.type as MemoryType": 1
   },
   "packages/web/server/lib/browser-control/broker.ts": {
     "onAbort!": 1
+  },
+  "packages/web/server/lib/context-obligatory/runtime.ts": {
+    "error as Thrown": 1,
+    "persistContextCursor!": 1,
+    "readSessionMetadata!": 1,
+    "result as PromiseFulfilledResult<{ pinned: PinnedMessage; text: string }>": 1,
+    "sessionKnowledgeRuntime!": 1,
+    "unwrapOpenCodeResponse(await response.json().catch(() => null)) as OpenCodeRecord | null": 1
+  },
+  "packages/web/server/lib/dev-servers/parse.ts": {
+    "parts[0]!": 1,
+    "parts[3]!": 1
   },
   "packages/web/server/lib/dictation/audio.ts": {
     "int16[i]!": 1,
@@ -29,6 +44,25 @@
   "packages/web/server/lib/event-stream/translate-v2.ts": {
     "payload.location as WireLocation | null | undefined": 1
   },
+  "packages/web/server/lib/foreman/execution.test.ts": {
+    "'ses_1' as SessionId": 2,
+    "'ses_other' as SessionId": 1,
+    "(await context.store.snapshot()).runs[0]!": 4,
+    "(await current()).execution!": 1,
+    "(await store.snapshot()).runs[0]!": 3,
+    "(await store.snapshot()).runs[0]!.execution!": 1,
+    "({ verdict: 'idle' }) as ExecutionTruth": 1,
+    "again.run.execution!": 1,
+    "otherTask!": 1,
+    "r.execution!": 1,
+    "result.error!": 3,
+    "result.execution!": 1,
+    "result.run.execution!": 1,
+    "run.execution!": 3,
+    "service.sends[0]!": 1,
+    "stopped.execution!": 1,
+    "task!": 1
+  },
   "packages/web/server/lib/foreman/execution.ts": {
     "({ verdict: 'idle' }) as ExecutionTruth": 1,
     "eventChange.sessionID as SessionId": 1,
@@ -36,15 +70,60 @@
     "run.execution!.id!": 2,
     "sessionId as SessionId": 1
   },
+  "packages/web/server/lib/foreman/routes.test.ts": {
+    "(await failing.call('GET', '/api/foreman/state')).body.tasks[0]!": 2,
+    "({ ok: Boolean(directory), directory }) as DirectoryValidation": 2,
+    "JSON.parse(fs.readFileSync(path.join(dataDir, 'foreman.json'), 'utf8')) as { memories?: unknown }": 1,
+    "first.id as TaskId": 1,
+    "harness.app as Express": 1,
+    "res as FakeResponse & { body: Answer }": 1,
+    "second.id as TaskId": 1,
+    "state.body.runs[0]!": 1,
+    "state.body.tasks[0]!": 1,
+    "task.id as TaskId": 2
+  },
   "packages/web/server/lib/foreman/routes.ts": {
     "req.params.jobId as JobId": 7,
     "req.params.memoryId as MemoryId": 2,
     "req.params.runId as RunId": 5,
     "req.params.taskId as TaskId": 3
   },
+  "packages/web/server/lib/foreman/scheduler.test.ts": {
+    "first!": 1,
+    "second!": 1,
+    "taskA!": 1,
+    "taskA2!": 1,
+    "taskB!": 1
+  },
   "packages/web/server/lib/foreman/scheduler.ts": {
     "activeTask!": 1,
     "activeTask!.workspace!": 1
+  },
+  "packages/web/server/lib/foreman/store.test.ts": {
+    "'j' as JobId": 1,
+    "'nope' as JobId": 2,
+    "'nope' as TaskId": 1,
+    "'r' as RunId": 1,
+    "'s1' as SessionId": 2,
+    "'ses_1' as SessionId": 1,
+    "(await store.snapshot()) as { memories?: unknown }": 1,
+    "(await store.snapshot()).tasks[0]!": 1,
+    "JSON.parse(fs.readFileSync(path.join(dataDir, FOREMAN_FILE_NAME), 'utf8')) as ForemanState": 1,
+    "a!": 11,
+    "b!": 6,
+    "c!": 3,
+    "dependent!": 1,
+    "firstTask!": 1,
+    "migrated.runs[0]!": 1,
+    "readState(dir).jobs[0]!": 1,
+    "readState(dir).tasks[0]!": 1,
+    "secondTask!": 1,
+    "snapshot.jobs[0]!": 1,
+    "snapshot.runs[0]!": 1,
+    "snapshot.runs[1] as { sessionId?: unknown }": 1,
+    "snapshot.runs[1]!": 1,
+    "snapshot.tasks[0]!": 1,
+    "task!": 24
   },
   "packages/web/server/lib/foreman/store.ts": {
     "JSON.parse(JSON.stringify(value)) as Value": 1,
@@ -89,6 +168,29 @@
   "packages/web/server/lib/network-defaults.test.ts": {
     "{ setDefaultAutoSelectFamily, setDefaultAutoSelectFamilyAttemptTimeout } as Pick<typeof net, 'setDefaultAutoSelectFamily' | 'setDefaultAutoSelectFamilyAttemptTimeout'>": 1,
     "{} as Pick<typeof net, 'setDefaultAutoSelectFamilyAttemptTimeout'>": 1
+  },
+  "packages/web/server/lib/openchamber-control/actions.ts": {
+    "toolName as string": 1
+  },
+  "packages/web/server/lib/openchamber-control/file-open.ts": {
+    "error as NodeJS.ErrnoException | null | undefined": 1
+  },
+  "packages/web/server/lib/openchamber-control/routes.ts": {
+    "error as Parameters<typeof asControlError>[0]": 1
+  },
+  "packages/web/server/lib/openchamber-sessions/archive-store.ts": {
+    "entries.get(id) as number | null": 1,
+    "error as Thrown": 4,
+    "value as number": 2
+  },
+  "packages/web/server/lib/openchamber-sessions/fork-inheritance.ts": {
+    "error as Thrown": 3,
+    "goal as { status?: unknown }": 1
+  },
+  "packages/web/server/lib/openchamber-sessions/session-metadata-store.ts": {
+    "error as Thrown": 6,
+    "error as { _tag?: unknown } | null | undefined": 1,
+    "unmigrated.get(id)!": 4
   },
   "packages/web/server/lib/opencode/claude-cli-auth.ts": {
     "JSON.parse(output) as ClaudeAuthStatusPayload | null": 1
@@ -168,6 +270,14 @@
   "packages/web/server/lib/permission-auto-accept/modes.ts": {
     "value as PermissionMode": 1
   },
+  "packages/web/server/lib/permission-auto-accept/runtime.ts": {
+    "directory as string": 1,
+    "error as Thrown": 5,
+    "outcomes.keys().next().value!": 1,
+    "policy.sessions[current]!": 1,
+    "response.json().catch(() => null) as Promise<Answer | null>": 1,
+    "sessions.keys().next().value!": 1
+  },
   "packages/web/server/lib/relay/e2ee.ts": {
     "BASE64URL_ALPHABET[((b0 & 0x03) << 4) | ((b1 ?? 0) >> 4)]!": 1,
     "BASE64URL_ALPHABET[((b1 & 0x0f) << 2) | ((b2 ?? 0) >> 6)]!": 1,
@@ -185,9 +295,24 @@
   "packages/web/server/lib/security/bind-host.ts": {
     "match[1]!": 1
   },
+  "packages/web/server/lib/session-assist/context.ts": {
+    "QUOTE_FIELDS.get(context.kind)!": 1,
+    "message.time!": 1,
+    "new Map<unknown, QuotedField>([ ['code-comment', 'code'], ['file-quote', 'quote'], ['chat-quote', 'quote'], ['browser-annotation', 'prompt'], ['pr-comment', 'body'], ['pr-check', 'output'], ['terminal', 'output'], ]) as QuoteFields": 1,
+    "turns.at(-1)!": 1,
+    "turns.at(-1)!.assistant!": 1
+  },
   "packages/web/server/lib/session-folders/routes.ts": {
     "body.updatedAt as number": 1,
     "error as NodeJS.ErrnoException": 2
+  },
+  "packages/web/server/lib/session-knowledge/routes.ts": {
+    "error as Thrown": 3
+  },
+  "packages/web/server/lib/session-knowledge/runtime.ts": {
+    "entry as string": 1,
+    "persistSessionMetadata!": 2,
+    "readSessionMetadata!": 1
   },
   "packages/web/server/lib/session-lineage.ts": {
     "isChildById.keys().next().value!": 1
@@ -207,6 +332,10 @@
   },
   "packages/web/server/lib/small-model/client.ts": {
     "info as ModelInfo": 1
+  },
+  "packages/web/server/lib/small-model/routes.ts": {
+    "error as ServiceError": 3,
+    "error as ServiceError | null | undefined": 3
   },
   "packages/web/server/lib/terminal/shutdown.ts": {
     "error as Error": 1,

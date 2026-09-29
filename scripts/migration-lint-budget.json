@@ -56,6 +56,38 @@
         "reason": "The JavaScript's own String(value) coerces an arbitrary JSON field from the network; the value is honestly unknown and changing the stringification would change behaviour."
       }
     ],
+    "packages/web/server/lib/dev-servers/parse.ts": [
+      {
+        "rule": "@typescript-eslint/no-unnecessary-type-conversion",
+        "text": "const [address, portHex] = String(parts[1] || '').split(':');",
+        "count": 1,
+        "reason": "The JavaScript coerces possibly nullish or non-string input with String(x || ''); removing the conversion changes the emitted code."
+      },
+      {
+        "rule": "@typescript-eslint/no-unnecessary-type-conversion",
+        "text": "const port = Number.parseInt(String(value || '').trim(), 10);",
+        "count": 1,
+        "reason": "The JavaScript coerces possibly nullish or non-string input with String(x || ''); removing the conversion changes the emitted code."
+      },
+      {
+        "rule": "@typescript-eslint/no-unnecessary-type-conversion",
+        "text": "const raw = String(value || '').trim();",
+        "count": 1,
+        "reason": "The JavaScript coerces possibly nullish or non-string input with String(x || ''); removing the conversion changes the emitted code."
+      },
+      {
+        "rule": "@typescript-eslint/no-unnecessary-type-conversion",
+        "text": "const value = String(host || '').trim().toLowerCase();",
+        "count": 1,
+        "reason": "The JavaScript coerces possibly nullish or non-string input with String(x || ''); removing the conversion changes the emitted code."
+      },
+      {
+        "rule": "@typescript-eslint/no-unnecessary-type-conversion",
+        "text": "for (const line of String(output || '').split('\\n')) {",
+        "count": 3,
+        "reason": "The JavaScript coerces possibly nullish or non-string input with String(x || ''); removing the conversion changes the emitted code."
+      }
+    ],
     "packages/web/server/lib/dictation/audio.ts": [
       {
         "rule": "@typescript-eslint/no-unnecessary-type-conversion",
@@ -70,6 +102,20 @@
         "text": "const parts = String(existing ?? '').split(path.delimiter).filter(Boolean);",
         "count": 1,
         "reason": "Typing the env value as string | undefined makes the JavaScript's own String() coercion look unnecessary; removing it would change the emitted code."
+      }
+    ],
+    "packages/web/server/lib/foreman/execution.test.ts": [
+      {
+        "rule": "@typescript-eslint/no-unused-vars",
+        "text": "const { execution, current, run, store } = await startedRun();",
+        "count": 2,
+        "reason": "The JavaScript destructures bindings the test does not read; removing them changes the emitted code."
+      },
+      {
+        "rule": "@typescript-eslint/no-unused-vars",
+        "text": "const { store, job, task, run, service, make } = await setup();",
+        "count": 1,
+        "reason": "The JavaScript destructures bindings the test does not read; removing them changes the emitted code."
       }
     ],
     "packages/web/server/lib/fs/search.ts": [
@@ -102,6 +148,14 @@
         "text": "const slug = String(label ?? '')",
         "count": 1,
         "reason": "The JavaScript's own String(label ?? '') coerces an arbitrary agent-supplied label (a tool input field, so honestly unknown) into a filename fragment; changing the stringification would change the emitted code and the slug for non-string labels."
+      }
+    ],
+    "packages/web/server/lib/openchamber-sessions/session-metadata-store.ts": [
+      {
+        "rule": "@typescript-eslint/no-dynamic-delete",
+        "text": "delete base[key];",
+        "count": 1,
+        "reason": "The JavaScript's delete base[key] removes a merge-patch key chosen at runtime; the fix would replace the delete."
       }
     ],
     "packages/web/server/lib/opencode/openchamber-routes.ts": [
@@ -160,6 +214,14 @@
         "text": "if (readFailure) throw readFailure;",
         "count": 1,
         "reason": "The JavaScript rethrows the caught value as it is; wrapping it in an Error would change what callers receive."
+      }
+    ],
+    "packages/web/server/lib/session-goal/objectives.ts": [
+      {
+        "rule": "@typescript-eslint/no-base-to-string",
+        "text": "const clampContent = (content: unknown) => String(content ?? '').trim().slice(0, GOAL_OBJECTIVE_CHAR_LIMIT);",
+        "count": 1,
+        "reason": "The JavaScript stringifies whatever content the caller sent with String(content ?? ''); the fix changes how the value is stringified."
       }
     ],
     "packages/web/server/lib/skills-catalog/git.ts": [
