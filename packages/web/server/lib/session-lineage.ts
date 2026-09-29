@@ -23,19 +23,25 @@ const deletedSchema = z.object({
   properties: z.object({ sessionID: z.string().min(1) }),
 });
 
-export function createSessionLineage({ limit = DEFAULT_LIMIT } = {}) {
-  // sessionID → true for a subsession, false for a top-level session.
-  const isChildById = new Map();
+export interface SessionLineage {
+  observe: (payload: unknown) => void;
+  remember: (sessionId: string | null | undefined, parentId: string | null | undefined) => void;
+  isChild: (sessionId: string) => boolean | undefined;
+}
 
-  const remember = (sessionId, parentId) => {
+export function createSessionLineage({ limit = DEFAULT_LIMIT }: { limit?: number | undefined } = {}): SessionLineage {
+  // sessionID → true for a subsession, false for a top-level session.
+  const isChildById = new Map<string, boolean>();
+
+  const remember = (sessionId: string | null | undefined, parentId: string | null | undefined): void => {
     if (!sessionId) return;
     isChildById.delete(sessionId);
     isChildById.set(sessionId, Boolean(parentId));
-    while (isChildById.size > limit) isChildById.delete(isChildById.keys().next().value);
+    while (isChildById.size > limit) isChildById.delete(isChildById.keys().next().value!);
   };
 
   /** Learns from the server's translated event stream. */
-  const observe = (payload) => {
+  const observe = (payload: unknown): void => {
     const created = createdSchema.safeParse(payload);
     if (created.success) {
       remember(created.data.properties.sessionID, created.data.properties.info?.parentID ?? null);
@@ -46,7 +52,7 @@ export function createSessionLineage({ limit = DEFAULT_LIMIT } = {}) {
   };
 
   /** True for a known subsession, false for a known top-level session, undefined when unknown. */
-  const isChild = (sessionId) => isChildById.get(sessionId);
+  const isChild = (sessionId: string): boolean | undefined => isChildById.get(sessionId);
 
   return { observe, remember, isChild };
 }

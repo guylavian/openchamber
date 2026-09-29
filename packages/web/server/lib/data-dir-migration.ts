@@ -12,7 +12,28 @@
 
 const USER_DIR_ENTRIES = Object.freeze(['projects', 'themes', 'speech-models']);
 
-const exists = async (fsPromises, target) => fsPromises.access(target).then(() => true, () => false);
+interface MigrationFs {
+  access: (target: string) => Promise<unknown>;
+  mkdir: (target: string, options: { recursive: boolean }) => Promise<unknown>;
+  cp: (source: string, destination: string, options: { recursive: boolean; errorOnExist: boolean; force: boolean }) => Promise<unknown>;
+  rm: (target: string, options: { recursive: boolean; force: boolean }) => Promise<unknown>;
+}
+
+interface MigrationPath {
+  resolve: (...paths: string[]) => string;
+  join: (...paths: string[]) => string;
+}
+
+export interface MigrateLegacyUserDirsOptions {
+  fsPromises: MigrationFs;
+  path: MigrationPath;
+  dataDir: string;
+  legacyRoot: string;
+  warn?: ((message: string) => void) | undefined;
+  entries?: readonly string[] | undefined;
+}
+
+const exists = async (fsPromises: MigrationFs, target: string): Promise<boolean> => fsPromises.access(target).then(() => true, () => false);
 
 /**
  * Copy the user folders from `legacyRoot` into `dataDir`. Returns the entries
@@ -20,9 +41,9 @@ const exists = async (fsPromises, target) => fsPromises.access(target).then(() =
  * copy fails is reported through `warn` and its partial copy removed; the
  * server keeps starting, reading the (empty) new location.
  */
-export const migrateLegacyUserDirs = async ({ fsPromises, path, dataDir, legacyRoot, warn = () => {}, entries = USER_DIR_ENTRIES }) => {
+export const migrateLegacyUserDirs = async ({ fsPromises, path, dataDir, legacyRoot, warn = () => {}, entries = USER_DIR_ENTRIES }: MigrateLegacyUserDirsOptions): Promise<string[]> => {
   if (path.resolve(dataDir) === path.resolve(legacyRoot)) return [];
-  const moved = [];
+  const moved: string[] = [];
   for (const entry of entries) {
     const from = path.join(legacyRoot, entry);
     const to = path.join(dataDir, entry);

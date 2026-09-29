@@ -12,6 +12,21 @@
 import { createRequire } from 'node:module';
 import { existsSync } from 'node:fs';
 
+/** The Bun global: defined only when running under Bun. */
+declare const Bun: object | undefined;
+
+/** The part of `bun:ffi` used here: libc's `unsetenv`. */
+interface BunFfi {
+  dlopen: (path: string, symbols: { unsetenv: { args: string[]; returns: string } }) => { symbols: { unsetenv: (name: Buffer) => number } };
+}
+
+type MutableEnv = NodeJS.ProcessEnv | Record<string, string | undefined>;
+
+interface PtyLaunch {
+  executable: string;
+  args: string[];
+}
+
 const POSIX_ENV_BINARIES = ['/usr/bin/env', '/bin/env'];
 /** Variables a PTY shell must never inherit from the OpenChamber host process. */
 const PTY_HOST_PRIVATE_VARIABLES = Object.freeze(['ARGV0', 'NODE_CHANNEL_FD']);
@@ -21,7 +36,7 @@ const PTY_HOST_PRIVATE_VARIABLES = Object.freeze(['ARGV0', 'NODE_CHANNEL_FD']);
  * @param {NodeJS.ProcessEnv | Record<string, string | undefined> | null | undefined} env
  * @returns {typeof env}
  */
-export function stripAppImageArgv0Leak(env) {
+export function stripAppImageArgv0Leak<T extends MutableEnv | null | undefined>(env: T): T {
   if (!env || typeof env !== 'object') return env;
   if (Object.prototype.hasOwnProperty.call(env, 'ARGV0')) {
     delete env.ARGV0;
@@ -35,12 +50,12 @@ export function stripAppImageArgv0Leak(env) {
  * Bun keeps a native environ that `bun-pty` inherits even after
  * `delete process.env.ARGV0`. On Linux under Bun we also call libc `unsetenv`.
  */
-export function clearAppImageArgv0FromProcessEnv() {
+export function clearAppImageArgv0FromProcessEnv(): void {
   delete process.env.ARGV0;
   if (process.platform !== 'linux' || typeof Bun === 'undefined') return;
   try {
     const require = createRequire(import.meta.url);
-    const { dlopen } = require('bun:ffi');
+    const { dlopen } = require('bun:ffi') as BunFfi;
     const libc = dlopen('libc.so.6', {
       unsetenv: { args: ['cstring'], returns: 'i32' },
     });
@@ -66,7 +81,7 @@ export function clearAppImageArgv0FromProcessEnv() {
  * @param {readonly string[]} variables
  * @returns {{ executable: string, args: string[] }}
  */
-export function resolvePosixPtyLaunch(executable, args = [], variables = PTY_HOST_PRIVATE_VARIABLES) {
+export function resolvePosixPtyLaunch(executable: string, args: string[] = [], variables: readonly string[] = PTY_HOST_PRIVATE_VARIABLES): PtyLaunch {
   if (process.platform === 'win32' || variables.length === 0) {
     return { executable, args };
   }

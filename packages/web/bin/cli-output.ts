@@ -20,14 +20,15 @@ import {
   cancel,
   isCancel,
 } from '@clack/prompts';
+import type { ProgressOptions } from '@clack/prompts';
 
 // ── Provider icons ──────────────────────────────────────────────
 
-const TUNNEL_PROVIDER_ICON = {
+const TUNNEL_PROVIDER_ICON: Record<string, string> = {
   cloudflare: '☁',
 };
 
-function formatProviderWithIcon(provider) {
+function formatProviderWithIcon(provider: unknown): string {
   if (typeof provider !== 'string' || provider.trim().length === 0) {
     return 'unknown';
   }
@@ -45,7 +46,9 @@ function formatProviderWithIcon(provider) {
  * @param {string} message  Primary line
  * @param {string} [detail] Optional dim secondary line appended after newline
  */
-function logStatus(status, message, detail) {
+type LogStatusKind = 'success' | 'warning' | 'error' | 'info' | 'neutral';
+
+function logStatus(status: LogStatusKind, message: string, detail?: string): void {
   const full = detail ? `${message}\n${detail}` : message;
   switch (status) {
     case 'success':
@@ -71,38 +74,53 @@ function logStatus(status, message, detail) {
  * Whether both stdout and stdin are interactive TTYs.
  * Prompts must be disabled when stdin is piped (e.g. --token-stdin).
  */
+interface OutputModeOptions {
+  json?: boolean | undefined;
+  quiet?: boolean | undefined;
+}
+
 const isTTY = Boolean(process.stdout?.isTTY) && Boolean(process.stdin?.isTTY);
 
-function isJsonMode(options) {
+function isJsonMode(options?: OutputModeOptions | null): boolean {
   return Boolean(options?.json);
 }
 
-function isQuietMode(options) {
+function isQuietMode(options?: OutputModeOptions | null): boolean {
   return Boolean(options?.quiet);
 }
 
-function shouldRenderHumanOutput(options) {
+function shouldRenderHumanOutput(options?: OutputModeOptions | null): boolean {
   return !isJsonMode(options) && !isQuietMode(options);
 }
 
-function canPrompt(options) {
+function canPrompt(options?: OutputModeOptions | null): boolean {
   return shouldRenderHumanOutput(options) && isTTY;
 }
 
-function createSpinner(options) {
+function createSpinner(options?: OutputModeOptions | null) {
   return canPrompt(options) ? spinner() : null;
 }
 
-async function createProgress(options, config) {
+async function createProgress(options?: OutputModeOptions | null, config?: ProgressOptions) {
   return canPrompt(options) ? progress(config) : null;
 }
 
-function printJson(payload) {
-  const base = payload && typeof payload === 'object' && !Array.isArray(payload)
+interface JsonPayload {
+  status?: unknown;
+  messages?: unknown;
+  [key: string]: unknown;
+}
+
+interface JsonMessage {
+  level?: unknown;
+}
+
+function printJson(payload: unknown): void {
+  const base: JsonPayload = payload && typeof payload === 'object' && !Array.isArray(payload)
     ? { ...payload }
     : { data: payload };
 
-  const messages = Array.isArray(base.messages) ? base.messages : undefined;
+  const messages: readonly (JsonMessage | null | undefined)[] | undefined = Array.isArray(base.messages) ? base.messages : undefined;
   const hasWarning = Boolean(messages?.some((entry) => entry?.level === 'warning'));
   const hasError = Boolean(messages?.some((entry) => entry?.level === 'error'));
   const normalizedStatus = base.status === 'ok' || base.status === 'warning' || base.status === 'error'

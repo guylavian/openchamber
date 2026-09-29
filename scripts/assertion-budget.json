@@ -1,4 +1,9 @@
 {
+  "packages/web/bin/lib/cli-settings-accessors.ts": {
+    "JSON.parse(await fsPromises.readFile(settingsPath, 'utf8')) as SettingsRecord": 1,
+    "error as { code?: unknown }": 4,
+    "parsed as SettingsRecord": 1
+  },
   "packages/web/server/lib/foreman/execution.ts": {
     "({ verdict: 'idle' }) as ExecutionTruth": 1,
     "eventChange.sessionID as SessionId": 1,
@@ -39,10 +44,20 @@
   "packages/web/server/lib/foreman/task-workspaces.ts": {
     "error as { code?: unknown } | null | undefined": 1
   },
+  "packages/web/server/lib/inherited-env.ts": {
+    "require('bun:ffi') as BunFfi": 1
+  },
+  "packages/web/server/lib/network-defaults.test.ts": {
+    "{ setDefaultAutoSelectFamily, setDefaultAutoSelectFamilyAttemptTimeout } as Pick<typeof net, 'setDefaultAutoSelectFamily' | 'setDefaultAutoSelectFamilyAttemptTimeout'>": 1,
+    "{} as Pick<typeof net, 'setDefaultAutoSelectFamilyAttemptTimeout'>": 1
+  },
   "packages/web/server/lib/opencode/input-history-scope.ts": {
     "value as number": 2
   },
   "packages/web/server/lib/permission-auto-accept/modes.ts": {
     "value as PermissionMode": 1
+  },
+  "packages/web/server/lib/session-lineage.ts": {
+    "isChildById.keys().next().value!": 1
   }
 }

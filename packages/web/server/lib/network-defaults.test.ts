@@ -18,7 +18,7 @@ describe('applyConnectAttemptTimeout', () => {
   });
 
   it('is a no-op on runtimes without the setter', () => {
-    expect(applyConnectAttemptTimeout({})).toBe(false);
+    expect(applyConnectAttemptTimeout({} as Pick<typeof net, 'setDefaultAutoSelectFamilyAttemptTimeout'>)).toBe(false);
   });
 
   it('survives a throwing setter', () => {
@@ -31,7 +31,7 @@ describe('applyConnectAttemptTimeout', () => {
   it('leaves family autoselection itself untouched', () => {
     const setDefaultAutoSelectFamily = vi.fn();
     const setDefaultAutoSelectFamilyAttemptTimeout = vi.fn();
-    applyConnectAttemptTimeout({ setDefaultAutoSelectFamily, setDefaultAutoSelectFamilyAttemptTimeout });
+    applyConnectAttemptTimeout({ setDefaultAutoSelectFamily, setDefaultAutoSelectFamilyAttemptTimeout } as Pick<typeof net, 'setDefaultAutoSelectFamily' | 'setDefaultAutoSelectFamilyAttemptTimeout'>);
     expect(setDefaultAutoSelectFamilyAttemptTimeout).toHaveBeenCalledTimes(1);
     expect(setDefaultAutoSelectFamilyAttemptTimeout).toHaveBeenCalledWith(CONNECT_ATTEMPT_TIMEOUT_MS);
     expect(setDefaultAutoSelectFamily).not.toHaveBeenCalled();

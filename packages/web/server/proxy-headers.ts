@@ -26,8 +26,19 @@ const filteredResponseHeaders = new Set([
   'content-encoding',
 ]);
 
-export const collectForwardProxyHeaders = (requestHeaders, authHeaders = {}) => {
-  const headers = {};
+/** A header value as Node represents one (string, number, or repeated values). */
+type HeaderValue = string | number | string[];
+
+interface ForwardAuthHeaders {
+  Authorization?: string | undefined;
+}
+
+interface ProxyResponseHeaderSink {
+  setHeader?: ((name: string, value: string) => unknown) | undefined;
+}
+
+export const collectForwardProxyHeaders = (requestHeaders: Readonly<Record<string, HeaderValue | undefined>> | null | undefined, authHeaders: ForwardAuthHeaders = {}): Record<string, string> => {
+  const headers: Record<string, string> = {};
 
   for (const [key, value] of Object.entries(requestHeaders || {})) {
     if (!value) continue;
@@ -43,7 +54,7 @@ export const collectForwardProxyHeaders = (requestHeaders, authHeaders = {}) => 
   return headers;
 };
 
-export const shouldForwardProxyResponseHeader = (key) => {
+export const shouldForwardProxyResponseHeader = (key: unknown): boolean => {
   if (typeof key !== 'string' || key.trim().length === 0) {
     return false;
   }
@@ -51,7 +62,7 @@ export const shouldForwardProxyResponseHeader = (key) => {
   return !filteredResponseHeaders.has(key.toLowerCase());
 };
 
-export const applyForwardProxyResponseHeaders = (responseHeaders, response) => {
+export const applyForwardProxyResponseHeaders = (responseHeaders: Headers | null | undefined, response: ProxyResponseHeaderSink | null | undefined): void => {
   if (!responseHeaders || typeof response?.setHeader !== 'function') {
     return;
   }
