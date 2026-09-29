@@ -31,6 +31,18 @@
 
 import { createServer } from "node:http"
 import process from "node:process"
+import type { IncomingMessage, Server, ServerResponse } from "node:http"
+
+interface ChatRequestBody {
+  model?: unknown
+  stream?: unknown
+  messages?: ({ role?: unknown } | null)[]
+}
+
+interface FixtureModel {
+  name: string
+  tool_call?: boolean
+}
 
 const FIXTURE_PROVIDER_ID = "perf"
 const FIXTURE_RATES = [100, 300, 600, 1200]
@@ -44,9 +56,9 @@ const CHUNK_CHARACTERS = 4
 // Read-only lookups over the session's directory: small results, no
 // permission prompt, and a different one on each step.
 const AGENT_GLOBS = ["packages/*/package.json", "scripts/perf/*.mjs", "*.md", ".agents/skills/*/SKILL.md"]
-const AGENT_STEP_TEXT = (step, total) => `Step ${step} of ${total}: listing files that the answer should mention.\n\n`
+const AGENT_STEP_TEXT = (step: number, total: number): string => `Step ${step} of ${total}: listing files that the answer should mention.\n\n`
 
-const SECTION = (index) => `## ${index}. Executing a call in a bytecode virtual machine
+const SECTION = (index: number): string => `## ${index}. Executing a call in a bytecode virtual machine
 
 A bytecode virtual machine executes a function call by creating a new **activation record**, binding the
 arguments, and transferring control to the callee's first instruction. The caller's state is preserved so that
@@ -103,7 +115,7 @@ const FENCE = "```"
 
 // Plain string concatenation in the sample: nested template literals would
 // need escaping here and add nothing to what is measured.
-const CODE_FUNCTION = (index) => [
+const CODE_FUNCTION = (index: number): string => [
   `/** Resolves the owner of entry ${index} and caches the answer. */`,
   `export function resolveOwner${index}(entries: Map<string, Entry>, key: string): Owner | undefined {`,
   `  const cacheKey = key + ":${index}"`,
@@ -135,7 +147,7 @@ const FIXTURE_CODE_DOCUMENT = [
   "",
 ].join("\n")
 
-const parseModel = (model) => {
+const parseModel = (model: unknown): { delayMs: number; charactersPerSecond: number; document: string; toolSteps: number } => {
   const think = /think-(\d+)s/.exec(String(model ?? ""))
   if (think) return { delayMs: Number(think[1]) * 1000, charactersPerSecond: 1200, document: THINK_ANSWER, toolSteps: 0 }
   const agent = /agent-(\d+)tools-(\d+)cps/.exec(String(model ?? ""))
@@ -154,7 +166,7 @@ const parseModel = (model) => {
  * already in the conversation: while steps remain it says a line and calls a
  * tool, and once every step has run it streams the document.
  */
-const planResponse = (model, body) => {
+const planResponse = (model: unknown, body: ChatRequestBody) => {
   const { delayMs, charactersPerSecond, document, toolSteps } = parseModel(model)
   const toolResults = (Array.isArray(body.messages) ? body.messages : []).filter((message) => message?.role === "tool").length
   if (toolSteps > 0 && toolResults < toolSteps) {
@@ -169,7 +181,7 @@ const planResponse = (model, body) => {
   return { delayMs, charactersPerSecond, text: document, toolCall: null }
 }
 
-const chunkFrame = (model, delta, finishReason = null) => ({
+const chunkFrame = (model: unknown, delta: Record<string, unknown>, finishReason: "stop" | "tool_calls" | null = null) => ({
   id: "chatcmpl-fixture",
   object: "chat.completion.chunk",
   created: 0,
@@ -177,11 +189,11 @@ const chunkFrame = (model, delta, finishReason = null) => ({
   choices: [{ index: 0, delta, finish_reason: finishReason }],
 })
 
-const sseFrame = (payload) => `data: ${JSON.stringify(payload)}\n\n`
+const sseFrame = (payload: unknown): string => `data: ${JSON.stringify(payload)}\n\n`
 
-const readBody = (request) => new Promise((resolveBody) => {
+const readBody = (request: IncomingMessage) => new Promise<ChatRequestBody>((resolveBody) => {
   let body = ""
-  request.on("data", (chunk) => { body += chunk })
+  request.on("data", (chunk: Buffer) => { body += chunk })
   request.on("end", () => {
     try {
       resolveBody(JSON.parse(body || "{}"))
@@ -191,14 +203,14 @@ const readBody = (request) => new Promise((resolveBody) => {
   })
 })
 
-const usageFor = (text) => ({ prompt_tokens: 1, completion_tokens: Math.ceil(text.length / 4), total_tokens: 1 + Math.ceil(text.length / 4) })
+const usageFor = (text: string) => ({ prompt_tokens: 1, completion_tokens: Math.ceil(text.length / 4), total_tokens: 1 + Math.ceil(text.length / 4) })
 
 /**
  * Streams text against a wall-clock schedule rather than a fixed interval, so
  * timer drift cannot change the delivered rate between runs. Resolves once the
  * whole text is out, or rejects when the client went away first.
  */
-const streamText = (response, model, text, { delayMs, charactersPerSecond }) => new Promise((resolveStream, reject) => {
+const streamText = (response: ServerResponse, model: unknown, text: string, { delayMs, charactersPerSecond }: { delayMs: number; charactersPerSecond: number }) => new Promise<void>((resolveStream, reject) => {
   const startedAt = Date.now() + delayMs
   let sent = 0
   const timer = setInterval(() => {
@@ -219,7 +231,7 @@ const streamText = (response, model, text, { delayMs, charactersPerSecond }) => 
   })
 })
 
-const streamCompletion = async (response, model, body) => {
+const streamCompletion = async (response: ServerResponse, model: unknown, body: ChatRequestBody): Promise<void> => {
   const plan = planResponse(model, body)
   response.write(sseFrame(chunkFrame(model, { role: "assistant", content: "" })))
   try {
@@ -240,7 +252,7 @@ const streamCompletion = async (response, model, body) => {
   response.end("data: [DONE]\n\n")
 }
 
-const startFixtureProvider = (port) => new Promise((resolveServer, reject) => {
+const startFixtureProvider = (port: number) => new Promise<Server>((resolveServer, reject) => {
   const server = createServer(async (request, response) => {
     if (request.method !== "POST" || !request.url?.endsWith("/chat/completions")) {
       response.writeHead(404).end()
@@ -268,17 +280,17 @@ const startFixtureProvider = (port) => new Promise((resolveServer, reject) => {
 })
 
 /** OpenCode configuration that registers this provider; pass it as `OPENCODE_CONFIG_CONTENT`. */
-const fixtureProviderConfig = (port) => ({
+const fixtureProviderConfig = (port: number) => ({
   provider: {
     [FIXTURE_PROVIDER_ID]: {
       npm: "@ai-sdk/openai-compatible",
       name: "Performance fixture",
       options: { baseURL: `http://127.0.0.1:${port}/v1`, apiKey: "unused" },
       models: Object.fromEntries([
-        ...FIXTURE_RATES.map((rate) => [`stream-${rate}cps`, { name: `Fixture stream, ${rate} characters/s` }]),
-        ...FIXTURE_CODE_RATES.map((rate) => [`code-${rate}cps`, { name: `Fixture code block, ${rate} characters/s` }]),
-        ...FIXTURE_THINK_SECONDS.map((seconds) => [`think-${seconds}s`, { name: `Fixture silence, ${seconds}s` }]),
-        ...FIXTURE_AGENT_STEPS.flatMap((steps) => FIXTURE_AGENT_RATES.map((rate) => [
+        ...FIXTURE_RATES.map((rate): [string, FixtureModel] => [`stream-${rate}cps`, { name: `Fixture stream, ${rate} characters/s` }]),
+        ...FIXTURE_CODE_RATES.map((rate): [string, FixtureModel] => [`code-${rate}cps`, { name: `Fixture code block, ${rate} characters/s` }]),
+        ...FIXTURE_THINK_SECONDS.map((seconds): [string, FixtureModel] => [`think-${seconds}s`, { name: `Fixture silence, ${seconds}s` }]),
+        ...FIXTURE_AGENT_STEPS.flatMap((steps) => FIXTURE_AGENT_RATES.map((rate): [string, FixtureModel] => [
           `agent-${steps}tools-${rate}cps`,
           { name: `Fixture agent, ${steps} tool calls then ${rate} characters/s`, tool_call: true },
         ])),

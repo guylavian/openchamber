@@ -26,25 +26,41 @@
  */
 import fs from 'node:fs';
 
-// ---- sRGB <-> OKLCH ---------------------------------------------------------
-const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-const hue = (v) => ((v % 360) + 360) % 360;
+interface Rgb { r: number; g: number; b: number }
+interface Oklch { l: number; c: number; h: number }
+interface Target { l: number; c: number }
+type Row = [string, string, string, Oklch, Oklch];
+type ColorBag = Record<string, unknown>;
+interface ThemeFile {
+  metadata?: { variant?: unknown };
+  colors?: {
+    primary?: ColorBag;
+    interactive?: ColorBag;
+    status?: ColorBag;
+    pr?: ColorBag;
+    syntax?: { base?: ColorBag; tokens?: ColorBag };
+  };
+}
 
-function parseHex(hex) {
+// ---- sRGB <-> OKLCH ---------------------------------------------------------
+const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v));
+const hue = (v: number): number => ((v % 360) + 360) % 360;
+
+function parseHex(hex: string): Rgb & { alpha: string | null } {
   let h = hex.replace('#', '');
   if (h.length === 3 || h.length === 4) h = h.split('').map((c) => c + c).join('');
   const a = h.length === 8 ? h.slice(6, 8) : null;
   const n = parseInt(h.slice(0, 6), 16);
   return { r: ((n >> 16) & 255) / 255, g: ((n >> 8) & 255) / 255, b: (n & 255) / 255, alpha: a };
 }
-function toHex(r, g, b, alpha) {
-  const c = (v) => Math.round(clamp(v, 0, 1) * 255).toString(16).padStart(2, '0');
+function toHex(r: number, g: number, b: number, alpha?: string | null): string {
+  const c = (v: number): string => Math.round(clamp(v, 0, 1) * 255).toString(16).padStart(2, '0');
   return `#${c(r)}${c(g)}${c(b)}${alpha ?? ''}`;
 }
-const srgbToLinear = (v) => (v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
-const linearToSrgb = (v) => (v <= 0.0031308 ? v * 12.92 : 1.055 * Math.pow(v, 1 / 2.4) - 0.055);
+const srgbToLinear = (v: number): number => (v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
+const linearToSrgb = (v: number): number => (v <= 0.0031308 ? v * 12.92 : 1.055 * Math.pow(v, 1 / 2.4) - 0.055);
 
-function rgbToOklch(r, g, b) {
+function rgbToOklch(r: number, g: number, b: number): Oklch {
   const lr = srgbToLinear(r), lg = srgbToLinear(g), lb = srgbToLinear(b);
   const l_ = 0.4122214708 * lr + 0.5363325363 * lg + 0.0514459929 * lb;
   const m_ = 0.2119034982 * lr + 0.6806995451 * lg + 0.1073969566 * lb;
@@ -57,7 +73,7 @@ function rgbToOklch(r, g, b) {
   if (H < 0) H += 360;
   return { l: L, c: Math.sqrt(a * a + bb * bb), h: H };
 }
-function oklchToRgb({ l: L, c: C, h: H }) {
+function oklchToRgb({ l: L, c: C, h: H }: Oklch): Rgb {
   const a = C * Math.cos((H * Math.PI) / 180);
   const b = C * Math.sin((H * Math.PI) / 180);
   const l = L + 0.3963377774 * a + 0.2158037573 * b;
@@ -70,8 +86,8 @@ function oklchToRgb({ l: L, c: C, h: H }) {
     b: linearToSrgb(-0.0041960863 * l3 - 0.7034186147 * m3 + 1.707614701 * s3),
   };
 }
-const inGamut = ({ r, g, b }) => r >= 0 && r <= 1 && g >= 0 && g <= 1 && b >= 0 && b <= 1;
-function fitOklch(o) {
+const inGamut = ({ r, g, b }: Rgb): boolean => r >= 0 && r <= 1 && g >= 0 && g <= 1 && b >= 0 && b <= 1;
+function fitOklch(o: Oklch): Oklch {
   const base = { l: clamp(o.l, 0, 1), c: Math.max(0, o.c), h: hue(o.h) };
   if (inGamut(oklchToRgb(base))) return base;
   let c = base.c;
@@ -82,7 +98,7 @@ function fitOklch(o) {
   }
   return { ...base, c: 0 };
 }
-function oklchToHex(o, alpha) {
+function oklchToHex(o: Oklch, alpha?: string | null): string {
   const { r, g, b } = oklchToRgb(fitOklch(o));
   return toHex(r, g, b, alpha);
 }
@@ -110,27 +126,27 @@ const PRIMARY_OFFSETS = {
   light: { hover: -0.06, active: -0.11, emphasis: -0.06 },
 };
 
-function harmonize(hex, target) {
+function harmonize(hex: string, target: Target): { hex: string; src: Oklch; out: Oklch } {
   const { r, g, b, alpha } = parseHex(hex);
   const src = rgbToOklch(r, g, b);
   const out = { l: target.l, c: target.c, h: src.h };
   return { hex: oklchToHex(out, alpha), src, out };
 }
 // shift a harmonized base to a new lightness, keeping chroma + hue
-function atLightness(hex, l) {
+function atLightness(hex: string, l: number): string {
   const { r, g, b } = parseHex(hex);
   const o = rgbToOklch(r, g, b);
   return oklchToHex({ l: clamp(l, 0, 1), c: o.c, h: o.h });
 }
 // pick #000 / #fff for text on a solid fill
-function onColor(hex) {
+function onColor(hex: string): string {
   const { r, g, b } = parseHex(hex);
   const L = rgbToOklch(r, g, b).l;
   return L > 0.6 ? '#000000' : '#ffffff';
 }
 // multiply chroma by a factor, keeping lightness + hue (gamut-fit clamps the
 // already-saturated ones, so pastels gain the most). Used to de-pastel syntax.
-function scaleChroma(hex, factor) {
+function scaleChroma(hex: string, factor: number): { hex: string; src: Oklch; out: Oklch } {
   const { r, g, b, alpha } = parseHex(hex);
   const src = rgbToOklch(r, g, b);
   const out = { l: src.l, c: src.c * factor, h: src.h };
@@ -142,10 +158,10 @@ function scaleChroma(hex, factor) {
 const SYNTAX_SKIP_BASE = new Set(['background', 'foreground']);
 const SYNTAX_SKIP_TOKENS = new Set(['variableLocal']);
 
-function saturateSyntax(theme, factor) {
+function saturateSyntax(theme: ThemeFile, factor: number): Row[] {
   const syntax = theme.colors?.syntax;
-  const rows = [];
-  const bump = (bag, skip, prefix) => {
+  const rows: Row[] = [];
+  const bump = (bag: ColorBag | undefined, skip: Set<string>, prefix: string): void => {
     if (!bag) return;
     for (const [key, val] of Object.entries(bag)) {
       if (typeof val !== 'string' || skip.has(key)) continue;
@@ -159,7 +175,7 @@ function saturateSyntax(theme, factor) {
   return rows;
 }
 
-function main() {
+function main(): void {
   const args = process.argv.slice(2);
   const file = args.find((a) => !a.startsWith('--'));
   if (!file) {
@@ -174,16 +190,16 @@ function main() {
   const lArg = args.find((a) => a.startsWith('--l='));
   const cArg = args.find((a) => a.startsWith('--c='));
 
-  const theme = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const theme = JSON.parse(fs.readFileSync(file, 'utf8')) as ThemeFile;
   const variant = theme.metadata?.variant === 'light' ? 'light' : 'dark';
   const target = { ...TARGETS[variant] };
-  if (lArg) target.l = parseFloat(lArg.split('=')[1]);
-  if (cArg) target.c = parseFloat(cArg.split('=')[1]);
+  if (lArg) target.l = parseFloat(lArg.split('=')[1]!);
+  if (cArg) target.c = parseFloat(cArg.split('=')[1]!);
 
   // --- syntax-only mode: boost token saturation, leave accents untouched ---
   const synArg = args.find((a) => a === '--syntax' || a.startsWith('--syntax='));
   if (synArg) {
-    const factor = synArg.includes('=') ? parseFloat(synArg.split('=')[1]) : 1.3;
+    const factor = synArg.includes('=') ? parseFloat(synArg.split('=')[1]!) : 1.3;
     const rows = saturateSyntax(theme, factor);
     console.log(`\n${file}  (syntax saturation ×${factor}, variant: ${variant})\n`);
     console.log('  token                before   ->  after     C (chroma)');
@@ -192,7 +208,7 @@ function main() {
         `  ${name.padEnd(20)} ${before.slice(0, 7)} -> ${after.slice(0, 7)}   ${src.c.toFixed(3)}→${out.c.toFixed(3)}`,
       );
     }
-    const outPath = outArg ? outArg.split('=')[1] : file;
+    const outPath = outArg ? outArg.split('=')[1]! : file;
     if (write || outArg) {
       fs.writeFileSync(outPath, JSON.stringify(theme, null, 2) + '\n');
       console.log(`\nwrote ${outPath}`);
@@ -202,8 +218,8 @@ function main() {
     return;
   }
 
-  const rows = [];
-  const record = (name, before, after, src, out) => rows.push([name, before, after, src, out]);
+  const rows: Row[] = [];
+  const record = (name: string, before: string, after: string, src: Oklch, out: Oklch): number => rows.push([name, before, after, src, out]);
 
   // --- primary: harmonize base, derive interaction shades from it ----------
   const primary = theme.colors?.primary;
@@ -263,7 +279,7 @@ function main() {
     );
   }
 
-  const outPath = outArg ? outArg.split('=')[1] : file;
+  const outPath = outArg ? outArg.split('=')[1]! : file;
   if (write || outArg) {
     fs.writeFileSync(outPath, JSON.stringify(theme, null, 2) + '\n');
     console.log(`\nwrote ${outPath}`);

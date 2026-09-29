@@ -7,14 +7,22 @@ import {
   findLiveSession,
   findLiveSessionStatus,
 } from '../live-aggregate.ts'
+import type { Session, SessionStatus } from '@/lib/opencode/model'
+import type { State } from '../types'
 
-const session = (id, directory, updated, extra = {}) => ({
+declare module 'bun:test' {
+  export function it(name: string, fn: () => void | Promise<void>, timeoutMs?: number): void
+}
+
+type LiveSlice = Pick<State, 'session' | 'session_status'>
+
+const session = (id: string, directory: string, updated: number, extra: Partial<Session> = {}): Session => ({
   id,
   title: `${id}-title`,
   time: { created: updated - 1, updated, archived: undefined },
   directory,
   ...extra,
-})
+} as Session)
 
 describe('live aggregate', () => {
   it('prefers the freshest live session snapshot across child stores', () => {
@@ -35,7 +43,7 @@ describe('live aggregate', () => {
   })
 
   it('prefers busy/retry statuses over stale idle snapshots', () => {
-    const states = [
+    const states: LiveSlice[] = [
       {
         session: [],
         session_status: {
@@ -47,7 +55,7 @@ describe('live aggregate', () => {
         session: [],
         session_status: {
           'ses-1': { type: 'busy' },
-          'ses-2': { type: 'retry', message: 'retrying' },
+          'ses-2': { type: 'retry', message: 'retrying' } as SessionStatus,
         },
       },
     ]
@@ -59,7 +67,7 @@ describe('live aggregate', () => {
   })
 
   it('lets a fresher idle snapshot override a stale busy status', () => {
-    const states = [
+    const states: LiveSlice[] = [
       {
         session: [session('ses-1', '/a', 10)],
         session_status: {
@@ -80,7 +88,7 @@ describe('live aggregate', () => {
   })
 
   it('detects retry metadata changes in status maps', () => {
-    const retryStatus = { type: 'retry', message: 'retrying|server|message', attempt: 1, next: 100 }
+    const retryStatus: SessionStatus = { type: 'retry', message: 'retrying|server|message', attempt: 1, next: 100 }
 
     expect(areStatusMapsEquivalent(
       { 'ses-1': retryStatus },

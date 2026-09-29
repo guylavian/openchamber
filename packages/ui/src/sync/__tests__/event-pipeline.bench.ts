@@ -14,6 +14,55 @@
  */
 
 import { createEventPipeline } from '../event-pipeline.ts';
+import type { OpenCodeClient } from '@opencode/client';
+
+interface WorkloadShape {
+  directoryCount: number;
+  sessionsPerDirectory: number;
+  tokensPerSession: number;
+}
+
+interface StatusEvent {
+  directory: string;
+  payload: { type: 'session.status'; properties: { sessionID: string; status: { type: 'busy' | 'idle' } } };
+}
+
+interface DeltaEvent {
+  directory: string;
+  payload: { type: 'message.part.delta'; properties: { messageID: string; partID: string; field: 'text'; delta: string } };
+}
+
+interface UpdatedEvent {
+  directory: string;
+  payload: { type: 'message.part.updated'; properties: { part: { id: string; type: 'text'; messageID: string; text: string } } };
+}
+
+type WorkloadEvent = StatusEvent | DeltaEvent | UpdatedEvent;
+
+interface ListenerStub {
+  addEventListener: () => void;
+  removeEventListener: () => void;
+}
+
+interface DocumentStub extends ListenerStub {
+  visibilityState: 'visible';
+}
+
+interface ReplaySdk {
+  global: { event: () => Promise<{ stream: AsyncGenerator<WorkloadEvent, void, unknown> }> };
+}
+
+interface ScenarioResult {
+  label: string;
+  inputEvents: number;
+  inputDeltas: number;
+  inputDeltaBytes: number;
+  deliveredEvents: number;
+  deliveredDeltas: number;
+  deliveredDeltaBytes: number;
+  reductionPct: number;
+  wallMs: number;
+}
 
 // ---------------------------------------------------------------------------
 // Minimal DOM stubs (same approach as the unit tests)
@@ -23,17 +72,17 @@ globalThis.document = {
   visibilityState: 'visible',
   addEventListener() {},
   removeEventListener() {},
-};
+} as Document & DocumentStub;
 globalThis.window = {
   addEventListener() {},
   removeEventListener() {},
-};
+} as Window & typeof globalThis & ListenerStub;
 
 // ---------------------------------------------------------------------------
 // SDK mock that replays a pre-generated event list
 // ---------------------------------------------------------------------------
 
-function createReplaySdk(events, hold) {
+function createReplaySdk(events: WorkloadEvent[], hold: Promise<void>) {
   return {
     global: {
       event: async () => ({
@@ -43,7 +92,7 @@ function createReplaySdk(events, hold) {
         })(),
       }),
     },
-  };
+  } as OpenCodeClient & ReplaySdk;
 }
 
 // ---------------------------------------------------------------------------
@@ -64,8 +113,8 @@ function buildTokenStreamWorkload({
   directoryCount,
   sessionsPerDirectory,
   tokensPerSession,
-}) {
-  const events = [];
+}: WorkloadShape) {
+  const events: WorkloadEvent[] = [];
   for (let d = 0; d < directoryCount; d++) {
     const directory = `dir-${d}`;
     for (let s = 0; s < sessionsPerDirectory; s++) {
@@ -129,20 +178,20 @@ function buildTokenStreamWorkload({
 // Shuffle events within each directory bucket so arrivals are interleaved but
 // still ordered within a single (sessionID, partID) stream (deltas must stay
 // ordered relative to each other for append semantics to remain correct).
-function interleave(events) {
-  const buckets = new Map(); // directory -> list of events (in original order)
+function interleave(events: WorkloadEvent[]) {
+  const buckets = new Map<string, WorkloadEvent[]>(); // directory -> list of events (in original order)
   for (const e of events) {
     const bucket = buckets.get(e.directory) ?? [];
     bucket.push(e);
     buckets.set(e.directory, bucket);
   }
-  const out = [];
+  const out: WorkloadEvent[] = [];
   let more = true;
   while (more) {
     more = false;
     for (const bucket of buckets.values()) {
       if (bucket.length > 0) {
-        out.push(bucket.shift());
+        out.push(bucket.shift()!);
         more = true;
       }
     }
@@ -154,9 +203,9 @@ function interleave(events) {
 // Runner — pushes a workload through the pipeline and measures
 // ---------------------------------------------------------------------------
 
-async function runScenario(label, workload) {
-  let release;
-  const hold = new Promise((resolve) => {
+async function runScenario(label: string, workload: WorkloadEvent[]): Promise<ScenarioResult> {
+  let release!: () => void;
+  const hold = new Promise<void>((resolve) => {
     release = resolve;
   });
 
@@ -183,16 +232,16 @@ async function runScenario(label, workload) {
   // loop yields every 8ms and the flush fires every 16ms, so in the worst case
   // we need ~(workload / STREAM_YIELD) * 16ms of wall clock.
   const waitMs = Math.max(200, Math.ceil(workload.length / 100));
-  await new Promise((resolve) => setTimeout(resolve, waitMs));
+  await new Promise<void>((resolve) => setTimeout(resolve, waitMs));
   const endWall = performance.now();
 
   cleanup();
   release();
 
   // Count input-side delta events for comparison
-  const inputDeltas = workload.filter((e) => e.payload.type === 'message.part.delta').length;
+  const inputDeltas = workload.filter((e): e is DeltaEvent => e.payload.type === 'message.part.delta').length;
   const inputDeltaBytes = workload
-    .filter((e) => e.payload.type === 'message.part.delta')
+    .filter((e): e is DeltaEvent => e.payload.type === 'message.part.delta')
     .reduce((n, e) => n + e.payload.properties.delta.length, 0);
 
   const wallMs = endWall - startWall;
@@ -211,7 +260,7 @@ async function runScenario(label, workload) {
   };
 }
 
-function formatRow(r) {
+function formatRow(r: ScenarioResult) {
   const cols = [
     r.label.padEnd(44),
     String(r.inputEvents).padStart(8),

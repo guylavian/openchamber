@@ -1,10 +1,20 @@
 import { describe, expect, it } from 'bun:test'
 import { applyDirectoryEvent } from '../event-reducer'
 import { INITIAL_STATE } from '../types'
+import type { SyncEvent } from '@/lib/opencode/events'
+import type { Part } from '@/lib/opencode/model'
+import type { State } from '../types'
+
+declare module 'bun:test' {
+  export function it(name: string, fn: () => void | Promise<void>, timeoutMs?: number): void
+}
+
+type PartView = Part & { text?: string; state?: { status: string; time?: { start: number; end?: number } } }
+type ReducerState = State & { part: Record<string, PartView[]> }
 
 describe('applyDirectoryEvent', () => {
   it('does not duplicate overlapping delta text after a newer part.updated replaces an older one', () => {
-    const state = structuredClone(INITIAL_STATE)
+    const state: ReducerState = structuredClone(INITIAL_STATE)
     const messageID = 'msg-1'
     const partID = 'part-1'
 
@@ -18,7 +28,7 @@ describe('applyDirectoryEvent', () => {
           text: 'Fix typo in ToolOutputDialog — ',
         },
       },
-    })
+    } as SyncEvent)
 
     applyDirectoryEvent(state, {
       type: 'message.part.updated',
@@ -30,7 +40,7 @@ describe('applyDirectoryEvent', () => {
           text: 'Fix typo in ToolOutputDialog — toolFailedToReadDiagram vs toolFailedReadDiagram • Let me fix it.',
         },
       },
-    })
+    } as SyncEvent)
 
     applyDirectoryEvent(state, {
       type: 'message.part.delta',
@@ -40,7 +50,7 @@ describe('applyDirectoryEvent', () => {
         field: 'text',
         delta: 'toolFailedToReadDiagram vs toolFailedReadDiagram • Let me fix it.',
       },
-    })
+    } as SyncEvent)
 
     expect(state.part[messageID]).toHaveLength(1)
     expect(state.part[messageID]?.[0]?.text).toBe(
@@ -49,7 +59,7 @@ describe('applyDirectoryEvent', () => {
   })
 
   it('appends only the non-overlapping suffix of a streaming delta', () => {
-    const state = structuredClone(INITIAL_STATE)
+    const state: ReducerState = structuredClone(INITIAL_STATE)
     const messageID = 'msg-2'
     const partID = 'part-2'
 
@@ -63,7 +73,7 @@ describe('applyDirectoryEvent', () => {
           text: 'toolFailedToReadDiagram vs toolFailedRead',
         },
       },
-    })
+    } as SyncEvent)
 
     applyDirectoryEvent(state, {
       type: 'message.part.updated',
@@ -75,7 +85,7 @@ describe('applyDirectoryEvent', () => {
           text: 'toolFailedToReadDiagram vs toolFailedReadDiagra',
         },
       },
-    })
+    } as SyncEvent)
 
     applyDirectoryEvent(state, {
       type: 'message.part.delta',
@@ -85,7 +95,7 @@ describe('applyDirectoryEvent', () => {
         field: 'text',
         delta: 'Diagram • Let me fix it.',
       },
-    })
+    } as SyncEvent)
 
     expect(state.part[messageID]?.[0]?.text).toBe(
       'toolFailedToReadDiagram vs toolFailedReadDiagram • Let me fix it.',
@@ -93,7 +103,7 @@ describe('applyDirectoryEvent', () => {
   })
 
   it('appends a non-overlapping delta unchanged', () => {
-    const state = structuredClone(INITIAL_STATE)
+    const state: ReducerState = structuredClone(INITIAL_STATE)
     const messageID = 'msg-3'
     const partID = 'part-3'
 
@@ -107,7 +117,7 @@ describe('applyDirectoryEvent', () => {
           text: 'PR comment done — ',
         },
       },
-    })
+    } as SyncEvent)
 
     applyDirectoryEvent(state, {
       type: 'message.part.delta',
@@ -117,13 +127,13 @@ describe('applyDirectoryEvent', () => {
         field: 'text',
         delta: 'Let me fix it.',
       },
-    })
+    } as SyncEvent)
 
     expect(state.part[messageID]?.[0]?.text).toBe('PR comment done — Let me fix it.')
   })
 
   it('preserves legitimate repeated output when no updated-to-delta dedupe window is active', () => {
-    const state = structuredClone(INITIAL_STATE)
+    const state: ReducerState = structuredClone(INITIAL_STATE)
     const messageID = 'msg-4'
     const partID = 'part-4'
 
@@ -137,7 +147,7 @@ describe('applyDirectoryEvent', () => {
           text: 'ha',
         },
       },
-    })
+    } as SyncEvent)
 
     applyDirectoryEvent(state, {
       type: 'message.part.delta',
@@ -147,13 +157,13 @@ describe('applyDirectoryEvent', () => {
         field: 'text',
         delta: 'ha',
       },
-    })
+    } as SyncEvent)
 
     expect(state.part[messageID]?.[0]?.text).toBe('haha')
   })
 
   it('does not let a stale running tool update overwrite a completed tool part', () => {
-    const state = structuredClone(INITIAL_STATE)
+    const state: ReducerState = structuredClone(INITIAL_STATE)
     const messageID = 'msg-5'
     const partID = 'part-5'
 
@@ -174,7 +184,7 @@ describe('applyDirectoryEvent', () => {
           },
         },
       },
-    })
+    } as SyncEvent)
 
     applyDirectoryEvent(state, {
       type: 'message.part.updated',
@@ -192,7 +202,7 @@ describe('applyDirectoryEvent', () => {
           },
         },
       },
-    })
+    } as SyncEvent)
 
     expect(state.part[messageID]?.[0]?.state?.status).toBe('completed')
     expect(state.part[messageID]?.[0]?.state?.time?.end).toBe(20)

@@ -1,5 +1,25 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { createEventPipeline } from '../event-pipeline';
+import type { OpenCodeClient, OpenCodeEvent } from '@opencode/client';
+
+declare module 'bun:test' {
+  export function it(name: string, fn: () => void | Promise<void>, timeoutMs?: number): void;
+}
+
+interface EventTargetExtras {
+  visibilityState?: DocumentVisibilityState;
+  location?: { href: string; origin: string };
+}
+
+interface EventTargetStub extends EventTargetExtras {
+  addEventListener: (event: string, handler: () => void) => void;
+  removeEventListener: (event: string, handler: () => void) => void;
+  dispatch?: (event: string) => void;
+}
+
+interface Dispatcher {
+  dispatch: (event: string) => void;
+}
 
 const savedDocument = globalThis.document;
 const savedWindow = globalThis.window;
@@ -11,19 +31,19 @@ afterEach(() => {
   globalThis.navigator = savedNavigator;
 });
 
-function createEventTarget(extras = {}) {
-  const listeners = new Map();
+function createEventTarget(extras: EventTargetExtras = {}): EventTargetStub {
+  const listeners = new Map<string, Set<() => void>>();
   return {
     ...extras,
-    addEventListener(event, handler) {
+    addEventListener(event: string, handler: () => void) {
       const list = listeners.get(event);
       if (list) list.add(handler);
       else listeners.set(event, new Set([handler]));
     },
-    removeEventListener(event, handler) {
+    removeEventListener(event: string, handler: () => void) {
       listeners.get(event)?.delete(handler);
     },
-    dispatch(event) {
+    dispatch(event: string) {
       const list = listeners.get(event);
       if (!list) return;
       for (const handler of Array.from(list)) {
@@ -35,16 +55,16 @@ function createEventTarget(extras = {}) {
 
 describe('createEventPipeline — permanent server errors', () => {
   it('uses the long backoff cap for 4xx so we do not hammer at 5s intervals', async () => {
-    globalThis.document = createEventTarget({ visibilityState: 'visible' });
+    globalThis.document = createEventTarget({ visibilityState: 'visible' }) as Document;
     globalThis.window = createEventTarget({
       location: { href: 'http://127.0.0.1:3000/', origin: 'http://127.0.0.1:3000' },
-    });
-    globalThis.navigator = { onLine: true };
+    }) as Window & typeof globalThis;
+    globalThis.navigator = { onLine: true } as Navigator;
 
     let sdkCallIndex = 0;
     const sdk = {
       event: {
-        subscribe: () => {
+        subscribe: (): AsyncIterable<OpenCodeEvent> => {
           const idx = sdkCallIndex++;
           if (idx <= 1) {
             // First two attempts: permanent 404. Under the old code these
@@ -53,17 +73,17 @@ describe('createEventPipeline — permanent server errors', () => {
             // both go to the long (60s) cap, so the test should observe
             // exactly one retry (after `online` interrupts) within its
             // observation window.
-            const error = new Error('Not Found');
+            const error: Error & { status?: number } = new Error('Not Found');
             error.status = 404;
             throw error;
           }
-          return (async function* () {
+          return (async function* (): AsyncGenerator<OpenCodeEvent> {
               yield { id: 'evt_1', created: 1000, location: { directory: '/repo' }, type: 'session.status', data: { sessionID: 's1', status: { type: 'idle' } } };
               await new Promise(() => {});
             })();
         },
       },
-    };
+    } as OpenCodeClient;
 
     const startedAt = Date.now();
     let cleanupFn = () => {};
@@ -71,7 +91,7 @@ describe('createEventPipeline — permanent server errors', () => {
     // Phase 1: let the first 404 fire and verify the loop is NOT spinning.
     // If the permanent-error override is broken, the loop would retry every
     // 250-500ms and sdkCallIndex would climb past 1.
-    await new Promise((resolve) => {
+    await new Promise<void>((resolve) => {
       const { cleanup } = createEventPipeline({
         sdk,
         transport: 'sse',
@@ -93,12 +113,12 @@ describe('createEventPipeline — permanent server errors', () => {
     // Phase 2: fire `online` to interrupt the long wait. Loop should fire
     // the second attempt (still 404) immediately, then the third attempt
     // which succeeds.
-    const recovered = new Promise((resolve) => {
+    const recovered = new Promise<void>((resolve) => {
       // Trigger an `online` event; waitForRetry's interrupter resolves and
       // the next attempt fires. That attempt is also a 404 (idx=1), then
       // another `online` advances us to the success path (idx=2).
       const advance = () => {
-        globalThis.window.dispatch('online');
+        (globalThis.window as Window & typeof globalThis & Dispatcher).dispatch('online');
       };
       advance();
       const t = setInterval(() => {
@@ -121,32 +141,32 @@ describe('createEventPipeline — permanent server errors', () => {
   });
 
   it('retries 408 and 429 on the normal exponential path (not the permanent cap)', async () => {
-    globalThis.document = createEventTarget({ visibilityState: 'visible' });
+    globalThis.document = createEventTarget({ visibilityState: 'visible' }) as Document;
     globalThis.window = createEventTarget({
       location: { href: 'http://127.0.0.1:3000/', origin: 'http://127.0.0.1:3000' },
-    });
-    globalThis.navigator = { onLine: true };
+    }) as Window & typeof globalThis;
+    globalThis.navigator = { onLine: true } as Navigator;
 
     let sdkCallIndex = 0;
     const sdk = {
       event: {
-        subscribe: () => {
+        subscribe: (): AsyncIterable<OpenCodeEvent> => {
           const idx = sdkCallIndex++;
           if (idx === 0) {
-            const error = new Error('Rate limited');
+            const error: Error & { status?: number } = new Error('Rate limited');
             error.status = 429;
             throw error;
           }
-          return (async function* () {
+          return (async function* (): AsyncGenerator<OpenCodeEvent> {
               yield { id: 'evt_1', created: 1000, location: { directory: '/repo' }, type: 'session.status', data: { sessionID: 's1', status: { type: 'idle' } } };
               await new Promise(() => {});
             })();
         },
       },
-    };
+    } as OpenCodeClient;
 
     const startedAt = Date.now();
-    const elapsed = await new Promise((resolve) => {
+    const elapsed = await new Promise<number>((resolve) => {
       let connects = 0;
       const { cleanup } = createEventPipeline({
         sdk,
