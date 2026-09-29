@@ -1,6 +1,11 @@
 import { TunnelCliError, EXIT_CODE } from './cli-errors.js';
 
-export const parseGoalTokenBudget = (options) => {
+interface GoalTokenBudgetOptions {
+  goalTokenBudget?: unknown;
+  goal?: unknown;
+}
+
+export const parseGoalTokenBudget = (options: GoalTokenBudgetOptions): number | undefined => {
   if (options.goalTokenBudget === undefined) return undefined;
   if (options.goal !== true) {
     throw new TunnelCliError('--goal-token-budget requires --goal.', EXIT_CODE.USAGE_ERROR);

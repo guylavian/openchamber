@@ -109,7 +109,6 @@
   "packages/web/bin/lib/cli-api-target.js": 74,
   "packages/web/bin/lib/cli-args.js": 986,
   "packages/web/bin/lib/cli-control.js": 56,
-  "packages/web/bin/lib/cli-goal.js": 17,
   "packages/web/bin/lib/cli-http.js": 256,
   "packages/web/bin/lib/cli-lifecycle.js": 421,
   "packages/web/bin/lib/cli-network.js": 184,
