@@ -87,8 +87,6 @@
   "packages/ui/src/sync/__tests__/event-reducer.test.js": 200,
   "packages/ui/src/sync/__tests__/live-aggregate.test.js": 96,
   "packages/ui/src/sync/session-ui-store.test.js": 1798,
-  "packages/ui/src/sync/session-worktree-contract.test.js": 639,
-  "packages/ui/src/sync/session-worktree-store.test.js": 71,
   "packages/ui/tests/chat-history-scroll.browser.mjs": 193,
   "packages/vscode/src/SessionEditorPanelProvider.newSession.test.js": 103,
   "packages/vscode/src/bridge-config-runtime.test.js": 333,
