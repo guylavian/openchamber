@@ -1,3 +1,46 @@
+import type { Dirent } from 'node:fs';
+import type { PlatformPath } from 'node:path';
+
+export interface FsSearchFsPromises {
+  readdir: (path: string, options: { withFileTypes: true }) => Promise<Dirent[]>;
+}
+
+export interface FsSearchChild {
+  stdout: { on: (event: 'data', listener: (data: Buffer) => void) => unknown };
+  on: (event: 'close' | 'error', listener: () => void) => unknown;
+}
+
+export interface FsSearchSpawnOptions {
+  cwd: string;
+  windowsHide: boolean;
+  stdio: ['ignore', 'pipe', 'ignore'];
+}
+
+export interface FsSearchRuntimeDeps {
+  fsPromises: FsSearchFsPromises;
+  path: PlatformPath;
+  spawn: (command: string, args: string[], options: FsSearchSpawnOptions) => FsSearchChild;
+  resolveGitBinaryForSpawn: () => string;
+}
+
+export interface FsSearchOptions {
+  limit: number;
+  query: string;
+  includeHidden?: boolean | undefined;
+  respectGitignore?: boolean | undefined;
+}
+
+export interface FsSearchFile {
+  name: string;
+  path: string;
+  relativePath: string;
+  extension: string | undefined;
+}
+
+interface FsSearchCandidate extends FsSearchFile {
+  score: number;
+}
+
 const FILE_SEARCH_MAX_CONCURRENCY = 5;
 const FILE_SEARCH_EXCLUDED_DIRS = new Set([
   'node_modules',
@@ -12,12 +55,12 @@ const FILE_SEARCH_EXCLUDED_DIRS = new Set([
   'logs',
 ]);
 
-const normalizeRelativeSearchPath = (rootPath, targetPath, path) => {
+const normalizeRelativeSearchPath = (rootPath: string, targetPath: string, path: PlatformPath) => {
   const relative = path.relative(rootPath, targetPath) || path.basename(targetPath);
   return relative.split(path.sep).join('/') || targetPath;
 };
 
-const shouldSkipSearchDirectory = (name, includeHidden) => {
+const shouldSkipSearchDirectory = (name: string, includeHidden: boolean) => {
   if (!name) {
     return false;
   }
@@ -27,7 +70,7 @@ const shouldSkipSearchDirectory = (name, includeHidden) => {
   return FILE_SEARCH_EXCLUDED_DIRS.has(name.toLowerCase());
 };
 
-const listDirectoryEntries = async (dirPath, fsPromises) => {
+const listDirectoryEntries = async (dirPath: string, fsPromises: FsSearchFsPromises) => {
   try {
     return await fsPromises.readdir(dirPath, { withFileTypes: true });
   } catch {
@@ -35,7 +78,7 @@ const listDirectoryEntries = async (dirPath, fsPromises) => {
   }
 };
 
-const fuzzyMatchScoreNormalized = (normalizedQuery, candidate) => {
+const fuzzyMatchScoreNormalized = (normalizedQuery: string, candidate: string) => {
   if (!normalizedQuery) return 0;
 
   const q = normalizedQuery;
@@ -95,8 +138,8 @@ const fuzzyMatchScoreNormalized = (normalizedQuery, candidate) => {
   return score;
 };
 
-export const createFsSearchRuntime = ({ fsPromises, path, spawn, resolveGitBinaryForSpawn }) => {
-  const searchFilesystemFiles = async (rootPath, options) => {
+export const createFsSearchRuntime = ({ fsPromises, path, spawn, resolveGitBinaryForSpawn }: FsSearchRuntimeDeps) => {
+  const searchFilesystemFiles = async (rootPath: string, options: FsSearchOptions): Promise<FsSearchFile[]> => {
     const { limit, query, includeHidden, respectGitignore } = options;
     const includeHiddenEntries = Boolean(includeHidden);
     const normalizedQuery = query.trim().toLowerCase();
@@ -105,7 +148,7 @@ export const createFsSearchRuntime = ({ fsPromises, path, spawn, resolveGitBinar
     const visited = new Set([rootPath]);
     const shouldRespectGitignore = respectGitignore !== false;
     const collectLimit = matchAll ? limit : Math.max(limit * 3, 200);
-    const candidates = [];
+    const candidates: FsSearchCandidate[] = [];
 
     while (queue.length > 0 && candidates.length < collectLimit) {
       const batch = queue.splice(0, FILE_SEARCH_MAX_CONCURRENCY);
@@ -113,17 +156,17 @@ export const createFsSearchRuntime = ({ fsPromises, path, spawn, resolveGitBinar
       const dirResults = await Promise.all(
         batch.map(async (dir) => {
           if (!shouldRespectGitignore) {
-            return { dir, dirents: await listDirectoryEntries(dir, fsPromises), ignoredPaths: new Set() };
+            return { dir, dirents: await listDirectoryEntries(dir, fsPromises), ignoredPaths: new Set<string>() };
           }
 
           try {
             const dirents = await listDirectoryEntries(dir, fsPromises);
             const pathsToCheck = dirents.map((dirent) => dirent.name).filter(Boolean);
             if (pathsToCheck.length === 0) {
-              return { dir, dirents, ignoredPaths: new Set() };
+              return { dir, dirents, ignoredPaths: new Set<string>() };
             }
 
-            const result = await new Promise((resolve) => {
+            const result = await new Promise<string>((resolve) => {
               const child = spawn(resolveGitBinaryForSpawn(), ['check-ignore', '--', ...pathsToCheck], {
                 cwd: dir,
                 windowsHide: true,
@@ -132,7 +175,7 @@ export const createFsSearchRuntime = ({ fsPromises, path, spawn, resolveGitBinar
               });
 
               let stdout = '';
-              child.stdout.on('data', (data) => { stdout += data.toString(); });
+              child.stdout.on('data', (data: Buffer) => { stdout += data.toString(); });
               child.on('close', () => resolve(stdout));
               child.on('error', () => resolve(''));
             });
@@ -146,7 +189,7 @@ export const createFsSearchRuntime = ({ fsPromises, path, spawn, resolveGitBinar
 
             return { dir, dirents, ignoredPaths: ignoredNames };
           } catch {
-            return { dir, dirents: await listDirectoryEntries(dir, fsPromises), ignoredPaths: new Set() };
+            return { dir, dirents: await listDirectoryEntries(dir, fsPromises), ignoredPaths: new Set<string>() };
           }
         })
       );

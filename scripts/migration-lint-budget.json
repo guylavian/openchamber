@@ -72,6 +72,14 @@
         "reason": "Typing the env value as string | undefined makes the JavaScript's own String() coercion look unnecessary; removing it would change the emitted code."
       }
     ],
+    "packages/web/server/lib/fs/search.ts": [
+      {
+        "rule": "@typescript-eslint/no-unnecessary-type-conversion",
+        "text": "String(result)",
+        "count": 1,
+        "reason": "The JavaScript wraps the resolved git check-ignore stdout in String() before splitting it; the promise is typed Promise<string> (it only ever resolves the accumulated stdout string or ''), so the rule wants String() removed, which would change the emitted code."
+      }
+    ],
     "packages/web/server/lib/guests/html-tokens.ts": [
       {
         "rule": "@typescript-eslint/no-unnecessary-template-expression",
@@ -114,6 +122,20 @@
         "text": "const normalizedRepo = String(repo || '').trim().replace(/\\.git$/i, '');",
         "count": 1,
         "reason": "Typing repo as string | null | undefined makes the JavaScript's own String() coercion look unnecessary; removing it would change the emitted code."
+      }
+    ],
+    "packages/web/server/lib/spaces/places/registry.ts": [
+      {
+        "rule": "@typescript-eslint/no-base-to-string",
+        "text": "const get = (placeId: unknown) => places.get(String(placeId ?? '').trim().toLowerCase()) ?? null;",
+        "count": 1,
+        "reason": "get() normalises an id that arrives from arbitrary callers (request input, undefined) by stringifying it; typed unknown because any value is accepted, and the rule's fix would change how the JavaScript stringifies it."
+      },
+      {
+        "rule": "@typescript-eslint/no-base-to-string",
+        "text": "const key = String(place?.id ?? '').trim().toLowerCase();",
+        "count": 1,
+        "reason": "register() deliberately stringifies whatever id a place declares (tests pass blank ids and null places); the id is typed unknown because the registry validates it at runtime, and the rule's fix would change how the JavaScript stringifies it."
       }
     ],
     "packages/web/server/lib/terminal/shells.ts": [
