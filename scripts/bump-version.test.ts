@@ -5,7 +5,20 @@ import os from 'node:os';
 import path from 'node:path';
 import { RELEASE_PACKAGE_FILES } from './bump-version.mjs';
 
-const roots = [];
+interface FixtureManifest {
+  name: string;
+  version: string;
+  private?: boolean;
+  workspaces?: string[];
+  dependencies?: Record<string, string>;
+}
+
+interface PackedManifest {
+  version: string;
+  dependencies: Record<string, string>;
+}
+
+const roots: string[] = [];
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
 });
@@ -20,7 +33,7 @@ test('a release bump packs workspace dependencies at the new version after a fro
     const directory = path.dirname(file);
     await fs.mkdir(path.join(root, directory), { recursive: true });
     const name = file === 'package.json' ? 'release-fixture' : `@openchamber/${path.basename(directory)}`;
-    const manifest = { name, version: '1.23.1' };
+    const manifest: FixtureManifest = { name, version: '1.23.1' };
     if (file === 'package.json') {
       manifest.private = true;
       manifest.workspaces = ['packages/*'];
@@ -30,17 +43,17 @@ test('a release bump packs workspace dependencies at the new version after a fro
     await fs.writeFile(path.join(root, file), JSON.stringify(manifest));
   }
   const bun = process.execPath;
-  const runBun = (args, cwd = root) => execFileSync(bun, args, { cwd, encoding: 'utf8', stdio: 'pipe' });
+  const runBun = (args: string[], cwd = root): string => execFileSync(bun, args, { cwd, encoding: 'utf8', stdio: 'pipe' });
   runBun(['install', '--ignore-scripts']);
   runBun(['run', 'scripts/bump-version.mjs', '1.24.0']);
   // CI uses a frozen install. It must not need to repair release metadata.
   const lockBeforeInstall = await fs.readFile(path.join(root, 'bun.lock'), 'utf8');
   runBun(['install', '--frozen-lockfile', '--ignore-scripts']);
   expect(await fs.readFile(path.join(root, 'bun.lock'), 'utf8')).toBe(lockBeforeInstall);
-  for (const [workspace, dependency] of [['web', 'sdk'], ['electron', 'web']]) {
+  for (const [workspace, dependency] of [['web', 'sdk'], ['electron', 'web']] satisfies [string, string][]) {
     const archive = path.join(root, `${workspace}.tgz`);
     runBun(['pm', 'pack', '--ignore-scripts', '--filename', archive], path.join(root, 'packages', workspace));
-    const packed = JSON.parse(execFileSync('tar', ['-xOf', archive, 'package/package.json'], { encoding: 'utf8' }));
+    const packed: PackedManifest = JSON.parse(execFileSync('tar', ['-xOf', archive, 'package/package.json'], { encoding: 'utf8' }));
     expect(packed.version).toBe('1.24.0');
     expect(packed.dependencies[`@openchamber/${dependency}`]).toBe('1.24.0');
   }

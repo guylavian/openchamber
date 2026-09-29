@@ -643,7 +643,6 @@
   "scripts/build-builtin-extensions.mjs": 106,
   "scripts/build-builtin-extensions.test.mjs": 108,
   "scripts/bump-version.mjs": 47,
-  "scripts/bump-version.test.mjs": 47,
   "scripts/changelog-card/generate.mjs": 197,
   "scripts/changelog/build.mjs": 56,
   "scripts/changelog/lib.mjs": 256,
@@ -686,6 +685,5 @@
   "scripts/react-doctor.mjs": 566,
   "scripts/release-workflow.test.mjs": 17,
   "scripts/run-isolated-tests.mjs": 200,
-  "scripts/smoke/packed-consumer.mjs": 201,
-  "scripts/test-mobile-workspace-resize.mjs": 80
+  "scripts/smoke/packed-consumer.mjs": 201
 }
