@@ -146,6 +146,14 @@
         "reason": "register() deliberately stringifies whatever id a place declares (tests pass blank ids and null places); the id is typed unknown because the registry validates it at runtime, and the rule's fix would change how the JavaScript stringifies it."
       }
     ],
+    "packages/web/server/lib/terminal/history.ts": [
+      {
+        "rule": "@typescript-eslint/restrict-plus-operands",
+        "text": "visible += input[index];",
+        "count": 1,
+        "reason": "input[index] is string | undefined under noUncheckedIndexedAccess, but the loop condition index < input.length guarantees a character; the fix (an assertion, String() or a fallback) would alter or annotate the JavaScript's own concatenation, so it stays as written."
+      }
+    ],
     "packages/web/server/lib/terminal/shells.ts": [
       {
         "rule": "@typescript-eslint/no-unnecessary-type-conversion",
@@ -158,6 +166,14 @@
         "text": "const value = String(candidate);",
         "count": 1,
         "reason": "The JavaScript's own String(candidate), after the falsy check. candidate is typed string | undefined (env values, path.join results, literals), so lint calls it redundant, but removing it would change the emitted code. Runtime parity wins."
+      }
+    ],
+    "packages/web/server/lib/terminal/theme-response.ts": [
+      {
+        "rule": "@typescript-eslint/no-misused-spread",
+        "text": "const expanded = hex.length === 3 ? [...hex].map((part) => part + part).join('') : hex;",
+        "count": 1,
+        "reason": "Spreads the string of hex digits matched by /^#([0-9a-f]{3}|[0-9a-f]{6})$/i into single characters to double each one; the fix (split('') or Array.from) replaces the JavaScript's own spread and, for these ASCII digits, yields identical output."
       }
     ],
     "packages/web/server/lib/text/summarization.ts": [

@@ -145,6 +145,9 @@
     "fields[3]!": 1,
     "owned.get(current.parent)!": 1
   },
+  "packages/web/server/lib/terminal/terminal-ws-protocol.ts": {
+    "parsed as Record<string, unknown>": 1
+  },
   "packages/web/server/lib/text/summarization.ts": {
     "(sentences[0] || normalized) .split(/[;:()-]\\s+/)[0]!": 1,
     "(sentences[0] || normalized) .split(/[;:()-]\\s+/)[0]! .split(/,\\s+/)[0]!": 1
