@@ -1,9 +1,22 @@
+export interface OpenCodeUpgradeCapabilityInput {
+  isExternal: boolean;
+  hasManagedProcess: boolean;
+  activeBinary: string | null | undefined;
+  isBundledBinary: (binary: string) => boolean;
+}
+
+export interface OpenCodeUpgradeCapability {
+  supported: boolean;
+  manager: 'external' | 'openchamber' | 'opencode' | null;
+  reason: 'external' | 'unavailable' | 'bundled' | null;
+}
+
 export const resolveOpenCodeUpgradeCapability = ({
   isExternal,
   hasManagedProcess,
   activeBinary,
   isBundledBinary,
-}) => {
+}: OpenCodeUpgradeCapabilityInput): OpenCodeUpgradeCapability => {
   if (isExternal) {
     return {
       supported: false,

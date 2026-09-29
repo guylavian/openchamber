@@ -433,7 +433,6 @@
   "packages/web/server/lib/opencode/theme-runtime.test.js": 144,
   "packages/web/server/lib/opencode/tunnel-auth.js": 586,
   "packages/web/server/lib/opencode/tunnel-wiring-runtime.js": 95,
-  "packages/web/server/lib/opencode/upgrade-capability.js": 36,
   "packages/web/server/lib/opencode/v1-migration-topup.js": 294,
   "packages/web/server/lib/opencode/v1-migration-topup.test.js": 274,
   "packages/web/server/lib/opencode/v2-install.js": 159,
