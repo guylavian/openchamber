@@ -18,11 +18,29 @@
 
 import { unwrapOpenCodeResponse } from './response-envelope.js';
 
+type OpenCodeRecord = Partial<Record<string, unknown>>;
+
+interface SessionPage {
+  data?: (OpenCodeRecord | null | undefined)[];
+  cursor?: { next?: string | null } | null;
+}
+
+interface SessionForm {
+  state?: { status?: unknown } | null;
+}
+
+export interface SessionActivityProbeOptions {
+  buildOpenCodeUrl: (path: string, prefix: string) => string;
+  getOpenCodeAuthHeaders: () => Record<string, string>;
+  timeoutMs?: number;
+  fetchImpl?: typeof fetch;
+}
+
 const CHILDREN_PAGE_SIZE = 50;
 const CHILDREN_MAX_PAGES = 8;
 
-export const createSessionActivityProbe = ({ buildOpenCodeUrl, getOpenCodeAuthHeaders, timeoutMs = 10_000, fetchImpl = fetch }) => {
-  const openCodeGet = async (fetchPath, query) => {
+export const createSessionActivityProbe = ({ buildOpenCodeUrl, getOpenCodeAuthHeaders, timeoutMs = 10_000, fetchImpl = fetch }: SessionActivityProbeOptions) => {
+  const openCodeGet = async (fetchPath: string, query?: Record<string, string>): Promise<unknown> => {
     const base = buildOpenCodeUrl(fetchPath, '');
     const search = new URLSearchParams(query || {}).toString();
     const response = await fetchImpl(search ? `${base}?${search}` : base, {
@@ -40,7 +58,7 @@ export const createSessionActivityProbe = ({ buildOpenCodeUrl, getOpenCodeAuthHe
    * `/api/session/active` is global and lists only the sessions running right
    * now (`{ data: { [id]: status } }`), so an absent id is idle.
    */
-  const fetchActiveSessionStatuses = async () => {
+  const fetchActiveSessionStatuses = async (): Promise<OpenCodeRecord | null> => {
     const statuses = await openCodeGet('/api/session/active').catch(() => null);
     return statuses && typeof statuses === 'object' && !Array.isArray(statuses) ? statuses : null;
   };
@@ -51,15 +69,15 @@ export const createSessionActivityProbe = ({ buildOpenCodeUrl, getOpenCodeAuthHe
    * carry the filter inside the cursor, so only the cursor and the limit
    * travel. A parent with more subagents than this walks is unknown (`null`).
    */
-  const fetchChildSessionIds = async (sessionId) => {
-    const ids = [];
+  const fetchChildSessionIds = async (sessionId: string): Promise<string[] | null> => {
+    const ids: string[] = [];
     const seenCursors = new Set();
-    let cursor;
+    let cursor: string | undefined;
     for (let pageNumber = 0; pageNumber < CHILDREN_MAX_PAGES; pageNumber += 1) {
       const page = await openCodeGet('/api/session', {
         limit: String(CHILDREN_PAGE_SIZE),
         ...(cursor ? { cursor } : { parentID: sessionId }),
-      }).catch(() => null);
+      }).catch(() => null) as SessionPage | null;
       if (!Array.isArray(page?.data)) return null;
       for (const child of page.data) {
         if (typeof child?.id === 'string' && child.id) ids.push(child.id);
@@ -73,7 +91,7 @@ export const createSessionActivityProbe = ({ buildOpenCodeUrl, getOpenCodeAuthHe
   };
 
   /** True when a subagent of the session is still running; null when unknown. */
-  const hasWorkingChildren = async (sessionId, statuses) => {
+  const hasWorkingChildren = async (sessionId: string, statuses: OpenCodeRecord): Promise<boolean | null> => {
     const children = await fetchChildSessionIds(sessionId);
     if (!children) return null;
     return children.some((id) => Boolean(statuses[id]));
@@ -85,7 +103,7 @@ export const createSessionActivityProbe = ({ buildOpenCodeUrl, getOpenCodeAuthHe
    * cancelled is not waiting and is not reported. `null` when OpenCode could
    * not be asked about either.
    */
-  const fetchPendingUserRequests = async (sessionId) => {
+  const fetchPendingUserRequests = async (sessionId: string): Promise<{ permissions: unknown[]; forms: SessionForm[] } | null> => {
     const path = `/api/session/${encodeURIComponent(sessionId)}`;
     const [permissions, forms] = await Promise.all([
       openCodeGet(`${path}/permission`).catch(() => null),
@@ -96,7 +114,7 @@ export const createSessionActivityProbe = ({ buildOpenCodeUrl, getOpenCodeAuthHe
     if (!Array.isArray(permissions) || !Array.isArray(forms)) return null;
     return {
       permissions,
-      forms: forms.filter((form) => form?.state?.status === 'pending'),
+      forms: forms.filter((form: SessionForm | null | undefined): form is SessionForm => form?.state?.status === 'pending'),
     };
   };
 

@@ -1,4 +1,43 @@
-export const registerProjectIconRoutes = (app, dependencies) => {
+import type { spawn as spawnChild } from 'node:child_process';
+import type { PlatformPath } from 'node:path';
+import type { Express, Request } from 'express';
+
+import type { LooseRecord, SanitizedProject } from './settings-normalization-runtime.js';
+
+interface ProjectSettings {
+  projects?: SanitizedProject[];
+}
+
+interface FsSearchRuntime {
+  searchFilesystemFiles: (
+    rootPath: string,
+    options: { limit: number; query: string; includeHidden?: boolean; respectGitignore?: boolean },
+  ) => Promise<{ path: string }[]>;
+}
+
+export interface ProjectIconRouteDependencies {
+  fsPromises: typeof import('node:fs/promises');
+  path: PlatformPath;
+  crypto: typeof import('node:crypto');
+  openchamberDataDir: string;
+  sanitizeProjects: (input: unknown) => SanitizedProject[] | undefined;
+  readSettingsFromDiskMigrated: () => Promise<ProjectSettings>;
+  persistSettings: (changes: { projects: SanitizedProject[] }) => Promise<ProjectSettings>;
+  createFsSearchRuntime: (dependencies: {
+    fsPromises: typeof import('node:fs/promises');
+    path: PlatformPath;
+    spawn: typeof spawnChild;
+    resolveGitBinaryForSpawn: () => string;
+  }) => FsSearchRuntime;
+  spawn: typeof spawnChild;
+  resolveGitBinaryForSpawn: () => string;
+}
+
+type ParsedProjectIcon = { ok: false; error: string } | { ok: true; mime: string; bytes: Buffer };
+
+type ProjectIconRequest = Request<{ projectId: string }, unknown, LooseRecord | undefined>;
+
+export const registerProjectIconRoutes = (app: Express, dependencies: ProjectIconRouteDependencies): void => {
   const {
     fsPromises,
     path,
@@ -13,7 +52,7 @@ export const registerProjectIconRoutes = (app, dependencies) => {
   } = dependencies;
 
   const projectIconsDirPath = path.join(openchamberDataDir, 'project-icons');
-  const projectIconMimeToExtension = {
+  const projectIconMimeToExtension: Record<string, string> = {
     'image/png': 'png',
     'image/jpeg': 'jpg',
     'image/svg+xml': 'svg',
@@ -25,13 +64,13 @@ export const registerProjectIconRoutes = (app, dependencies) => {
   );
   const projectIconSupportedMimes = new Set(Object.keys(projectIconMimeToExtension));
   const projectIconMaxBytes = 5 * 1024 * 1024;
-  const projectIconThemeColors = {
+  const projectIconThemeColors: Record<string, string> = {
     light: '#111111',
     dark: '#f5f5f5',
   };
   const projectIconHexColorPattern = /^#(?:[\da-fA-F]{3}|[\da-fA-F]{4}|[\da-fA-F]{6}|[\da-fA-F]{8})$/;
 
-  const normalizeProjectIconMime = (value) => {
+  const normalizeProjectIconMime = (value: unknown): string | null => {
     if (typeof value !== 'string') {
       return null;
     }
@@ -46,12 +85,12 @@ export const registerProjectIconRoutes = (app, dependencies) => {
     return null;
   };
 
-  const projectIconBaseName = (projectId) => {
+  const projectIconBaseName = (projectId: string): string => {
     const hash = crypto.createHash('sha1').update(projectId).digest('hex');
     return `project-${hash}`;
   };
 
-  const projectIconPathForMime = (projectId, mime) => {
+  const projectIconPathForMime = (projectId: string, mime: unknown): string | null => {
     const normalizedMime = normalizeProjectIconMime(mime);
     if (!normalizedMime) {
       return null;
@@ -60,12 +99,12 @@ export const registerProjectIconRoutes = (app, dependencies) => {
     return path.join(projectIconsDirPath, `${projectIconBaseName(projectId)}.${ext}`);
   };
 
-  const projectIconPathCandidates = (projectId) => {
+  const projectIconPathCandidates = (projectId: string): string[] => {
     const base = projectIconBaseName(projectId);
     return Object.values(projectIconMimeToExtension).map((ext) => path.join(projectIconsDirPath, `${base}.${ext}`));
   };
 
-  const removeProjectIconFiles = async (projectId, keepPath) => {
+  const removeProjectIconFiles = async (projectId: string, keepPath?: string): Promise<void> => {
     const candidates = projectIconPathCandidates(projectId);
     await Promise.all(candidates.map(async (candidatePath) => {
       if (keepPath && candidatePath === keepPath) {
@@ -74,14 +113,14 @@ export const registerProjectIconRoutes = (app, dependencies) => {
       try {
         await fsPromises.unlink(candidatePath);
       } catch (error) {
-        if (!error || typeof error !== 'object' || error.code !== 'ENOENT') {
+        if (!error || typeof error !== 'object' || (error as NodeJS.ErrnoException).code !== 'ENOENT') {
           throw error;
         }
       }
     }));
   };
 
-  const parseProjectIconDataUrl = (value) => {
+  const parseProjectIconDataUrl = (value: unknown): ParsedProjectIcon => {
     if (typeof value !== 'string') {
       return { ok: false, error: 'dataUrl is required' };
     }
@@ -98,7 +137,7 @@ export const registerProjectIconRoutes = (app, dependencies) => {
     }
 
     try {
-      const base64 = match[2].replace(/\s+/g, '');
+      const base64 = match[2]!.replace(/\s+/g, '');
       const bytes = Buffer.from(base64, 'base64');
       if (bytes.length === 0) {
         return { ok: false, error: 'Icon content is empty' };
@@ -112,7 +151,7 @@ export const registerProjectIconRoutes = (app, dependencies) => {
     }
   };
 
-  const normalizeProjectIconThemeVariant = (value) => {
+  const normalizeProjectIconThemeVariant = (value: unknown): 'light' | 'dark' | null => {
     if (typeof value !== 'string') {
       return null;
     }
@@ -124,7 +163,7 @@ export const registerProjectIconRoutes = (app, dependencies) => {
     return null;
   };
 
-  const normalizeProjectIconColor = (value) => {
+  const normalizeProjectIconColor = (value: unknown): string | null => {
     if (typeof value !== 'string') {
       return null;
     }
@@ -136,12 +175,12 @@ export const registerProjectIconRoutes = (app, dependencies) => {
     return normalized;
   };
 
-  const applyProjectIconSvgTheme = (svgMarkup, themeVariant, iconColor) => {
+  const applyProjectIconSvgTheme = (svgMarkup: string, themeVariant: 'light' | 'dark' | null, iconColor: string | null): string => {
     if (typeof svgMarkup !== 'string') {
       return svgMarkup;
     }
 
-    const color = iconColor || projectIconThemeColors[themeVariant];
+    const color = iconColor || projectIconThemeColors[themeVariant!];
     if (!color) {
       return svgMarkup;
     }
@@ -160,7 +199,7 @@ export const registerProjectIconRoutes = (app, dependencies) => {
     return `${svgMarkup.slice(0, svgOpenTagEndIndex + 1)}${overrideStyle}${svgMarkup.slice(svgOpenTagEndIndex + 1)}`;
   };
 
-  const findProjectById = (settings, projectId) => {
+  const findProjectById = (settings: ProjectSettings | null | undefined, projectId: string) => {
     const projects = sanitizeProjects(settings?.projects) || [];
     const index = projects.findIndex((project) => project.id === projectId);
     if (index === -1) {
@@ -229,7 +268,7 @@ export const registerProjectIconRoutes = (app, dependencies) => {
           res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
           return res.send(data);
         } catch (error) {
-          if (!error || typeof error !== 'object' || error.code !== 'ENOENT') {
+          if (!error || typeof error !== 'object' || (error as NodeJS.ErrnoException).code !== 'ENOENT') {
             console.warn('Failed to read project icon:', error);
             return res.status(500).json({ error: 'Failed to read project icon' });
           }
@@ -243,7 +282,7 @@ export const registerProjectIconRoutes = (app, dependencies) => {
     }
   });
 
-  app.put('/api/projects/:projectId/icon', async (req, res) => {
+  app.put('/api/projects/:projectId/icon', async (req: ProjectIconRequest, res) => {
     const projectId = typeof req.params.projectId === 'string' ? req.params.projectId.trim() : '';
     if (!projectId) {
       return res.status(400).json({ error: 'projectId is required' });
@@ -271,7 +310,7 @@ export const registerProjectIconRoutes = (app, dependencies) => {
       await removeProjectIconFiles(projectId, iconPath);
 
       const updatedAt = Date.now();
-      const nextProjects = projects.map((entry) => (
+      const nextProjects: SanitizedProject[] = projects.map((entry) => (
         entry.id === projectId
           ? { ...entry, iconImage: { mime: parsed.mime, updatedAt, source: 'custom' } }
           : entry
@@ -301,7 +340,7 @@ export const registerProjectIconRoutes = (app, dependencies) => {
 
       await removeProjectIconFiles(projectId);
 
-      const nextProjects = projects.map((entry) => (
+      const nextProjects: SanitizedProject[] = projects.map((entry) => (
         entry.id === projectId
           ? { ...entry, iconImage: null }
           : entry
@@ -316,7 +355,7 @@ export const registerProjectIconRoutes = (app, dependencies) => {
     }
   });
 
-  app.post('/api/projects/:projectId/icon/discover', async (req, res) => {
+  app.post('/api/projects/:projectId/icon/discover', async (req: ProjectIconRequest, res) => {
     const projectId = typeof req.params.projectId === 'string' ? req.params.projectId.trim() : '';
     if (!projectId) {
       return res.status(400).json({ error: 'projectId is required' });
@@ -378,7 +417,7 @@ export const registerProjectIconRoutes = (app, dependencies) => {
       await removeProjectIconFiles(projectId, iconPath);
 
       const updatedAt = Date.now();
-      const nextProjects = projects.map((entry) => (
+      const nextProjects: SanitizedProject[] = projects.map((entry) => (
         entry.id === projectId
           ? { ...entry, iconImage: { mime, updatedAt, source: 'auto' } }
           : entry

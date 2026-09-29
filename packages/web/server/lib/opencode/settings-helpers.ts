@@ -2,19 +2,22 @@ import { createRequire } from 'node:module';
 
 import { isAgentMemoryFeatureAvailable } from '../agent-memory/feature-flag.js';
 import { isPermissionMode } from '../permission-auto-accept/modes.js';
+import type { PermissionMode } from '../permission-auto-accept/modes.js';
+import type { SettingsRegistry } from './settings-files.js';
+import type { createSettingsNormalizationRuntime, SettingsDocument, SettingsValue } from './settings-normalization-runtime.js';
 
 // Generated from packages/ui/src/lib/settings/registry.ts by
 // `bun run settings-registry:generate`; `registry.test.ts` fails when stale.
 // The server is plain ESM without a bundler, so the snapshot is read with
 // `createRequire` (import attributes differ across the Node versions we run on).
-const settingsRegistry = createRequire(import.meta.url)('./settings-registry.json');
+const settingsRegistry = createRequire(import.meta.url)('./settings-registry.json') as SettingsRegistry;
 
 /**
  * Whether a client may persist this key through PUT /api/config/settings:
  * it must be a registry key, not a server-computed flag, not a device field
  * that only lives in the browser, and not one the desktop shell writes itself.
  */
-const isPersistableSettingsKey = (key) => {
+const isPersistableSettingsKey = (key: string): boolean => {
   const field = settingsRegistry.fields[key];
   if (!field) return false;
   if (field.computed || field.local) return false;
@@ -35,7 +38,54 @@ import {
   isInputHistoryScope,
 } from './input-history-scope.js';
 
-export const createSettingsHelpers = (dependencies) => {
+type SettingsNormalization = ReturnType<typeof createSettingsNormalizationRuntime>;
+
+export interface SettingsHelpersDependencies {
+  normalizePathForPersistence: SettingsNormalization['normalizePathForPersistence'];
+  normalizeDirectoryPath: SettingsNormalization['normalizeDirectoryPath'];
+  normalizeTunnelBootstrapTtlMs: SettingsNormalization['normalizeTunnelBootstrapTtlMs'];
+  normalizeTunnelSessionTtlMs: SettingsNormalization['normalizeTunnelSessionTtlMs'];
+  normalizeTunnelProvider: (value: string) => string;
+  normalizeTunnelMode: (value: string) => string;
+  normalizeOptionalPath: (value: string) => string | null;
+  normalizeManagedRemoteTunnelHostname: SettingsNormalization['normalizeManagedRemoteTunnelHostname'];
+  normalizeManagedRemoteTunnelPresets: SettingsNormalization['normalizeManagedRemoteTunnelPresets'];
+  normalizeManagedRemoteTunnelPresetTokens: SettingsNormalization['normalizeManagedRemoteTunnelPresetTokens'];
+  normalizeStringArray: SettingsNormalization['normalizeStringArray'];
+  sanitizeModelRefs: SettingsNormalization['sanitizeModelRefs'];
+  sanitizeSkillCatalogs: SettingsNormalization['sanitizeSkillCatalogs'];
+  sanitizeProjects: SettingsNormalization['sanitizeProjects'];
+}
+
+export type SettingsUpdate = Record<string, unknown>;
+
+interface UsageModelGroupsInput {
+  customGroups?: (CustomModelGroupEntry | null | undefined)[] | null;
+  modelAssignments?: Record<string, unknown> | null;
+  renamedGroups?: Record<string, unknown> | null;
+}
+
+interface CustomModelGroupEntry {
+  id?: unknown;
+  label?: unknown;
+  models?: SettingsValue;
+  order?: unknown;
+}
+
+interface CustomModelGroupInput {
+  id: string;
+  label: string;
+  models?: SettingsValue;
+  order?: unknown;
+}
+
+interface UsageModelGroupsConfig {
+  customGroups?: { id: string; label: string; models: string[]; order: unknown }[];
+  modelAssignments?: Record<string, string>;
+  renamedGroups?: Record<string, string>;
+}
+
+export const createSettingsHelpers = (dependencies: SettingsHelpersDependencies) => {
   const {
     normalizePathForPersistence,
     normalizeDirectoryPath,
@@ -63,19 +113,19 @@ export const createSettingsHelpers = (dependencies) => {
   const PWA_ORIENTATION_VALUES = new Set(['system', 'portrait', 'landscape']);
   const MOBILE_KEYBOARD_MODE_VALUES = new Set(['native', 'resize-content']);
   const TERMINAL_SHELL_VALUES = new Set(['auto', 'bash', 'zsh', 'sh', 'fish', 'pwsh', 'powershell', 'cmd', 'dash', 'ksh', 'nu']);
-  const SIDEBAR_PROJECT_DISPLAY_MODE_VALUES = new Set(['all', 'single']);
-  const SIDEBAR_VIEW_MODE_VALUES = new Set(['projects', 'timeline']);
-  const SIDEBAR_PROJECT_SORT_ORDER_VALUES = new Set(['manual', 'a-z', 'z-a', 'date-added', 'recent']);
-  const SIDEBAR_WORKTREE_SORT_ORDER_VALUES = new Set(['recent', 'manual', 'a-z']);
+  const SIDEBAR_PROJECT_DISPLAY_MODE_VALUES = new Set<unknown>(['all', 'single']);
+  const SIDEBAR_VIEW_MODE_VALUES = new Set<unknown>(['projects', 'timeline']);
+  const SIDEBAR_PROJECT_SORT_ORDER_VALUES = new Set<unknown>(['manual', 'a-z', 'z-a', 'date-added', 'recent']);
+  const SIDEBAR_WORKTREE_SORT_ORDER_VALUES = new Set<unknown>(['recent', 'manual', 'a-z']);
   const HIDDEN_MODELS_MAX = 1024;
   const RECENT_EFFORTS_MAX_KEYS = 128;
   const RECENT_EFFORTS_MAX_VARIANTS_PER_KEY = 5;
 
-  const sanitizeShortcutOverrides = (value) => {
+  const sanitizeShortcutOverrides = (value: unknown): Record<string, string> | null => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
       return null;
     }
-    const result = {};
+    const result: Record<string, string> = {};
     for (const [rawKey, rawValue] of Object.entries(value)) {
       const key = typeof rawKey === 'string' ? rawKey.trim() : '';
       const combo = typeof rawValue === 'string' ? rawValue.trim() : '';
@@ -85,18 +135,18 @@ export const createSettingsHelpers = (dependencies) => {
     return result;
   };
 
-  const sanitizeRecentEfforts = (value) => {
+  const sanitizeRecentEfforts = (value: unknown): Record<string, string[]> | null => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
       return null;
     }
-    const result = {};
+    const result: Record<string, string[]> = {};
     const seenKeys = new Set();
     let count = 0;
     for (const [rawKey, rawVariants] of Object.entries(value)) {
       const key = typeof rawKey === 'string' ? rawKey.trim() : '';
       if (!key || seenKeys.has(key)) continue;
       if (!Array.isArray(rawVariants)) continue;
-      const variants = [];
+      const variants: string[] = [];
       const seenVariants = new Set();
       for (const rawVariant of rawVariants) {
         const variant = typeof rawVariant === 'string' ? rawVariant.trim() : '';
@@ -114,7 +164,7 @@ export const createSettingsHelpers = (dependencies) => {
     return count > 0 ? result : null;
   };
 
-  const normalizePwaAppName = (value, fallback = '') => {
+  const normalizePwaAppName = (value: unknown, fallback = ''): string => {
     if (typeof value !== 'string') {
       return fallback;
     }
@@ -125,7 +175,7 @@ export const createSettingsHelpers = (dependencies) => {
     return normalized.slice(0, PWA_APP_NAME_MAX_LENGTH);
   };
 
-  const normalizePwaOrientation = (value, fallback = 'system') => {
+  const normalizePwaOrientation = (value: unknown, fallback = 'system'): string => {
     if (typeof value !== 'string') {
       return fallback;
     }
@@ -136,7 +186,7 @@ export const createSettingsHelpers = (dependencies) => {
     return fallback;
   };
 
-  const normalizeMobileKeyboardMode = (value, fallback = 'native') => {
+  const normalizeMobileKeyboardMode = (value: unknown, fallback: string | null = 'native'): string | null => {
     if (typeof value !== 'string') {
       return fallback;
     }
@@ -147,7 +197,7 @@ export const createSettingsHelpers = (dependencies) => {
     return fallback;
   };
 
-  const normalizeFollowUpBehavior = (value, legacyQueueModeEnabled = null) => {
+  const normalizeFollowUpBehavior = (value: unknown, legacyQueueModeEnabled: boolean | null = null): 'steer' | 'queue' => {
     // "immediate" was removed (it was wire-identical to "steer"); collapse it.
     if (value === 'immediate') {
       return 'steer';
@@ -161,13 +211,13 @@ export const createSettingsHelpers = (dependencies) => {
     return 'queue';
   };
 
-  const sanitizeSettingsUpdate = (payload) => {
+  const sanitizeSettingsUpdate = (payload: unknown): SettingsUpdate => {
     if (!payload || typeof payload !== 'object') {
       return {};
     }
 
-    const candidate = payload;
-    const result = {};
+    const candidate: SettingsDocument = payload;
+    const result: SettingsUpdate = {};
 
     if (typeof candidate.themeId === 'string' && candidate.themeId.length > 0) {
       result.themeId = candidate.themeId;
@@ -268,7 +318,7 @@ export const createSettingsHelpers = (dependencies) => {
       }
     }
     if (candidate.permissionAutoAccept && typeof candidate.permissionAutoAccept === 'object' && !Array.isArray(candidate.permissionAutoAccept)) {
-      const sessions = {};
+      const sessions: Record<string, boolean | PermissionMode> = {};
       const sourceSessions = candidate.permissionAutoAccept.sessions;
       if (sourceSessions && typeof sourceSessions === 'object' && !Array.isArray(sourceSessions)) {
         // A mode, or a boolean from a policy written before the modes existed;
@@ -280,7 +330,7 @@ export const createSettingsHelpers = (dependencies) => {
       result.permissionAutoAccept = {
         sessions,
         revision: Number.isSafeInteger(candidate.permissionAutoAccept.revision)
-          && candidate.permissionAutoAccept.revision >= 0
+          && (candidate.permissionAutoAccept.revision as number) >= 0
           ? candidate.permissionAutoAccept.revision
           : 0,
       };
@@ -328,7 +378,7 @@ export const createSettingsHelpers = (dependencies) => {
     }
     if (Array.isArray(candidate.draftStarters)) {
       const seenStarters = new Set();
-      const starters = [];
+      const starters: { type: 'command' | 'skill'; name: string }[] = [];
       for (const entry of candidate.draftStarters) {
         if (!entry || typeof entry !== 'object') continue;
         const type = entry.type === 'command' || entry.type === 'skill' ? entry.type : null;
@@ -805,7 +855,7 @@ export const createSettingsHelpers = (dependencies) => {
 
     // Usage model selections - which models appear in dropdown
     if (candidate.usageSelectedModels && typeof candidate.usageSelectedModels === 'object') {
-      const sanitized = {};
+      const sanitized: Record<string, unknown[]> = {};
       for (const [providerId, models] of Object.entries(candidate.usageSelectedModels)) {
         if (typeof providerId === 'string' && Array.isArray(models)) {
           const validModels = models.filter((m) => typeof m === 'string' && m.length > 0);
@@ -821,7 +871,7 @@ export const createSettingsHelpers = (dependencies) => {
 
     // Usage page collapsed families - for "Other Models" section
     if (candidate.usageCollapsedFamilies && typeof candidate.usageCollapsedFamilies === 'object') {
-      const sanitized = {};
+      const sanitized: Record<string, unknown[]> = {};
       for (const [providerId, families] of Object.entries(candidate.usageCollapsedFamilies)) {
         if (typeof providerId === 'string' && Array.isArray(families)) {
           const validFamilies = families.filter((f) => typeof f === 'string' && f.length > 0);
@@ -837,7 +887,7 @@ export const createSettingsHelpers = (dependencies) => {
 
     // Header dropdown expanded families (inverted - stores EXPANDED, default all collapsed)
     if (candidate.usageExpandedFamilies && typeof candidate.usageExpandedFamilies === 'object') {
-      const sanitized = {};
+      const sanitized: Record<string, unknown[]> = {};
       for (const [providerId, families] of Object.entries(candidate.usageExpandedFamilies)) {
         if (typeof providerId === 'string' && Array.isArray(families)) {
           const validFamilies = families.filter((f) => typeof f === 'string' && f.length > 0);
@@ -853,16 +903,16 @@ export const createSettingsHelpers = (dependencies) => {
 
     // Custom model groups configuration
     if (candidate.usageModelGroups && typeof candidate.usageModelGroups === 'object') {
-      const sanitized = {};
-      for (const [providerId, config] of Object.entries(candidate.usageModelGroups)) {
+      const sanitized: Record<string, UsageModelGroupsConfig> = {};
+      for (const [providerId, config] of Object.entries(candidate.usageModelGroups as Record<string, UsageModelGroupsInput>)) {
         if (typeof providerId !== 'string') continue;
 
-        const providerConfig = {};
+        const providerConfig: UsageModelGroupsConfig = {};
 
         // customGroups: array of {id, label, models, order}
         if (Array.isArray(config.customGroups)) {
-          const validGroups = config.customGroups
-            .filter((g) => g && typeof g.id === 'string' && typeof g.label === 'string')
+          const validGroups = (config.customGroups
+            .filter((g) => g && typeof g.id === 'string' && typeof g.label === 'string') as CustomModelGroupInput[])
             .map((g) => ({
               id: g.id.slice(0, 64),
               label: g.label.slice(0, 128),
@@ -878,7 +928,7 @@ export const createSettingsHelpers = (dependencies) => {
 
         // modelAssignments: Record<modelName, groupId>
         if (config.modelAssignments && typeof config.modelAssignments === 'object') {
-          const assignments = {};
+          const assignments: Record<string, string> = {};
           for (const [model, groupId] of Object.entries(config.modelAssignments)) {
             if (typeof model === 'string' && typeof groupId === 'string') {
               assignments[model] = groupId;
@@ -891,7 +941,7 @@ export const createSettingsHelpers = (dependencies) => {
 
         // renamedGroups: Record<groupId, label>
         if (config.renamedGroups && typeof config.renamedGroups === 'object') {
-          const renamed = {};
+          const renamed: Record<string, string> = {};
           for (const [groupId, label] of Object.entries(config.renamedGroups)) {
             if (typeof groupId === 'string' && typeof label === 'string') {
               renamed[groupId] = label.slice(0, 128);
@@ -994,7 +1044,7 @@ export const createSettingsHelpers = (dependencies) => {
     return result;
   };
 
-  const mergePersistedSettings = (current, changes) => {
+  const mergePersistedSettings = (current: SettingsDocument, changes: SettingsDocument): SettingsDocument => {
     const baseBookmarks = Array.isArray(changes.securityScopedBookmarks)
       ? changes.securityScopedBookmarks
       : Array.isArray(current.securityScopedBookmarks)
@@ -1014,7 +1064,7 @@ export const createSettingsHelpers = (dependencies) => {
     return next;
   };
 
-  const formatSettingsResponse = (settings) => {
+  const formatSettingsResponse = (settings: SettingsDocument) => {
     const sanitized = sanitizeSettingsUpdate(settings);
     for (const key of SECRET_SETTINGS_KEYS) {
       delete sanitized[key];

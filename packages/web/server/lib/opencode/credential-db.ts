@@ -19,22 +19,65 @@
  */
 
 import { createRequire } from 'node:module';
+import type { PlatformPath } from 'node:path';
 
 const DB_FILE_NAME = 'opencode.db';
+
+type Row = Record<string, unknown>;
+
+interface ReadOnlyConnection {
+  all: (sql: string) => Row[];
+  close: () => void;
+}
+
+type OpenConnection = (dbPath: string) => ReadOnlyConnection;
+
+interface BunSqliteModule {
+  Database: new (dbPath: string, options: { readonly: boolean }) => {
+    query: (sql: string) => { all: () => Row[] };
+    close: () => void;
+  };
+}
+
+interface StoredCredentialValue {
+  type?: unknown;
+  key?: unknown;
+  access?: unknown;
+  refresh?: unknown;
+  expires?: unknown;
+  metadata?: unknown;
+}
+
+export interface LegacyApiKeyEntry {
+  type: 'api';
+  key: string;
+  metadata?: object;
+}
+
+export interface LegacyOAuthEntry {
+  type: 'oauth';
+  access: string;
+  refresh: string;
+  expires: number;
+  accountId?: string;
+  enterpriseUrl?: string;
+}
+
+export type LegacyAuthEntry = LegacyApiKeyEntry | LegacyOAuthEntry;
 
 /**
  * A minimal read-only connection: `all(sql)` and `close()`. Node provides it
  * through `node:sqlite`, Bun through `bun:sqlite`; both are built in. Neither
  * being available yields null and the caller falls back to `auth.json`.
  */
-let openConnection;
-const loadSqlite = () => {
+let openConnection: OpenConnection | null | undefined;
+const loadSqlite = (): OpenConnection | null => {
   if (openConnection !== undefined) return openConnection;
   const require = createRequire(import.meta.url);
   openConnection = null;
   try {
     const node = typeof process.getBuiltinModule === 'function' ? process.getBuiltinModule('node:sqlite') : null;
-    const { DatabaseSync } = node ?? require('node:sqlite');
+    const { DatabaseSync } = node ?? require('node:sqlite') as typeof import('node:sqlite');
     if (typeof DatabaseSync === 'function') {
       openConnection = (dbPath) => {
         const db = new DatabaseSync(dbPath, { readOnly: true });
@@ -46,7 +89,7 @@ const loadSqlite = () => {
     // Not Node, or a Node without node:sqlite; try Bun next.
   }
   try {
-    const { Database } = require('bun:sqlite');
+    const { Database } = require('bun:sqlite') as BunSqliteModule;
     if (typeof Database === 'function') {
       openConnection = (dbPath) => {
         const db = new Database(dbPath, { readonly: true });
@@ -64,7 +107,7 @@ const loadSqlite = () => {
  * relative to the data dir), else `opencode.db` in the data dir.
  * @param {{ dataDir: string, env?: NodeJS.ProcessEnv, path: typeof import('node:path') }} options
  */
-export const resolveCredentialDbPath = ({ dataDir, env = process.env, path }) => {
+export const resolveCredentialDbPath = ({ dataDir, env = process.env, path }: { dataDir: string; env?: NodeJS.ProcessEnv; path: PlatformPath }): string => {
   const configured = (env.OPENCODE_DB ?? '').trim();
   if (configured && configured !== ':memory:') return path.resolve(dataDir, configured);
   return path.join(dataDir, DB_FILE_NAME);
@@ -75,22 +118,22 @@ export const resolveCredentialDbPath = ({ dataDir, env = process.env, path }) =>
  * shape (`{ type: 'api', key }` / `{ type: 'oauth', access, refresh, expires }`).
  * Returns null for a value this reader does not understand.
  */
-export const projectCredentialValue = (raw) => {
-  let value;
+export const projectCredentialValue = (raw: unknown): LegacyAuthEntry | null => {
+  let value: StoredCredentialValue | null | undefined;
   try {
-    value = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    value = typeof raw === 'string' ? JSON.parse(raw) as StoredCredentialValue | null : raw as StoredCredentialValue | null | undefined;
   } catch {
     return null;
   }
   if (!value || typeof value !== 'object') return null;
   if (value.type === 'key' && typeof value.key === 'string') {
-    const entry = { type: 'api', key: value.key };
+    const entry: LegacyApiKeyEntry = { type: 'api', key: value.key };
     if (value.metadata && typeof value.metadata === 'object') entry.metadata = value.metadata;
     return entry;
   }
   if (value.type === 'oauth' && typeof value.access === 'string' && typeof value.refresh === 'string') {
-    const entry = { type: 'oauth', access: value.access, refresh: value.refresh, expires: Number(value.expires) || 0 };
-    const metadata = value.metadata && typeof value.metadata === 'object' ? value.metadata : {};
+    const entry: LegacyOAuthEntry = { type: 'oauth', access: value.access, refresh: value.refresh, expires: Number(value.expires) || 0 };
+    const metadata: { accountID?: unknown; enterpriseUrl?: unknown } = value.metadata && typeof value.metadata === 'object' ? value.metadata : {};
     if (typeof metadata.accountID === 'string') entry.accountId = metadata.accountID;
     if (typeof metadata.enterpriseUrl === 'string') entry.enterpriseUrl = metadata.enterpriseUrl;
     return entry;
@@ -110,12 +153,12 @@ export const projectCredentialValue = (raw) => {
  *   sqlite runtime is unavailable, so the caller can tell "no credentials"
  *   from "could not look".
  */
-export const readCredentialsFromDb = ({ dbPath, fs }) => {
+export const readCredentialsFromDb = ({ dbPath, fs }: { dbPath: string; fs: { existsSync: (path: string) => boolean } }): Record<string, LegacyAuthEntry> | null => {
   const open = loadSqlite();
   if (!open) return null;
   if (!fs.existsSync(dbPath)) return null;
 
-  let db;
+  let db: ReadOnlyConnection | undefined;
   try {
     db = open(dbPath);
     const rows = db.all(
@@ -123,7 +166,7 @@ export const readCredentialsFromDb = ({ dbPath, fs }) => {
         'WHERE integration_id IS NOT NULL ' +
         'ORDER BY integration_id, active DESC, time_updated DESC',
     );
-    const result = {};
+    const result: Record<string, LegacyAuthEntry> = {};
     for (const row of rows) {
       const id = typeof row.integration_id === 'string' ? row.integration_id : '';
       if (!id || id in result) continue;

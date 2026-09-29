@@ -14,20 +14,38 @@ const ALLOWED_PHASES = new Set([
   'opencode.attempt.error',
   'proxy.readiness-hold',
 ]);
-const ALLOWED_OUTCOMES = new Set(['ready', 'timeout', 'aborted', 'error']);
-const ALLOWED_ROUTE_CLASSES = new Set(['session-messages', 'session', 'events', 'other']);
+const ALLOWED_OUTCOMES = new Set<string | undefined>(['ready', 'timeout', 'aborted', 'error']);
+const ALLOWED_ROUTE_CLASSES = new Set<string | undefined>(['session-messages', 'session', 'events', 'other']);
 
-const finiteNonNegative = (value) => Number.isFinite(value) && value >= 0 ? value : undefined;
-const nonNegativeInteger = (value) => Number.isInteger(value) && value >= 0 ? value : undefined;
+const finiteNonNegative = (value: number | undefined): number | undefined => Number.isFinite(value) && value! >= 0 ? value : undefined;
+const nonNegativeInteger = (value: number | undefined): number | undefined => Number.isInteger(value) && value! >= 0 ? value : undefined;
 
 const isStartupPerformanceEnabled = () => (
   ENABLED_VALUES.has(String(process.env.OPENCHAMBER_STARTUP_PERF ?? '').toLowerCase())
 );
 
-export const recordStartupPerformance = (phase, details = {}) => {
+export interface StartupPerformanceDetails {
+  durationMs?: number;
+  totalDurationMs?: number;
+  attempt?: number;
+  outcome?: string;
+  routeClass?: string;
+}
+
+interface StartupPerformanceEvent {
+  phase: string;
+  at: number;
+  durationMs?: number;
+  totalDurationMs?: number;
+  attempt?: number;
+  outcome?: string | undefined;
+  routeClass?: string | undefined;
+}
+
+export const recordStartupPerformance = (phase: string, details: StartupPerformanceDetails = {}): void => {
   if (!isStartupPerformanceEnabled() || !ALLOWED_PHASES.has(phase)) return;
 
-  const event = {
+  const event: StartupPerformanceEvent = {
     phase,
     at: Date.now(),
   };

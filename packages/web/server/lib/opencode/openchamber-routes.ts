@@ -1,6 +1,58 @@
+import type { Express } from 'express';
+import type { AddressInfo } from 'node:net';
+import type { PlatformPath } from 'node:path';
+
+import type { DesktopUpdater } from '../../index.js';
+
+export interface OpenChamberRouteDependencies {
+  fs: typeof import('node:fs');
+  path: PlatformPath;
+  process: NodeJS.Process;
+  server: { address: () => AddressInfo | null; close: () => void };
+  __dirname: string;
+  openchamberDataDir: string;
+  modelsDevApiUrl: string;
+  modelsMetadataCacheTtl: number;
+  readSettingsFromDiskMigrated?: unknown;
+  fetchFreeZenModels: () => Promise<unknown>;
+  getCachedZenModels: () => unknown;
+  desktopUpdater?: DesktopUpdater | null | undefined;
+}
+
+interface PackageManagerModule {
+  checkForUpdates: (options?: Record<string, string | boolean | undefined>) => Promise<PackageUpdateInfo>;
+  getUpdateCommand: (pm: string) => string;
+  detectPackageManagerDetails: () => PackageManagerDetails;
+}
+
+interface PackageUpdateInfo {
+  available: boolean;
+  version?: string | null;
+  currentVersion?: string;
+}
+
+interface PackageManagerDetails {
+  packageManager: string;
+  reason?: string | null;
+  packagePath?: string | null;
+  packageManagerCommand?: string | null;
+  globalNodeModulesRoot?: string | null;
+}
+
+type ThrownValue = { name?: unknown } | null | undefined;
+
+interface StoredLaunchOptions {
+  port: number;
+  daemon?: boolean;
+  launchMode?: string;
+  host?: string;
+  uiPassword?: string;
+  apiOnly?: boolean;
+}
+
 const SYSTEMD_SERVICE_UNIT_PATTERN = /^[A-Za-z0-9:_.@-]+\.service$/;
 
-function resolveSystemdServiceUnit(environment) {
+function resolveSystemdServiceUnit(environment: NodeJS.ProcessEnv): string | null {
   if (!environment.INVOCATION_ID) {
     return null;
   }
@@ -12,7 +64,7 @@ function resolveSystemdServiceUnit(environment) {
   return SYSTEMD_SERVICE_UNIT_PATTERN.test(unit) ? unit : null;
 }
 
-function quotePosixShell(value) {
+function quotePosixShell(value: unknown): string {
   return `'${String(value).replace(/'/g, "'\\''")}'`;
 }
 
@@ -20,7 +72,7 @@ function quotePosixShell(value) {
  * `echo` in batch treats `& | < > ( ) ^` as syntax and `%var%` as expansion,
  * so a line of the log preamble is escaped before it becomes an `echo`.
  */
-const escapeBatchEchoLine = (line) => {
+const escapeBatchEchoLine = (line: string): string => {
   if (!line) return 'echo.';
   return `echo ${line.replace(/%/g, '%%').replace(/[&|<>()^]/g, '^$&')}`;
 };
@@ -29,7 +81,7 @@ const escapeBatchEchoLine = (line) => {
  * The Windows update runs as a batch file, one command per line, so the
  * `if ... else` block and the multi-line log preamble keep their structure.
  */
-const buildWindowsUpdateScript = ({ logPreamble, updateCmd, restartCmd }) => [
+const buildWindowsUpdateScript = ({ logPreamble, updateCmd, restartCmd }: { logPreamble: string; updateCmd: string; restartCmd: string }): string => [
   '@echo off',
   ...logPreamble.split('\n').map(escapeBatchEchoLine),
   // `timeout` refuses redirected stdin, which is what a detached child has;
@@ -53,7 +105,7 @@ const buildWindowsUpdateScript = ({ logPreamble, updateCmd, restartCmd }) => [
   '',
 ].join('\r\n');
 
-export const registerOpenChamberRoutes = (app, dependencies) => {
+export const registerOpenChamberRoutes = (app: Express, dependencies: OpenChamberRouteDependencies): void => {
   const {
     fs,
     path,
@@ -69,7 +121,7 @@ export const registerOpenChamberRoutes = (app, dependencies) => {
     desktopUpdater,
   } = dependencies;
 
-  let desktopRestartError = null;
+  let desktopRestartError: string | null = null;
 
   /**
    * How this server was launched, read from its instance file. A foreground
@@ -79,11 +131,12 @@ export const registerOpenChamberRoutes = (app, dependencies) => {
   const readLaunchState = async () => {
     const currentPort = server.address()?.port || 3000;
     const instanceFilePath = path.join(openchamberDataDir, 'run', `openchamber-${currentPort}.json`);
-    let storedOptions = { port: currentPort, daemon: true };
+    let storedOptions: StoredLaunchOptions = { port: currentPort, daemon: true };
     try {
       const content = await fs.promises.readFile(instanceFilePath, 'utf8');
-      storedOptions = JSON.parse(content);
+      storedOptions = JSON.parse(content) as StoredLaunchOptions;
     } catch {
+      // No readable instance file: keep the defaults.
     }
     const launchMode = storedOptions.launchMode === 'foreground' ? 'foreground' : 'daemon';
     const isForegroundService = launchMode === 'foreground';
@@ -93,14 +146,14 @@ export const registerOpenChamberRoutes = (app, dependencies) => {
 
   app.get('/api/openchamber/update-check', async (req, res) => {
     try {
-      const parseString = (value) => (typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined);
-      const parseReportUsage = (value) => {
+      const parseString = (value: unknown): string | undefined => (typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined);
+      const parseReportUsage = (value: string | undefined): boolean => {
         if (typeof value !== 'string') return true;
         const normalized = value.trim().toLowerCase();
         if (normalized === 'false' || normalized === '0' || normalized === 'no') return false;
         return true;
       };
-      const inferDeviceClass = (ua) => {
+      const inferDeviceClass = (ua: string): string => {
         const value = (ua || '').toLowerCase();
         if (!value) return 'unknown';
         if (value.includes('ipad') || value.includes('tablet')) return 'tablet';
@@ -139,7 +192,7 @@ export const registerOpenChamberRoutes = (app, dependencies) => {
           updateOwner: 'electron-updater',
         };
       } else {
-        const { checkForUpdates } = await import('../package-manager.js');
+        const { checkForUpdates } = await import('../package-manager.js') as PackageManagerModule;
         updateInfo = await checkForUpdates(updateRequest);
         // Tell clients up front that the install route will refuse, so they
         // show the manual command instead of an Update button that fails.
@@ -189,7 +242,7 @@ export const registerOpenChamberRoutes = (app, dependencies) => {
         setImmediate(() => {
           Promise.resolve()
             .then(() => desktopUpdater.restart())
-            .catch((error) => {
+            .catch((error: unknown) => {
               desktopRestartError = error instanceof Error ? error.message : 'Failed to restart after desktop update';
               console.error('Failed to restart after desktop update:', error);
             });
@@ -202,7 +255,7 @@ export const registerOpenChamberRoutes = (app, dependencies) => {
         checkForUpdates,
         getUpdateCommand,
         detectPackageManagerDetails,
-      } = await import('../package-manager.js');
+      } = await import('../package-manager.js') as PackageManagerModule;
 
       const updateInfo = await checkForUpdates();
       if (!updateInfo.available) {
@@ -294,8 +347,8 @@ export const registerOpenChamberRoutes = (app, dependencies) => {
       }
 
       const isWindows = process.platform === 'win32';
-      const quotePosix = (value) => `'${String(value).replace(/'/g, "'\\''")}'`;
-      const quoteCmd = (value) => {
+      const quotePosix = (value: unknown): string => `'${String(value).replace(/'/g, "'\\''")}'`;
+      const quoteCmd = (value: unknown): string => {
         const stringValue = String(value);
         return `"${stringValue.replace(/"/g, '""')}"`;
       };
@@ -404,7 +457,7 @@ export const registerOpenChamberRoutes = (app, dependencies) => {
             fi
           `;
 
-        let logFd = null;
+        let logFd: number | null = null;
         try {
           fs.mkdirSync(path.dirname(updateLogPath), { recursive: true });
           logFd = fs.openSync(updateLogPath, 'a');
@@ -437,6 +490,7 @@ export const registerOpenChamberRoutes = (app, dependencies) => {
           try {
             fs.closeSync(logFd);
           } catch {
+            // Closing this process's copy of the descriptor is best-effort.
           }
         }
 
@@ -465,7 +519,7 @@ export const registerOpenChamberRoutes = (app, dependencies) => {
       res.json(metadata);
     } catch (error) {
       console.warn('Failed to fetch models.dev metadata via server:', error);
-      const statusCode = error?.name === 'TimeoutError' || error?.name === 'AbortError' ? 504 : 502;
+      const statusCode = (error as ThrownValue)?.name === 'TimeoutError' || (error as ThrownValue)?.name === 'AbortError' ? 504 : 502;
       res.status(statusCode).json({ error: 'Failed to retrieve model metadata' });
     }
   });
@@ -482,7 +536,7 @@ export const registerOpenChamberRoutes = (app, dependencies) => {
         res.setHeader('Cache-Control', 'public, max-age=60');
         res.json(cachedZenModels);
       } else {
-        const statusCode = error?.name === 'AbortError' ? 504 : 502;
+        const statusCode = (error as ThrownValue)?.name === 'AbortError' ? 504 : 502;
         res.status(statusCode).json({ error: 'Failed to retrieve zen models' });
       }
     }

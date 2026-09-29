@@ -5,11 +5,19 @@ const DEFAULT_TIMEOUT_MS = 8000;
 // Shared in-process cache of the models.dev catalog. Used by the
 // /api/openchamber/models-metadata route and the small-model resolver so the
 // server fetches the catalog once, not per consumer.
-let cachedMetadata = null;
-let cachedAt = 0;
-let inflight = null;
+export type ModelsMetadata = object;
 
-const fetchCatalog = async (url, timeoutMs) => {
+export interface ModelsMetadataResult {
+  metadata: ModelsMetadata;
+  fromCache: boolean;
+  stale?: boolean;
+}
+
+let cachedMetadata: ModelsMetadata | null = null;
+let cachedAt = 0;
+let inflight: Promise<ModelsMetadata> | null = null;
+
+const fetchCatalog = async (url: string, timeoutMs: number): Promise<ModelsMetadata> => {
   const response = await fetch(url, {
     headers: { Accept: 'application/json' },
     signal: AbortSignal.timeout(timeoutMs),
@@ -17,7 +25,7 @@ const fetchCatalog = async (url, timeoutMs) => {
   if (!response.ok) {
     throw new Error(`models.dev responded with status ${response.status}`);
   }
-  const metadata = await response.json();
+  const metadata: unknown = await response.json();
   if (!metadata || typeof metadata !== 'object') {
     throw new Error('models.dev returned an unexpected payload');
   }
@@ -33,7 +41,7 @@ export async function getModelsMetadata({
   url = MODELS_DEV_API_URL,
   ttlMs = DEFAULT_TTL_MS,
   timeoutMs = DEFAULT_TIMEOUT_MS,
-} = {}) {
+}: { url?: string; ttlMs?: number; timeoutMs?: number } = {}): Promise<ModelsMetadataResult> {
   const now = Date.now();
   if (cachedMetadata && now - cachedAt < ttlMs) {
     return { metadata: cachedMetadata, fromCache: true };

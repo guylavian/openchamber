@@ -1,10 +1,31 @@
+export interface ServeCliOptionsInput {
+  argv?: string[];
+  env?: NodeJS.ProcessEnv;
+  defaultPort: number;
+  cloudflareProvider: string;
+  managedLocalMode: string;
+}
+
+export interface ServeCliOptions {
+  port: number;
+  host: string | undefined;
+  uiPassword: string | null;
+  tryCfTunnel: boolean;
+  tunnelProvider: string | undefined;
+  tunnelMode: string | undefined;
+  tunnelConfigPath: string | null | undefined;
+  tunnelToken: string | undefined;
+  tunnelHostname: string | undefined;
+  apiOnly: boolean;
+}
+
 export const parseServeCliOptions = ({
   argv = [],
   env = {},
   defaultPort,
   cloudflareProvider,
   managedLocalMode,
-}) => {
+}: ServeCliOptionsInput): ServeCliOptions => {
   const args = Array.isArray(argv) ? [...argv] : [];
   const envPassword =
     env.OPENCHAMBER_UI_PASSWORD ||
@@ -21,7 +42,7 @@ export const parseServeCliOptions = ({
   const envTunnelHostname = env.OPENCHAMBER_TUNNEL_HOSTNAME || undefined;
   const envApiOnly = env.OPENCHAMBER_API_ONLY === '1' || env.OPENCHAMBER_API_ONLY === 'true';
 
-  const options = {
+  const options: ServeCliOptions = {
     port: defaultPort,
     host: undefined,
     uiPassword: envPassword,
@@ -34,7 +55,7 @@ export const parseServeCliOptions = ({
     apiOnly: envApiOnly,
   };
 
-  const consumeValue = (currentIndex, inlineValue) => {
+  const consumeValue = (currentIndex: number, inlineValue: string | undefined): { value: string | undefined; nextIndex: number } => {
     if (typeof inlineValue === 'string') {
       return { value: inlineValue, nextIndex: currentIndex };
     }
@@ -46,7 +67,7 @@ export const parseServeCliOptions = ({
   };
 
   for (let i = 0; i < args.length; i += 1) {
-    const arg = args[i];
+    const arg = args[i]!;
     if (!arg.startsWith('--')) {
       continue;
     }

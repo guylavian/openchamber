@@ -1,5 +1,36 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
+import type { Dirent } from 'node:fs';
+import type { PlatformPath } from 'node:path';
+
+type ThemeJsonValue = string | number | boolean | null | undefined | unknown[] | Record<string, unknown>;
+
+type ThemeJsonInput = Partial<Record<string, unknown>> | string | number | boolean | null | undefined;
+
+type ThemeColorGroup = Partial<Record<string, unknown>>;
+
+type ThemeColors = { syntax?: Partial<Record<string, ThemeColorGroup>> } & Partial<Record<string, ThemeColorGroup>>;
+
+export interface NormalizedTheme {
+  [key: string]: unknown;
+  metadata: {
+    [key: string]: unknown;
+    id: string;
+    name: string;
+    description: string;
+    version: string;
+    variant: 'light' | 'dark';
+    tags: unknown[];
+  };
+}
+
+export interface ThemeRuntimeDependencies {
+  fsPromises: typeof import('node:fs/promises');
+  path: PlatformPath;
+  themesDir: string;
+  maxThemeJsonBytes: number;
+  logger: { warn: (message: string, ...details: unknown[]) => void };
+}
 
 const color = z.string().regex(/^#(?:[\da-f]{3}|[\da-f]{4}|[\da-f]{6}|[\da-f]{8})$/i);
 const role = z.string().regex(/^[a-zA-Z][a-zA-Z0-9]*$/).max(64);
@@ -17,14 +48,17 @@ const importedThemeSchema = z.object({
 const fileErrorSchema = z.object({ code: z.string() });
 
 export class ThemeImportStorageError extends Error {
-  constructor(code, status) {
+  declare code: string;
+  declare status: number;
+
+  constructor(code: string, status: number) {
     super(code);
     this.code = code;
     this.status = status;
   }
 }
 
-export const createThemeRuntime = (dependencies) => {
+export const createThemeRuntime = (dependencies: ThemeRuntimeDependencies) => {
   const {
     fsPromises,
     path,
@@ -33,16 +67,16 @@ export const createThemeRuntime = (dependencies) => {
     logger,
   } = dependencies;
 
-  const isNonEmptyString = (value) => typeof value === 'string' && value.trim().length > 0;
-  const isValidThemeColor = (value) => isNonEmptyString(value);
+  const isNonEmptyString = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0;
+  const isValidThemeColor = (value: unknown): boolean => isNonEmptyString(value);
 
-  const normalizeThemeJson = (raw) => {
+  const normalizeThemeJson = (raw: ThemeJsonInput): NormalizedTheme | null => {
     if (!raw || typeof raw !== 'object') {
       return null;
     }
 
-    const metadata = raw.metadata && typeof raw.metadata === 'object' ? raw.metadata : null;
-    const colors = raw.colors && typeof raw.colors === 'object' ? raw.colors : null;
+    const metadata: Partial<Record<string, ThemeJsonValue>> | null = raw.metadata && typeof raw.metadata === 'object' ? raw.metadata : null;
+    const colors: ThemeColors | null = raw.colors && typeof raw.colors === 'object' ? raw.colors : null;
     if (!metadata || !colors) {
       return null;
     }
@@ -113,7 +147,7 @@ export const createThemeRuntime = (dependencies) => {
   const readCustomThemesFromDisk = async () => {
     try {
       const entries = await fsPromises.readdir(themesDir, { withFileTypes: true });
-      const themes = [];
+      const themes: NormalizedTheme[] = [];
       const seen = new Set();
 
       for (const entry of entries) {
@@ -130,7 +164,7 @@ export const createThemeRuntime = (dependencies) => {
           }
 
           const rawText = await fsPromises.readFile(filePath, 'utf8');
-          const parsed = JSON.parse(rawText);
+          const parsed = JSON.parse(rawText) as ThemeJsonInput;
           const normalized = normalizeThemeJson(parsed);
           if (!normalized) {
             logger.warn(`[themes] Skip ${entry.name}: invalid theme JSON`);
@@ -153,7 +187,7 @@ export const createThemeRuntime = (dependencies) => {
       return themes;
     } catch (error) {
       // Missing dir is fine.
-      if (error && typeof error === 'object' && error.code === 'ENOENT') {
+      if (error && typeof error === 'object' && (error as NodeJS.ErrnoException).code === 'ENOENT') {
         return [];
       }
       logger.warn('[themes] Failed to list custom themes dir:', error);
@@ -161,7 +195,7 @@ export const createThemeRuntime = (dependencies) => {
     }
   };
 
-  const saveImportedTheme = async (raw) => {
+  const saveImportedTheme = async (raw: unknown): Promise<NormalizedTheme> => {
     const parsed = importedThemeSchema.safeParse(raw);
     if (!parsed.success) throw new ThemeImportStorageError('invalid', 400);
     const normalized = normalizeThemeJson({ ...parsed.data, metadata: { ...parsed.data.metadata, id: 'import' } });
@@ -188,7 +222,7 @@ export const createThemeRuntime = (dependencies) => {
       }
       return theme;
     } finally {
-      await fsPromises.unlink(temporary).catch((error) => {
+      await fsPromises.unlink(temporary).catch((error: unknown) => {
         const parsedError = fileErrorSchema.safeParse(error);
         if (!parsedError.success || parsedError.data.code !== 'ENOENT') logger.warn('[themes] Failed to clean import temporary file');
       });
@@ -199,11 +233,11 @@ export const createThemeRuntime = (dependencies) => {
     normalizeThemeJson,
     readCustomThemesFromDisk,
     saveImportedTheme,
-    async deleteImportedTheme(id) {
+    async deleteImportedTheme(id: unknown): Promise<void> {
       if (!z.string().trim().min(1).max(256).safeParse(id).success) throw new ThemeImportStorageError('invalid', 400);
-      const matches = [];
-      let readFailure;
-      let entries;
+      const matches: string[] = [];
+      let readFailure: unknown;
+      let entries: Dirent[];
       try { entries = await fsPromises.readdir(themesDir, { withFileTypes: true }); }
       catch (error) {
         if (fileErrorSchema.safeParse(error).data?.code === 'ENOENT') return;
@@ -212,7 +246,7 @@ export const createThemeRuntime = (dependencies) => {
       for (const entry of entries) {
         if (!entry.isFile() || !entry.name.endsWith('.json')) continue;
         const target = path.join(themesDir, entry.name);
-        let text;
+        let text: string;
         try {
           const stat = await fsPromises.lstat(target);
           if (!stat.isFile() || stat.isSymbolicLink() || stat.size > maxThemeJsonBytes) continue;
@@ -221,8 +255,8 @@ export const createThemeRuntime = (dependencies) => {
           if (fileErrorSchema.safeParse(error).data?.code !== 'ENOENT') readFailure = error;
           continue;
         }
-        let theme;
-        try { theme = normalizeThemeJson(JSON.parse(text)); }
+        let theme: NormalizedTheme | null;
+        try { theme = normalizeThemeJson(JSON.parse(text) as ThemeJsonInput); }
         catch { continue; }
         if (theme?.metadata.id === id) matches.push(target);
       }
@@ -233,7 +267,7 @@ export const createThemeRuntime = (dependencies) => {
         if (readFailure) throw readFailure;
         return;
       }
-      await fsPromises.unlink(matches[0]);
+      await fsPromises.unlink(matches[0]!);
     },
   };
 };

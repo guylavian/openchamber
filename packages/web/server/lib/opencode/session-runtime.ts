@@ -1,17 +1,79 @@
+import type { ServerResponse } from 'node:http';
+
+type OpenCodeRecord = Partial<Record<string, unknown>>;
+
+export interface OpenCodeSsePayload {
+  type?: unknown;
+  id?: unknown;
+  properties?: unknown;
+}
+
+export interface SessionEventPayload {
+  type: string;
+  properties: object;
+}
+
+export interface SessionRuntimeDependencies {
+  writeSseEvent: (res: ServerResponse, payload: SessionEventPayload) => void;
+  getNotificationClients: () => ReadonlySet<ServerResponse>;
+  broadcastEvent?: ((payload: SessionEventPayload) => void) | null;
+}
+
+export type SessionActivityPhase = 'idle' | 'busy' | 'cooldown';
+
+interface SessionStatusUpdate {
+  sessionId: string;
+  type: string;
+  eventId: string;
+  attempt: number | undefined;
+  message: string | undefined;
+  next: number | undefined;
+}
+
+type SessionStateMetadata = Record<string, unknown>;
+
+export interface SessionState {
+  status: string;
+  lastUpdateAt: number;
+  lastEventId: string;
+  metadata: SessionStateMetadata;
+}
+
+interface SessionAttentionState {
+  needsAttention: boolean;
+  lastUserMessageAt: number | null;
+  lastStatusChangeAt: number;
+  viewedByClients: Set<string>;
+  status: string;
+}
+
+export interface SessionAttentionSnapshot {
+  needsAttention: boolean;
+  lastUserMessageAt: number | null;
+  lastStatusChangeAt: number;
+  status: string;
+  isViewed: boolean;
+}
+
+interface PendingRequests {
+  permissions: Map<string, OpenCodeRecord>;
+  forms: Map<string, OpenCodeRecord>;
+}
+
 const SESSION_COOLDOWN_DURATION_MS = 2000;
 const SESSION_STATE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const SESSION_ATTENTION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const SESSION_ACTIVITY_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const SESSION_STATE_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 
-const extractSessionStatusUpdate = (payload) => {
+const extractSessionStatusUpdate = (payload: OpenCodeSsePayload | null | undefined): SessionStatusUpdate | null => {
   if (!payload || payload.type !== 'session.status') {
     return null;
   }
 
-  const properties = payload.properties && typeof payload.properties === 'object' ? payload.properties : {};
-  const status = properties.status && typeof properties.status === 'object' ? properties.status : {};
-  const info = properties.info && typeof properties.info === 'object' ? properties.info : {};
+  const properties: OpenCodeRecord = payload.properties && typeof payload.properties === 'object' ? payload.properties : {};
+  const status: OpenCodeRecord = properties.status && typeof properties.status === 'object' ? properties.status : {};
+  const info: OpenCodeRecord = properties.info && typeof properties.info === 'object' ? properties.info : {};
   const sessionId = typeof properties.sessionID === 'string' ? properties.sessionID.trim() : '';
   // Canonical OpenCode schema uses properties.status.type. Keep legacy info.type fallback for compatibility.
   const type = typeof status.type === 'string'
@@ -38,22 +100,22 @@ const extractSessionStatusUpdate = (payload) => {
   };
 };
 
-const readRequestId = (value) => (typeof value === 'string' && value.trim() ? value.trim() : '');
+const readRequestId = (value: unknown): string => (typeof value === 'string' && value.trim() ? value.trim() : '');
 
-export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, broadcastEvent }) => {
-  const sessionActivityPhases = new Map();
-  const sessionActivityCooldowns = new Map();
-  const sessionStates = new Map();
-  const sessionAttentionStates = new Map();
+export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, broadcastEvent }: SessionRuntimeDependencies) => {
+  const sessionActivityPhases = new Map<string, { phase: SessionActivityPhase; updatedAt: number }>();
+  const sessionActivityCooldowns = new Map<string, NodeJS.Timeout>();
+  const sessionStates = new Map<string, SessionState>();
+  const sessionAttentionStates = new Map<string, SessionAttentionState>();
   // Pending permission requests and forms per session, kept from the same
   // upstream stream. Clients that do not initialize a directory cannot read
   // its pending list from OpenCode (that read creates a location), so this map
   // is their seed. Entries live until the matching reply, the session's
   // deletion, or an OpenCode restart, which drops every pending request.
-  const pendingRequestsBySession = new Map();
+  const pendingRequestsBySession = new Map<string, PendingRequests>();
   let activeSessionCount = 0;
 
-  const getOrCreatePendingRequests = (sessionId) => {
+  const getOrCreatePendingRequests = (sessionId: string): PendingRequests => {
     let entry = pendingRequestsBySession.get(sessionId);
     if (!entry) {
       entry = { permissions: new Map(), forms: new Map() };
@@ -62,7 +124,7 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
     return entry;
   };
 
-  const settlePendingRequest = (kind, sessionId, requestId) => {
+  const settlePendingRequest = (kind: keyof PendingRequests, sessionId: string, requestId: string): void => {
     const entry = pendingRequestsBySession.get(sessionId);
     if (!entry) return;
     // OpenCode may omit the request ID on a reply; the session then has no
@@ -72,9 +134,9 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
     if (entry.permissions.size === 0 && entry.forms.size === 0) pendingRequestsBySession.delete(sessionId);
   };
 
-  const processBlockingRequestPayload = (payload) => {
+  const processBlockingRequestPayload = (payload: OpenCodeSsePayload | null | undefined): void => {
     if (!payload || typeof payload.type !== 'string') return;
-    const properties = payload.properties && typeof payload.properties === 'object' ? payload.properties : {};
+    const properties: OpenCodeRecord = payload.properties && typeof payload.properties === 'object' ? payload.properties : {};
     if (payload.type === 'permission.asked') {
       const sessionId = readRequestId(properties.sessionID);
       const requestId = readRequestId(properties.id);
@@ -85,7 +147,7 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
     // v2 replaced the question tool with forms; the request itself rides in
     // `properties.form`, so that object is what clients receive.
     if (payload.type === 'form.created') {
-      const form = properties.form && typeof properties.form === 'object' ? properties.form : null;
+      const form: OpenCodeRecord | null = properties.form && typeof properties.form === 'object' ? properties.form : null;
       if (!form) return;
       const sessionId = readRequestId(form.sessionID) || readRequestId(properties.sessionID);
       const requestId = readRequestId(form.id);
@@ -102,14 +164,14 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
       return;
     }
     if (payload.type === 'session.deleted') {
-      const info = properties.info && typeof properties.info === 'object' ? properties.info : {};
+      const info: OpenCodeRecord = properties.info && typeof properties.info === 'object' ? properties.info : {};
       const sessionId = readRequestId(properties.sessionID) || readRequestId(info.id);
       if (sessionId) pendingRequestsBySession.delete(sessionId);
     }
   };
 
-  const getPendingBlockingRequestsSnapshot = () => {
-    const result = {};
+  const getPendingBlockingRequestsSnapshot = (): Record<string, { permissions: OpenCodeRecord[]; forms: OpenCodeRecord[] }> => {
+    const result: Record<string, { permissions: OpenCodeRecord[]; forms: OpenCodeRecord[] }> = {};
     for (const [sessionId, entry] of pendingRequestsBySession) {
       result[sessionId] = {
         permissions: [...entry.permissions.values()],
@@ -119,7 +181,7 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
     return result;
   };
 
-  const getOrCreateAttentionState = (sessionId) => {
+  const getOrCreateAttentionState = (sessionId: string): SessionAttentionState | null => {
     if (!sessionId || typeof sessionId !== 'string') return null;
 
     let state = sessionAttentionStates.get(sessionId);
@@ -136,7 +198,7 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
     return state;
   };
 
-  const setSessionActivityPhase = (sessionId, phase) => {
+  const setSessionActivityPhase = (sessionId: string, phase: SessionActivityPhase): boolean => {
     if (!sessionId || typeof sessionId !== 'string') return false;
 
     const current = sessionActivityPhases.get(sessionId);
@@ -183,7 +245,7 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
     return true;
   };
 
-  const updateSessionAttentionStatus = (sessionId, status) => {
+  const updateSessionAttentionStatus = (sessionId: string, status: string): void => {
     const state = getOrCreateAttentionState(sessionId);
     if (!state) return;
 
@@ -198,7 +260,7 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
     }
   };
 
-  const updateSessionState = (sessionId, status, eventId, metadata = {}) => {
+  const updateSessionState = (sessionId: string, status: string, eventId: string, metadata: SessionStateMetadata = {}): void => {
     if (!sessionId || typeof sessionId !== 'string') return;
 
     const now = Date.now();
@@ -221,7 +283,7 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
     const attentionChanged = !!attentionState && existingAttentionState?.needsAttention !== attentionState.needsAttention;
     const clients = getNotificationClients();
     if (!existing || existing.status !== status || attentionChanged || isRestartInterruption) {
-      const state = sessionStates.get(sessionId);
+      const state = sessionStates.get(sessionId)!;
       const syntheticPayload = {
         type: 'openchamber:session-status',
         properties: {
@@ -240,6 +302,7 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
           try {
             writeSseEvent(res, syntheticPayload);
           } catch {
+            // A failed write to one client must not stop the others.
           }
         }
       }
@@ -251,8 +314,8 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
     }
   };
 
-  const getSessionStateSnapshot = () => {
-    const result = {};
+  const getSessionStateSnapshot = (): Record<string, Omit<SessionState, 'lastEventId'>> => {
+    const result: Record<string, Omit<SessionState, 'lastEventId'>> = {};
     const now = Date.now();
     for (const [sessionId, data] of sessionStates) {
       if (now - data.lastUpdateAt > SESSION_STATE_MAX_AGE_MS) continue;
@@ -265,12 +328,12 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
     return result;
   };
 
-  const getSessionState = (sessionId) => {
+  const getSessionState = (sessionId: string | null | undefined): SessionState | null => {
     if (!sessionId) return null;
     return sessionStates.get(sessionId) || null;
   };
 
-  const markSessionViewed = (sessionId, clientId) => {
+  const markSessionViewed = (sessionId: string, clientId: string): void => {
     const state = getOrCreateAttentionState(sessionId);
     if (!state) return;
 
@@ -299,26 +362,27 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
           try {
             writeSseEvent(res, syntheticPayload);
           } catch {
+            // A failed write to one client must not stop the others.
           }
         }
       }
     }
   };
 
-  const markSessionUnviewed = (sessionId, clientId) => {
+  const markSessionUnviewed = (sessionId: string, clientId: string): void => {
     const state = sessionAttentionStates.get(sessionId);
     if (!state) return;
     state.viewedByClients.delete(clientId);
   };
 
-  const markUserMessageSent = (sessionId) => {
+  const markUserMessageSent = (sessionId: string): void => {
     const state = getOrCreateAttentionState(sessionId);
     if (!state) return;
     state.lastUserMessageAt = Date.now();
   };
 
-  const getSessionAttentionSnapshot = () => {
-    const result = {};
+  const getSessionAttentionSnapshot = (): Record<string, SessionAttentionSnapshot> => {
+    const result: Record<string, SessionAttentionSnapshot> = {};
     const now = Date.now();
     for (const [sessionId, state] of sessionAttentionStates) {
       if (now - state.lastStatusChangeAt > SESSION_ATTENTION_MAX_AGE_MS) continue;
@@ -333,7 +397,7 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
     return result;
   };
 
-  const getSessionAttentionState = (sessionId) => {
+  const getSessionAttentionState = (sessionId: string | null | undefined): SessionAttentionSnapshot | null => {
     if (!sessionId) return null;
     const state = sessionAttentionStates.get(sessionId);
     if (!state) return null;
@@ -346,8 +410,8 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
     };
   };
 
-  const getSessionActivitySnapshot = () => {
-    const result = {};
+  const getSessionActivitySnapshot = (): Record<string, { type: SessionActivityPhase }> => {
+    const result: Record<string, { type: SessionActivityPhase }> = {};
     for (const [sessionId, data] of sessionActivityPhases) {
       result[sessionId] = { type: data.phase };
     }
@@ -369,7 +433,7 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
   };
 
   const interruptBusySessionsAfterRestart = () => {
-    const interruptedSessionIds = new Set();
+    const interruptedSessionIds = new Set<string>();
     for (const [sessionId, state] of sessionStates) {
       if (state.status === 'busy' || state.status === 'retry') {
         interruptedSessionIds.add(sessionId);
@@ -429,7 +493,7 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
 
   const cleanupInterval = setInterval(cleanupOldSessionStates, SESSION_STATE_CLEANUP_INTERVAL_MS);
 
-  const processOpenCodeSsePayload = (payload) => {
+  const processOpenCodeSsePayload = (payload: OpenCodeSsePayload | null | undefined): void => {
     processBlockingRequestPayload(payload);
     const update = extractSessionStatusUpdate(payload);
     if (!update) return;

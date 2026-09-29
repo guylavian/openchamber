@@ -104,6 +104,64 @@
         "reason": "The JavaScript's own String(label ?? '') coerces an arbitrary agent-supplied label (a tool input field, so honestly unknown) into a filename fragment; changing the stringification would change the emitted code and the slug for non-string labels."
       }
     ],
+    "packages/web/server/lib/opencode/openchamber-routes.ts": [
+      {
+        "rule": "@typescript-eslint/no-unused-vars",
+        "text": "readSettingsFromDiskMigrated,",
+        "count": 1,
+        "reason": "The JavaScript destructures readSettingsFromDiskMigrated from its dependencies without using it; removing it changes the emitted destructuring pattern."
+      }
+    ],
+    "packages/web/server/lib/opencode/server-startup-runtime.ts": [
+      {
+        "rule": "@typescript-eslint/no-misused-promises",
+        "text": "server.listen(port, bindHost, onListening);",
+        "count": 1,
+        "reason": "onListening is the JavaScript's own async listener; restructuring it changes when errors surface and the emitted code."
+      },
+      {
+        "rule": "@typescript-eslint/prefer-promise-reject-errors",
+        "text": "reject(error);",
+        "count": 1,
+        "reason": "The JavaScript rejects the caught value as it is; wrapping it in an Error would change the rejection value."
+      },
+      {
+        "rule": "@typescript-eslint/prefer-promise-reject-errors",
+        "text": "rejectReadyNotification(error);",
+        "count": 1,
+        "reason": "The JavaScript rejects the caught value as it is; wrapping it in an Error would change the rejection value."
+      }
+    ],
+    "packages/web/server/lib/opencode/settings-helpers.ts": [
+      {
+        "rule": "@typescript-eslint/no-dynamic-delete",
+        "text": "delete result[key];",
+        "count": 1,
+        "reason": "The JavaScript deletes non-persistable keys by name from the sanitized patch; the fix would replace the delete."
+      },
+      {
+        "rule": "@typescript-eslint/no-dynamic-delete",
+        "text": "delete sanitized[key];",
+        "count": 1,
+        "reason": "The JavaScript deletes non-persistable keys by name from the sanitized patch; the fix would replace the delete."
+      }
+    ],
+    "packages/web/server/lib/opencode/startup-performance.ts": [
+      {
+        "rule": "@typescript-eslint/no-unnecessary-type-conversion",
+        "text": "ENABLED_VALUES.has(String(process.env.OPENCHAMBER_STARTUP_PERF ?? '').toLowerCase())",
+        "count": 1,
+        "reason": "process.env values are string|undefined and ?? '' makes it a string, so String() is redundant to the type checker; the JavaScript's own conversion stays because removing it changes the emitted code."
+      }
+    ],
+    "packages/web/server/lib/opencode/theme-runtime.ts": [
+      {
+        "rule": "@typescript-eslint/only-throw-error",
+        "text": "if (readFailure) throw readFailure;",
+        "count": 1,
+        "reason": "The JavaScript rethrows the caught value as it is; wrapping it in an Error would change what callers receive."
+      }
+    ],
     "packages/web/server/lib/skills-catalog/git.ts": [
       {
         "rule": "@typescript-eslint/no-unnecessary-type-conversion",

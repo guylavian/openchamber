@@ -9,7 +9,7 @@ const ALL_NUMERIC_DOTTED_RE = /^\d+(?:\.\d+)*$/;
 // Valid bind hostnames for the managed OpenCode server: IPv4, IPv6 (with or
 // without brackets), or a DNS-style hostname. Everything else (URLs, ports,
 // paths, whitespace, underscores) is rejected.
-export const isValidOpenCodeHostname = (value) => {
+export const isValidOpenCodeHostname = (value: unknown): boolean => {
   if (typeof value !== 'string') return false;
   const trimmed = value.trim();
   if (!trimmed || trimmed.length > MAX_HOSTNAME_LENGTH) return false;
@@ -21,9 +21,19 @@ export const isValidOpenCodeHostname = (value) => {
   return trimmed.split('.').every((label) => HOSTNAME_LABEL_RE.test(label));
 };
 
-export const resolveOpenCodeEnvConfig = (options = {}) => {
-  const env = options.env && typeof options.env === 'object' ? options.env : {};
-  const logger = options.logger ?? console;
+export interface OpenCodeEnvConfigLogger {
+  warn: (message: string) => void;
+  error: (message: string) => void;
+}
+
+export interface OpenCodeEnvConfigOptions {
+  env?: NodeJS.ProcessEnv;
+  logger?: OpenCodeEnvConfigLogger;
+}
+
+export const resolveOpenCodeEnvConfig = (options: OpenCodeEnvConfigOptions = {}) => {
+  const env: NodeJS.ProcessEnv = options.env && typeof options.env === 'object' ? options.env : {};
+  const logger: OpenCodeEnvConfigLogger = options.logger ?? console;
 
   const configuredOpenCodePort = (() => {
     const raw =
@@ -41,11 +51,11 @@ export const resolveOpenCodeEnvConfig = (options = {}) => {
     const raw = typeof env.OPENCODE_HOST === 'string' ? env.OPENCODE_HOST.trim() : '';
     if (!raw) return null;
 
-    const warnInvalidHost = (reason) => {
+    const warnInvalidHost = (reason: string) => {
       logger.warn(`[config] Ignoring OPENCODE_HOST=${JSON.stringify(raw)}: ${reason}`);
     };
 
-    let url;
+    let url: URL;
     try {
       url = new URL(raw);
     } catch {

@@ -1,5 +1,29 @@
+import type { Express, Request } from 'express';
+
+import type { LooseRecord } from './settings-normalization-runtime.js';
+
+export interface PwaManifestRouteDependencies {
+  process: { platform: string };
+  resolveProjectDirectory: (req: Request) => Promise<{ directory?: string | null } | null | undefined>;
+  buildOpenCodeUrl: (path: string, prefix: string) => string;
+  getOpenCodeAuthHeaders: () => Record<string, string>;
+  readSettingsFromDiskMigrated: () => Promise<LooseRecord | null | undefined>;
+  normalizePwaAppName: (value: unknown, fallback: string) => string;
+  normalizePwaOrientation: (value: unknown, fallback: string) => string;
+}
+
+type SessionListEntry = LooseRecord | null | undefined;
+
+interface PwaShortcut {
+  name: string;
+  short_name: string;
+  description: string;
+  url: string;
+  icons: { src: string; sizes: string; type: string }[];
+}
+
 const DEFAULT_PWA_APP_NAME = 'OpenChamber';
-const mapPwaOrientationToManifest = (value) => {
+const mapPwaOrientationToManifest = (value: string) => {
   if (value === 'portrait') {
     return 'portrait-primary';
   }
@@ -9,7 +33,7 @@ const mapPwaOrientationToManifest = (value) => {
   return undefined;
 };
 
-export const registerPwaManifestRoute = (app, dependencies) => {
+export const registerPwaManifestRoute = (app: Express, dependencies: PwaManifestRouteDependencies): void => {
   const {
     process,
     resolveProjectDirectory,
@@ -20,9 +44,9 @@ export const registerPwaManifestRoute = (app, dependencies) => {
     normalizePwaOrientation,
   } = dependencies;
 
-  const recentPwaSessionsCache = new Map();
+  const recentPwaSessionsCache = new Map<string, { at: number; data: PwaShortcut[] }>();
 
-  const getRecentPwaSessionShortcuts = async (req) => {
+  const getRecentPwaSessionShortcuts = async (req: Request): Promise<PwaShortcut[]> => {
     const now = Date.now();
 
     const resolvedDirectoryResult = await resolveProjectDirectory(req).catch(() => ({ directory: null }));
@@ -36,12 +60,12 @@ export const registerPwaManifestRoute = (app, dependencies) => {
       return cached.data;
     }
 
-    const normalizeShortcutTitle = (value, fallback) => {
+    const normalizeShortcutTitle = (value: unknown, fallback: string): string => {
       const normalized = normalizePwaAppName(value, fallback);
       return normalized.length > 48 ? normalized.slice(0, 48) : normalized;
     };
 
-    const toFiniteNumber = (value) => {
+    const toFiniteNumber = (value: unknown): number | null => {
       if (typeof value === 'number' && Number.isFinite(value)) {
         return value;
       }
@@ -54,7 +78,7 @@ export const registerPwaManifestRoute = (app, dependencies) => {
       return null;
     };
 
-    const normalizeDirectory = (value) => {
+    const normalizeDirectory = (value: unknown): string => {
       if (typeof value !== 'string') {
         return '';
       }
@@ -69,12 +93,12 @@ export const registerPwaManifestRoute = (app, dependencies) => {
       return normalized.length > 1 ? normalized.replace(/\/+$/, '') : normalized;
     };
 
-    const sessionUpdatedAt = (session) => {
-      const time = session && typeof session.time === 'object' ? session.time : null;
+    const sessionUpdatedAt = (session: LooseRecord): number => {
+      const time: LooseRecord | null = session && typeof session.time === 'object' ? session.time : null;
       return toFiniteNumber(time?.updated) ?? toFiniteNumber(time?.created) ?? 0;
     };
 
-    const filterSessionsByDirectory = (sessions, directory) => {
+    const filterSessionsByDirectory = (sessions: SessionListEntry[], directory: string): SessionListEntry[] => {
       const normalizedDirectory = normalizeDirectory(directory);
       if (!normalizedDirectory) {
         return sessions;
@@ -90,7 +114,7 @@ export const registerPwaManifestRoute = (app, dependencies) => {
       });
     };
 
-    const listSessions = async (directory) => {
+    const listSessions = async (directory: string | null): Promise<SessionListEntry[]> => {
       const query = (() => {
         if (typeof directory !== 'string' || directory.length === 0) {
           return '';
@@ -115,13 +139,13 @@ export const registerPwaManifestRoute = (app, dependencies) => {
       }
 
       // v2 pages the session list as `{ data, cursor }`.
-      const body = await response.json().catch(() => null);
+      const body = await response.json().catch(() => null) as SessionListEntry[] | { data?: SessionListEntry[] } | null;
       const payload = Array.isArray(body) ? body : body?.data;
       return Array.isArray(payload) ? payload : [];
     };
 
     try {
-      let payload = [];
+      let payload: SessionListEntry[] = [];
 
       if (preferredDirectory) {
         const scopedPayload = await listSessions(preferredDirectory);
@@ -139,7 +163,7 @@ export const registerPwaManifestRoute = (app, dependencies) => {
       }
 
       const seen = new Set();
-      const rows = [];
+      const rows: { id: string; title: string; updatedAt: number }[] = [];
 
       for (const item of payload) {
         if (!item || typeof item !== 'object') {

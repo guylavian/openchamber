@@ -1,8 +1,63 @@
+import type { Server } from 'node:http';
+import type { TunnelAuthController } from './tunnel-auth.js';
+
 /** One stray uncaught exception is survivable; a storm means the process is broken. */
 const UNCAUGHT_STORM_LIMIT = 10;
 const UNCAUGHT_STORM_WINDOW_MS = 60_000;
 
-export const createServerStartupRuntime = (dependencies) => {
+interface ProcessEvents {
+  on: (event: string, listener: (...args: unknown[]) => unknown) => unknown;
+}
+
+interface StartupProcess extends ProcessEvents {
+  env: NodeJS.ProcessEnv;
+  connected: boolean;
+  send?: NodeJS.Process['send'];
+}
+
+interface StartupTunnelRequest {
+  provider: string;
+  mode: string;
+  intent?: string | undefined;
+  hostname?: string | undefined;
+  token?: string | undefined;
+  configPath?: string | undefined;
+}
+
+interface NormalizedTunnelRequest extends StartupTunnelRequest {
+  selectedPresetId: string;
+  selectedPresetName: string;
+}
+
+interface StartedTunnel {
+  publicUrl: string | null;
+  mode: string | null;
+}
+
+interface ServerStartupDependencies {
+  process: StartupProcess;
+  crypto: { randomUUID: () => string };
+  server: Server;
+  normalizeTunnelBootstrapTtlMs: (value: unknown) => number | null;
+  readSettingsFromDiskMigrated: () => Promise<{ tunnelBootstrapTtlMs?: unknown }>;
+  tunnelAuthController: Pick<TunnelAuthController, 'setActiveTunnel' | 'issueBootstrapToken'>;
+  startTunnelWithNormalizedRequest: (request: NormalizedTunnelRequest) => Promise<StartedTunnel>;
+  gracefulShutdown: () => unknown;
+  getSignalsAttached: () => boolean;
+  setSignalsAttached: (value: boolean) => void;
+  syncToHmrState: () => void;
+  TUNNEL_MODE_QUICK: string;
+  TUNNEL_MODE_MANAGED_LOCAL: string;
+  TUNNEL_MODE_MANAGED_REMOTE: string;
+}
+
+type ProcessHandlerKeys = 'gracefulShutdown' | 'getSignalsAttached' | 'setSignalsAttached' | 'syncToHmrState';
+
+type ServerStartupInput = Pick<ServerStartupDependencies, ProcessHandlerKeys>
+  & { process: ProcessEvents }
+  & Partial<Omit<ServerStartupDependencies, ProcessHandlerKeys | 'process'>>;
+
+export const createServerStartupRuntime = (dependencies: ServerStartupInput) => {
   const {
     process,
     crypto,
@@ -18,9 +73,9 @@ export const createServerStartupRuntime = (dependencies) => {
     TUNNEL_MODE_QUICK,
     TUNNEL_MODE_MANAGED_LOCAL,
     TUNNEL_MODE_MANAGED_REMOTE,
-  } = dependencies;
+  } = dependencies as ServerStartupDependencies;
 
-  const resolveBindHost = (host) =>
+  const resolveBindHost = (host?: string | null) =>
     host
     || (typeof process.env.OPENCHAMBER_HOST === 'string' && process.env.OPENCHAMBER_HOST.trim().length > 0
       ? process.env.OPENCHAMBER_HOST.trim()
@@ -31,11 +86,16 @@ export const createServerStartupRuntime = (dependencies) => {
     bindHost,
     startupTunnelRequest,
     onTunnelReady,
+  }: {
+    port: number;
+    bindHost: string;
+    startupTunnelRequest?: StartupTunnelRequest | null;
+    onTunnelReady?: ((publicUrl: string | null, connectUrl: string | null) => void) | null;
   }) => {
     let activePort = port;
 
-    await new Promise((resolve, reject) => {
-      const onError = (error) => {
+    await new Promise<void>((resolve, reject) => {
+      const onError = (error: Error) => {
         server.off('error', onError);
         reject(error);
       };
@@ -51,9 +111,9 @@ export const createServerStartupRuntime = (dependencies) => {
               throw new Error('OpenChamber startup IPC channel disconnected before ready notification');
             }
 
-            await new Promise((resolveReadyNotification, rejectReadyNotification) => {
+            await new Promise<void>((resolveReadyNotification, rejectReadyNotification) => {
               try {
-                process.send({ type: 'openchamber:ready', port: activePort }, (error) => {
+                process.send!({ type: 'openchamber:ready', port: activePort }, (error) => {
                   if (error) {
                     rejectReadyNotification(error);
                     return;
@@ -113,7 +173,7 @@ export const createServerStartupRuntime = (dependencies) => {
                 onTunnelReady(publicUrl, null);
               }
             } catch (error) {
-              console.error(`Failed to start tunnel: ${error.message}`);
+              console.error(`Failed to start tunnel: ${(error as Error).message}`);
               console.log('Continuing without tunnel...');
             }
           }
@@ -130,7 +190,7 @@ export const createServerStartupRuntime = (dependencies) => {
     return { activePort };
   };
 
-  const attachProcessHandlers = ({ attachSignals }) => {
+  const attachProcessHandlers = ({ attachSignals }: { attachSignals?: boolean }) => {
     if (attachSignals && !getSignalsAttached()) {
       const handleSignal = async () => {
         await gracefulShutdown();
@@ -160,12 +220,12 @@ export const createServerStartupRuntime = (dependencies) => {
     // unhandledRejection policy above: log and keep serving. A sustained storm
     // of exceptions is a different situation — the process is genuinely
     // broken — so that still shuts down rather than limping along half-alive.
-    const exceptionTimes = [];
+    const exceptionTimes: number[] = [];
     process.on('uncaughtException', (error) => {
       console.error('Uncaught Exception:', error);
       const now = Date.now();
       exceptionTimes.push(now);
-      while (exceptionTimes.length > 0 && now - exceptionTimes[0] > UNCAUGHT_STORM_WINDOW_MS) {
+      while (exceptionTimes.length > 0 && now - exceptionTimes[0]! > UNCAUGHT_STORM_WINDOW_MS) {
         exceptionTimes.shift();
       }
       if (exceptionTimes.length > UNCAUGHT_STORM_LIMIT) {

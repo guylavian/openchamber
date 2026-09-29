@@ -90,8 +90,74 @@
   "packages/web/server/lib/opencode/claude-cli-auth.ts": {
     "JSON.parse(output) as ClaudeAuthStatusPayload | null": 1
   },
+  "packages/web/server/lib/opencode/cli-options.ts": {
+    "args[i]!": 1
+  },
+  "packages/web/server/lib/opencode/credential-db.ts": {
+    "JSON.parse(raw) as StoredCredentialValue | null": 1,
+    "raw as StoredCredentialValue | null | undefined": 1,
+    "require('bun:sqlite') as BunSqliteModule": 1,
+    "require('node:sqlite') as typeof import('node:sqlite')": 1
+  },
   "packages/web/server/lib/opencode/input-history-scope.ts": {
     "value as number": 2
+  },
+  "packages/web/server/lib/opencode/openchamber-routes.ts": {
+    "JSON.parse(content) as StoredLaunchOptions": 1,
+    "await import('../package-manager.js') as PackageManagerModule": 2,
+    "error as ThrownValue": 3
+  },
+  "packages/web/server/lib/opencode/project-icon-routes.ts": {
+    "error as NodeJS.ErrnoException": 2,
+    "match[2]!": 1,
+    "themeVariant!": 1
+  },
+  "packages/web/server/lib/opencode/pwa-manifest-routes.ts": {
+    "await response.json().catch(() => null) as SessionListEntry[] | { data?: SessionListEntry[] } | null": 1
+  },
+  "packages/web/server/lib/opencode/server-startup-runtime.ts": {
+    "dependencies as ServerStartupDependencies": 1,
+    "error as Error": 1,
+    "exceptionTimes[0]!": 1,
+    "process.send!": 1
+  },
+  "packages/web/server/lib/opencode/session-activity.ts": {
+    "await openCodeGet('/api/session', { limit: String(CHILDREN_PAGE_SIZE), ...(cursor ? { cursor } : { parentID: sessionId }), }).catch(() => null) as SessionPage | null": 1
+  },
+  "packages/web/server/lib/opencode/session-runtime.ts": {
+    "sessionStates.get(sessionId)!": 1
+  },
+  "packages/web/server/lib/opencode/settings-files.ts": {
+    "createRequire(import.meta.url)('./settings-registry.json') as SettingsRegistry": 1,
+    "value as number": 1
+  },
+  "packages/web/server/lib/opencode/settings-helpers.ts": {
+    "candidate.permissionAutoAccept.revision as number": 1,
+    "candidate.usageModelGroups as Record<string, UsageModelGroupsInput>": 1,
+    "config.customGroups .filter((g) => g && typeof g.id === 'string' && typeof g.label === 'string') as CustomModelGroupInput[]": 1,
+    "createRequire(import.meta.url)('./settings-registry.json') as SettingsRegistry": 1
+  },
+  "packages/web/server/lib/opencode/settings-normalization-runtime.ts": {
+    "addedAt!": 1,
+    "input as LooseEntry[]": 3,
+    "lastOpenedAt!": 1,
+    "value as LooseEntry[]": 1,
+    "value as number": 2
+  },
+  "packages/web/server/lib/opencode/startup-performance.ts": {
+    "value!": 2
+  },
+  "packages/web/server/lib/opencode/theme-runtime.ts": {
+    "JSON.parse(rawText) as ThemeJsonInput": 1,
+    "JSON.parse(text) as ThemeJsonInput": 1,
+    "error as NodeJS.ErrnoException": 1,
+    "matches[0]!": 1
+  },
+  "packages/web/server/lib/opencode/tunnel-auth.ts": {
+    "bootstrapRecord!": 1,
+    "forwarded.split(',')[0]!": 1,
+    "second!": 2,
+    "ttlMs!": 2
   },
   "packages/web/server/lib/package-root.ts": {
     "JSON.parse(readFile(path.join(directory, 'package.json'), 'utf8')) as PackageManifest | null": 1
