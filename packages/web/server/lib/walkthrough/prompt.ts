@@ -34,13 +34,18 @@ Respond with a single JSON object and nothing else. (Some providers refuse a str
 // its anchors or loses its styling, silently and completely. Identifiers taken
 // from the diff stay verbatim for the same reason a translated function name
 // would be unsearchable.
-const languageInstruction = (language) => `
+const languageInstruction = (language: string): string => `
 
 Write all prose in ${languageName(language)}: the walkthrough title, the focus line, chapter titles and blurbs, and stop titles and prose. The reader of this review reads ${languageName(language)}.
 
 Keep these in English exactly as given, regardless of the prose language: hunk aliases (h1, h2, …), the "icon" values, and the "importance" values. Keep identifiers, file paths, and API names as they appear in the code — never translate them.`;
 
-const sizing = ({ fileCount, hunkCount }) => {
+interface SizingInput {
+  fileCount: number;
+  hunkCount: number;
+}
+
+const sizing = ({ fileCount, hunkCount }: SizingInput): string => {
   const targetStops = Math.max(1, Math.min(MAX_STOPS, Math.round(hunkCount / 2.5) || 1));
   const targetChapters = hunkCount <= 4
     ? 1
@@ -53,7 +58,23 @@ Aim for about ${targetStops} stop(s) across about ${targetChapters} chapter(s); 
 Chapter titles render in a narrow column: at most ${MAX_CHAPTER_TITLE_CHARS} characters, one or two words.`;
 };
 
-const previousWalkthroughSection = (previous) => {
+interface PreviousStop {
+  title: string;
+  prose: string;
+}
+
+interface PreviousChapter {
+  title: string;
+  blurb?: string;
+  stops?: PreviousStop[];
+}
+
+interface PreviousWalkthrough {
+  title: string;
+  chapters: PreviousChapter[];
+}
+
+const previousWalkthroughSection = (previous: PreviousWalkthrough | undefined | null): string => {
   if (!previous || !Array.isArray(previous.chapters) || previous.chapters.length === 0) return '';
 
   const outline = previous.chapters
@@ -81,7 +102,27 @@ export const JSON_SHAPE_INSTRUCTION = `
 Return ONLY a JSON object, with no prose around it and no markdown fences, in exactly this shape:
 {"title": string, "focus": string, "chapters": [{"title": string, "icon": "bug"|"wrench"|"path"|"flask"|"doc"|"gear", "blurb": string, "stops": [{"title": string, "hunks": [string], "importance": "critical"|"normal"|"context", "prose": string}]}]}`;
 
-export function buildPrompt({ digest, fileCount, hunkCount, source, previousWalkthrough, language = DEFAULT_LANGUAGE }) {
+type Source =
+  | { kind: 'working-tree'; scope: string }
+  | { kind: 'branch'; baseRef: string; headRef: string }
+  | { kind: 'commit'; hash: string }
+  | { kind: 'pr'; number: number };
+
+interface BuildPromptInput {
+  digest: unknown;
+  fileCount: number;
+  hunkCount: number;
+  source: Source;
+  previousWalkthrough?: PreviousWalkthrough | null;
+  language?: string;
+}
+
+interface PromptOutput {
+  system: string;
+  prompt: string;
+}
+
+export function buildPrompt({ digest, fileCount, hunkCount, source, previousWalkthrough, language = DEFAULT_LANGUAGE }: BuildPromptInput): PromptOutput {
   const sourceLine = source.kind === 'working-tree'
     ? `Uncommitted local changes (${source.scope === 'all' ? 'staged and unstaged' : source.scope}).`
     : source.kind === 'branch'
