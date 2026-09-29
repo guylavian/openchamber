@@ -12,14 +12,29 @@ const DEFAULT_COOLDOWN_MS = 60 * 1000;
 
 let rateLimitedUntil = 0;
 
-const headerValue = (headers, name) => {
+type HeaderValue = string | number | null | undefined;
+
+/** Octokit hands a plain header object; fetch hands a Headers instance, read through get(). */
+interface ResponseHeaders {
+  readonly get?: (name: string) => HeaderValue;
+  readonly [name: string]: HeaderValue | ((name: string) => HeaderValue);
+}
+
+/** An Octokit request error, or any thrown value shaped like one. */
+interface GitHubRequestError {
+  status?: number;
+  message?: string | number | null;
+  response?: { status?: number; headers?: ResponseHeaders | null } | null;
+}
+
+const headerValue = (headers: ResponseHeaders | null | undefined, name: string) => {
   if (!headers) return undefined;
   // Octokit/fetch headers can be a plain object or a Headers instance.
   if (typeof headers.get === 'function') return headers.get(name);
   return headers[name];
 };
 
-const parseRetryAfterMs = (error) => {
+const parseRetryAfterMs = (error: GitHubRequestError | null | undefined): number | null => {
   const headers = error?.response?.headers;
   const retryAfter = headerValue(headers, 'retry-after');
   if (retryAfter !== undefined && retryAfter !== null) {
@@ -35,7 +50,7 @@ const parseRetryAfterMs = (error) => {
 };
 
 /** True when an Octokit error represents a primary or secondary rate limit. */
-export const isGitHubRateLimitError = (error) => {
+export const isGitHubRateLimitError = (error: GitHubRequestError | null | undefined): boolean => {
   const status = error?.status ?? error?.response?.status;
   if (status === 429) return true;
   if (status !== 403) return false;
@@ -47,7 +62,7 @@ export const isGitHubRateLimitError = (error) => {
 };
 
 /** Record a cooldown after a detected rate-limit response. */
-export const noteGitHubRateLimit = (error) => {
+export const noteGitHubRateLimit = (error: GitHubRequestError | null | undefined): void => {
   const retryMs = Math.min(parseRetryAfterMs(error) ?? DEFAULT_COOLDOWN_MS, MAX_COOLDOWN_MS);
   const until = Date.now() + retryMs;
   if (until > rateLimitedUntil) {
@@ -57,10 +72,10 @@ export const noteGitHubRateLimit = (error) => {
 };
 
 /** Convenience: note the error if it is a rate-limit error. Returns whether it was. */
-export const noteIfGitHubRateLimit = (error) => {
+export const noteIfGitHubRateLimit = (error: GitHubRequestError | null | undefined): boolean => {
   if (!isGitHubRateLimitError(error)) return false;
   noteGitHubRateLimit(error);
   return true;
 };
 
-export const isGitHubRateLimited = () => Date.now() < rateLimitedUntil;
+export const isGitHubRateLimited = (): boolean => Date.now() < rateLimitedUntil;

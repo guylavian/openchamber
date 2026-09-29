@@ -1,11 +1,12 @@
 import { z } from 'zod';
+import type { Express, NextFunction, Request, RequestHandler, Response } from 'express';
 
 const NOTIFICATION_EMIT_PATH = '/api/notifications/emit';
 
 const RATE_WINDOW_MS = 10_000;
 const RATE_MAX_PER_WINDOW = 10;
 
-const optionalText = (max) => z.string().trim().min(1).max(max).optional();
+const optionalText = (max: number) => z.string().trim().min(1).max(max).optional();
 
 const emitBodySchema = z.object({
   title: optionalText(120),
@@ -17,6 +18,44 @@ const emitBodySchema = z.object({
   showWhenFocused: z.boolean().optional(),
 }).refine((value) => value.title || value.body, { message: 'title or body required' });
 
+export interface PluginNotificationPayload {
+  title: string;
+  body: string | undefined;
+  tag: string | undefined;
+  kind: 'plugin';
+  sessionId: string | undefined;
+  directory: string | undefined;
+  requireHidden: boolean;
+}
+
+export interface NotificationEmitSettings {
+  nativeNotificationsEnabled?: boolean;
+  notificationMode?: string;
+}
+
+export interface PluginNotificationEmitterDependencies {
+  readSettingsFromDiskMigrated: () => Promise<NotificationEmitSettings>;
+  emitDesktopNotification: (payload: PluginNotificationPayload) => unknown;
+  broadcastUiNotification: (payload: PluginNotificationPayload, options: { desktopNotificationDelivered: boolean }) => void;
+  now?: () => number;
+}
+
+export interface NotificationEmitResult {
+  status: number;
+  retryAfter?: number;
+  body: { error?: string; delivered?: boolean; reason?: string };
+}
+
+export interface PluginNotificationEmitter {
+  emit: (input: unknown) => Promise<NotificationEmitResult>;
+}
+
+export interface NotificationEmitRouteDependencies {
+  express: { json: (options: { limit: string }) => RequestHandler };
+  isAgentToolRequestAuthorized: (req: Request) => boolean;
+  emitter: PluginNotificationEmitter;
+}
+
 /**
  * Raises a notification on behalf of a plugin or the agent, through the same
  * live delivery the built-in triggers use. `kind` is always `plugin`, so a
@@ -26,7 +65,7 @@ const emitBodySchema = z.object({
  * `emit` resolves to `{ status, body }`: 200 delivered or skipped by settings,
  * 400 invalid input, 429 rate limited (with `retryAfter` seconds).
  */
-export const createPluginNotificationEmitter = (dependencies) => {
+export const createPluginNotificationEmitter = (dependencies: PluginNotificationEmitterDependencies): PluginNotificationEmitter => {
   const {
     readSettingsFromDiskMigrated,
     emitDesktopNotification,
@@ -37,7 +76,7 @@ export const createPluginNotificationEmitter = (dependencies) => {
   let windowStartedAt = 0;
   let windowCount = 0;
 
-  const takeRateSlot = () => {
+  const takeRateSlot = (): number => {
     const current = now();
     if (current - windowStartedAt >= RATE_WINDOW_MS) {
       windowStartedAt = current;
@@ -50,7 +89,7 @@ export const createPluginNotificationEmitter = (dependencies) => {
     return 0;
   };
 
-  const emit = async (input) => {
+  const emit = async (input: unknown): Promise<NotificationEmitResult> => {
     const parsed = emitBodySchema.safeParse(input);
     if (!parsed.success) {
       return { status: 400, body: { error: parsed.error.issues[0]?.message ?? 'invalid notification' } };
@@ -66,7 +105,7 @@ export const createPluginNotificationEmitter = (dependencies) => {
       return { status: 200, body: { delivered: false, reason: 'notifications-disabled' } };
     }
 
-    const payload = {
+    const payload: PluginNotificationPayload = {
       title: parsed.data.title ?? 'OpenChamber',
       body: parsed.data.body,
       tag: parsed.data.tag,
@@ -88,12 +127,12 @@ export const createPluginNotificationEmitter = (dependencies) => {
  * the managed OpenCode (the agent-tool bearer token, checked before API auth)
  * and any client that passes the regular API auth.
  */
-export const registerNotificationEmitRoutes = (app, dependencies) => {
+export const registerNotificationEmitRoutes = (app: Express, dependencies: NotificationEmitRouteDependencies) => {
   const { express, isAgentToolRequestAuthorized, emitter } = dependencies;
 
   const jsonBody = express.json({ limit: '16kb' });
 
-  const respond = async (req, res, next) => {
+  const respond = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const result = await emitter.emit(req.body);
       if (result.retryAfter) res.setHeader('Retry-After', String(result.retryAfter));

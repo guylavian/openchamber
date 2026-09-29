@@ -73,6 +73,9 @@
   "packages/web/server/lib/inherited-env.ts": {
     "require('bun:ffi') as BunFfi": 1
   },
+  "packages/web/server/lib/linear/parse.ts": {
+    "value as number": 1
+  },
   "packages/web/server/lib/magic-prompts/runtime.ts": {
     "JSON.parse(raw) as { overrides?: unknown } | null": 1,
     "error as { code?: unknown }": 1
