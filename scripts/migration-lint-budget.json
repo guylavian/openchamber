@@ -72,6 +72,14 @@
         "reason": "Typing the env value as string | undefined makes the JavaScript's own String() coercion look unnecessary; removing it would change the emitted code."
       }
     ],
+    "packages/web/server/lib/guests/html-tokens.ts": [
+      {
+        "rule": "@typescript-eslint/no-unnecessary-template-expression",
+        "text": "return `${first}`;",
+        "count": 1,
+        "reason": "The JavaScript stringifies the first query value with a template literal; rewriting it as `return first;` would change the emitted code (parity), so the template stays."
+      }
+    ],
     "packages/web/server/lib/magic-prompts/runtime.ts": [
       {
         "rule": "@typescript-eslint/no-dynamic-delete",

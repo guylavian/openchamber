@@ -1,6 +1,6 @@
 const RELATIVE_ASSET = /(<(?:script|link|img)\b[^>]*?\s(?:src|href)=)(["'])(?!https?:|\/\/|data:|#)([^"']+)\2/gi;
 
-const withToken = (url, token) => {
+const withToken = (url: string, token: string): string => {
   if (url.includes('oc_url_token=')) {
     return url;
   }
@@ -8,10 +8,10 @@ const withToken = (url, token) => {
   return `${url}${joiner}oc_url_token=${encodeURIComponent(token)}`;
 };
 
-const firstQueryValue = (value) => (Array.isArray(value) ? value[0] : value);
+const firstQueryValue = (value: string | string[] | null | undefined) => (Array.isArray(value) ? value[0] : value);
 
 /** Query `oc_url_token` for guest HTML. Empty when the query is missing or not a token. */
-export const parseGuestUrlToken = (value) => {
+export const parseGuestUrlToken = (value: string | string[] | null | undefined): string => {
   const first = firstQueryValue(value);
   if (first == null || first === '') {
     return '';
@@ -22,30 +22,30 @@ export const parseGuestUrlToken = (value) => {
 const SCRIPT_SRC = /<script\b[^>]*?\ssrc=(["'])(?!https?:|\/\/|data:|#)([^"']+)\1/gi;
 
 /** Relative `script src` values. Absolute, protocol-relative, data, and hash URLs are skipped. */
-export const listRelativeGuestScriptHrefs = (html) => {
+export const listRelativeGuestScriptHrefs = (html: string): string[] => {
   if (html === '') {
     return [];
   }
-  const hrefs = [];
+  const hrefs: string[] = [];
   SCRIPT_SRC.lastIndex = 0;
   let match = SCRIPT_SRC.exec(html);
   while (match) {
-    hrefs.push(match[2]);
+    hrefs.push(match[2]!);
     match = SCRIPT_SRC.exec(html);
   }
   return hrefs;
 };
 
 /** Resolve a relative href against the entry HTML path. Stays inside the package. */
-export const resolveGuestHtmlRelativePath = (entry, href) => {
+export const resolveGuestHtmlRelativePath = (entry: string, href: string): string | null => {
   const withoutHash = href.split('#')[0] ?? '';
-  const raw = withoutHash.split('?')[0];
+  const raw = withoutHash.split('?')[0]!;
   if (raw === '' || raw.includes('\0') || raw.includes('\\')) {
     return null;
   }
   const entryDir = entry.includes('/') ? entry.slice(0, entry.lastIndexOf('/')) : '';
   const combined = entryDir === '' ? raw : `${entryDir}/${raw}`;
-  const segments = [];
+  const segments: string[] = [];
   for (const part of combined.split('/')) {
     if (part === '' || part === '.') {
       continue;
@@ -63,11 +63,11 @@ export const resolveGuestHtmlRelativePath = (entry, href) => {
 };
 
 /** Copy the iframe URL token onto relative script/link/img URLs in guest HTML. */
-export const injectGuestAssetTokens = (html, token) => {
+export const injectGuestAssetTokens = (html: string, token: string): string => {
   if (!token) {
     return html;
   }
-  return html.replace(RELATIVE_ASSET, (_match, prefix, quote, url) => {
+  return html.replace(RELATIVE_ASSET, (_match: string, prefix: string, quote: string, url: string) => {
     return `${prefix}${quote}${withToken(url, token)}${quote}`;
   });
 };

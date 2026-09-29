@@ -66,6 +66,10 @@
   "packages/web/server/lib/foreman/task-workspaces.ts": {
     "error as { code?: unknown } | null | undefined": 1
   },
+  "packages/web/server/lib/guests/html-tokens.ts": {
+    "match[2]!": 1,
+    "withoutHash.split('?')[0]!": 1
+  },
   "packages/web/server/lib/inherited-env.ts": {
     "require('bun:ffi') as BunFfi": 1
   },
@@ -96,6 +100,9 @@
     "JSON.parse(raw) as ClaimFileJson | null": 1,
     "error as Error | undefined": 1,
     "error as NodeJS.ErrnoException | undefined": 1
+  },
+  "packages/web/server/lib/security/bind-host.ts": {
+    "match[1]!": 1
   },
   "packages/web/server/lib/session-lineage.ts": {
     "isChildById.keys().next().value!": 1

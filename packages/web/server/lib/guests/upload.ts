@@ -8,13 +8,22 @@
 
 const DEFAULT_UPLOAD_MAX_BYTES = 50 * 1024 * 1024;
 
-export const guestUploadMaxBytes = () => {
+export interface GuestUploadRequest extends AsyncIterable<Buffer | string> {
+  headers?: Record<string, string | string[] | undefined>;
+  resume?: () => void;
+}
+
+export type GuestUploadBodyResult =
+  | { ok: true; buffer: Buffer }
+  | { ok: false; status: 413 | 415; error: 'unsupported-media-type' | 'too-large' };
+
+export const guestUploadMaxBytes = (): number => {
   const raw = Number(process.env.OPENCHAMBER_GUEST_UPLOAD_MAX_BYTES);
   if (Number.isFinite(raw) && raw > 0) return Math.floor(raw);
   return DEFAULT_UPLOAD_MAX_BYTES;
 };
 
-const isOctetStream = (contentType) => (
+const isOctetStream = (contentType: string | string[] | undefined): boolean => (
   String(contentType || '').toLowerCase().startsWith('application/octet-stream')
 );
 
@@ -25,7 +34,7 @@ const isOctetStream = (contentType) => (
  * declared `Content-Length` or the bytes actually received pass `maxBytes`.
  * The declared-size refusal drains the request so the socket stays reusable.
  */
-export const readGuestUploadBody = async (req, maxBytes) => {
+export const readGuestUploadBody = async (req: GuestUploadRequest, maxBytes: number): Promise<GuestUploadBodyResult> => {
   if (!isOctetStream(req.headers?.['content-type'])) {
     req.resume?.();
     return { ok: false, status: 415, error: 'unsupported-media-type' };
@@ -35,7 +44,7 @@ export const readGuestUploadBody = async (req, maxBytes) => {
     req.resume?.();
     return { ok: false, status: 413, error: 'too-large' };
   }
-  const chunks = [];
+  const chunks: Buffer[] = [];
   let received = 0;
   for await (const chunk of req) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
