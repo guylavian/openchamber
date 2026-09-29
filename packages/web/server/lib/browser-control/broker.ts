@@ -21,11 +21,52 @@
  *   because the alternative — assuming success — would be a lie.
  */
 
+/** What the broker publishes for the client that owns the browser view. */
+export interface BrowserControlRequest {
+  requestId: string;
+  action: string;
+  parameters: Record<string, unknown>;
+}
+
+/** How one request ended: the client's data, or why it failed. */
+type BrowserControlOutcome =
+  | { ok: true; data: unknown }
+  | { ok: false; message: string; status: number };
+
+interface PendingRequest {
+  finish: (outcome: BrowserControlOutcome) => void;
+  timer: NodeJS.Timeout;
+  claimed: boolean;
+}
+
+export interface BrowserControlBrokerDeps {
+  /** Publishes the request; returns how many clients could serve it. */
+  emitRequest?: (request: BrowserControlRequest) => number;
+  createId?: () => string;
+  setTimer?: (callback: () => void, ms: number) => NodeJS.Timeout;
+  clearTimer?: (timer: NodeJS.Timeout) => void;
+}
+
+export interface BrowserControlRequestOptions {
+  /** Checked at runtime: anything that is not a positive number falls back to the default. */
+  timeoutMs?: unknown;
+  signal?: AbortSignal;
+}
+
+/** The result a client posts back for a request it performed. */
+export interface BrowserControlClientResult {
+  ok?: unknown;
+  data?: unknown;
+  error?: unknown;
+}
+
 const DEFAULT_TIMEOUT_MS = 20_000;
 const MAX_TIMEOUT_MS = 120_000;
 
 export class BrowserControlError extends Error {
-  constructor(message, status = 400) {
+  declare status: number;
+
+  constructor(message: string, status = 400) {
     super(message);
     this.name = 'BrowserControlError';
     this.status = status;
@@ -37,14 +78,14 @@ export const createBrowserControlBroker = ({
   createId,
   setTimer = setTimeout,
   clearTimer = clearTimeout,
-} = {}) => {
+}: BrowserControlBrokerDeps = {}) => {
   if (typeof emitRequest !== 'function') {
     throw new TypeError('emitRequest is required');
   }
 
-  const pending = new Map();
+  const pending = new Map<string, PendingRequest>();
 
-  const settle = (requestId, outcome) => {
+  const settle = (requestId: string, outcome: BrowserControlOutcome) => {
     const entry = pending.get(requestId);
     if (!entry) return false;
     pending.delete(requestId);
@@ -63,7 +104,7 @@ export const createBrowserControlBroker = ({
      * Publishes one browser action and resolves with the client's result.
      * Rejects with a BrowserControlError the agent can act on.
      */
-    request(action, parameters = {}, { timeoutMs = DEFAULT_TIMEOUT_MS, signal } = {}) {
+    request(action: string, parameters: Record<string, unknown> = {}, { timeoutMs = DEFAULT_TIMEOUT_MS, signal }: BrowserControlRequestOptions = {}): Promise<unknown> {
       const requestId = typeof createId === 'function' ? createId() : `browser-${Date.now()}-${pending.size}`;
       const boundedTimeout = Math.min(Math.max(1_000, Number(timeoutMs) || DEFAULT_TIMEOUT_MS), MAX_TIMEOUT_MS);
 
@@ -82,8 +123,8 @@ export const createBrowserControlBroker = ({
         ));
       }
 
-      return new Promise((resolve, reject) => {
-        const finish = (outcome) => {
+      return new Promise<unknown>((resolve, reject) => {
+        const finish = (outcome: BrowserControlOutcome) => {
           if (signal && onAbort) signal.removeEventListener('abort', onAbort);
           if (outcome.ok) resolve(outcome.data ?? null);
           else reject(new BrowserControlError(outcome.message || 'Browser action failed', outcome.status || 400));
@@ -97,7 +138,7 @@ export const createBrowserControlBroker = ({
             reject(new BrowserControlError('Browser action was cancelled', 499));
             return;
           }
-          signal.addEventListener('abort', onAbort, { once: true });
+          signal.addEventListener('abort', onAbort!, { once: true });
         }
 
         const timer = setTimer(() => {
@@ -119,7 +160,7 @@ export const createBrowserControlBroker = ({
      * unknown id is also a refusal: the request has already been settled, and
      * acting on it now would change a page nobody is waiting on.
      */
-    claim(requestId) {
+    claim(requestId: unknown) {
       if (typeof requestId !== 'string' || !requestId) return false;
       const entry = pending.get(requestId);
       if (!entry || entry.claimed) return false;
@@ -132,7 +173,7 @@ export const createBrowserControlBroker = ({
      * which is the normal outcome for a response that lost a race with the
      * timeout and must not be treated as an error.
      */
-    resolve(requestId, result) {
+    resolve(requestId: unknown, result: BrowserControlClientResult | null | undefined) {
       if (typeof requestId !== 'string' || !requestId) return false;
       if (result && result.ok === true) {
         return settle(requestId, { ok: true, data: result.data ?? null });
@@ -145,7 +186,7 @@ export const createBrowserControlBroker = ({
     },
 
     /** Fails everything in flight, e.g. when the owning client disconnects. */
-    rejectAll(message) {
+    rejectAll(message: string) {
       for (const requestId of [...pending.keys()]) {
         settle(requestId, { ok: false, message, status: 503 });
       }

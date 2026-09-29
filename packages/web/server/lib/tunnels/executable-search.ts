@@ -2,7 +2,22 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-const getEnvValue = (env, keys) => {
+export interface ExecutableSearchOptions {
+  env?: NodeJS.ProcessEnv;
+  platform?: NodeJS.Platform;
+}
+
+/** The file checks the search makes (node:fs). */
+export interface ExecutableSearchFs {
+  statSync: (path: string) => { isFile: () => boolean };
+  accessSync: (path: string, mode?: number) => void;
+}
+
+export interface FindExecutableOptions extends ExecutableSearchOptions {
+  fsLike?: ExecutableSearchFs;
+}
+
+const getEnvValue = (env: NodeJS.ProcessEnv | undefined, keys: string[]) => {
   for (const key of keys) {
     const value = env?.[key];
     if (typeof value === 'string' && value.trim().length > 0) {
@@ -12,12 +27,12 @@ const getEnvValue = (env, keys) => {
   return '';
 };
 
-const normalizeSearchDirectoryKey = (directory, platform) => {
+const normalizeSearchDirectoryKey = (directory: string, platform: NodeJS.Platform) => {
   const trimmed = typeof directory === 'string' ? directory.trim() : '';
   return platform === 'win32' ? trimmed.toLowerCase() : trimmed;
 };
 
-const getWindowsAppsDirectory = (env) => {
+const getWindowsAppsDirectory = (env: NodeJS.ProcessEnv) => {
   const localAppData = getEnvValue(env, ['LOCALAPPDATA', 'LocalAppData', 'localappdata']);
   if (localAppData) {
     return path.win32.join(localAppData, 'Microsoft', 'WindowsApps');
@@ -31,7 +46,7 @@ const getWindowsAppsDirectory = (env) => {
   return path.win32.join(os.homedir(), 'AppData', 'Local', 'Microsoft', 'WindowsApps');
 };
 
-export function getExecutableSearchDirectories({ env = process.env, platform = process.platform } = {}) {
+export function getExecutableSearchDirectories({ env = process.env, platform = process.platform }: ExecutableSearchOptions = {}): string[] {
   const delimiter = platform === 'win32' ? ';' : ':';
   const pathValue = getEnvValue(env, ['PATH', 'Path', 'path']);
   const directories = pathValue.split(delimiter).map((entry) => entry.trim()).filter(Boolean);
@@ -40,8 +55,8 @@ export function getExecutableSearchDirectories({ env = process.env, platform = p
     directories.push(getWindowsAppsDirectory(env));
   }
 
-  const seen = new Set();
-  const unique = [];
+  const seen = new Set<string>();
+  const unique: string[] = [];
   for (const directory of directories) {
     const key = normalizeSearchDirectoryKey(directory, platform);
     if (!key || seen.has(key)) {
@@ -54,7 +69,7 @@ export function getExecutableSearchDirectories({ env = process.env, platform = p
   return unique;
 }
 
-export function createExecutableSearchEnv({ env = process.env, platform = process.platform } = {}) {
+export function createExecutableSearchEnv({ env = process.env, platform = process.platform }: ExecutableSearchOptions = {}): NodeJS.ProcessEnv {
   const delimiter = platform === 'win32' ? ';' : ':';
   const pathValue = getExecutableSearchDirectories({ env, platform }).join(delimiter);
   const nextEnv = { ...env };
@@ -70,7 +85,7 @@ export function createExecutableSearchEnv({ env = process.env, platform = proces
   return nextEnv;
 }
 
-const getExecutableExtensions = ({ env = process.env, platform = process.platform } = {}) => {
+const getExecutableExtensions = ({ env = process.env, platform = process.platform }: ExecutableSearchOptions = {}) => {
   if (platform !== 'win32') {
     return [''];
   }
@@ -82,11 +97,11 @@ const getExecutableExtensions = ({ env = process.env, platform = process.platfor
     .map((ext) => (ext.startsWith('.') ? ext : `.${ext}`));
 };
 
-export function findExecutableOnPath(command, {
+export function findExecutableOnPath(command: string, {
   env = process.env,
   platform = process.platform,
   fsLike = fs,
-} = {}) {
+}: FindExecutableOptions = {}): string | null {
   if (typeof command !== 'string' || command.trim().length === 0) {
     return null;
   }
@@ -122,7 +137,7 @@ export function findExecutableOnPath(command, {
   return null;
 }
 
-export function resolveExecutableLaunchTarget(command, options = {}) {
+export function resolveExecutableLaunchTarget(command: string, options: FindExecutableOptions = {}): { command: string; env: NodeJS.ProcessEnv } | null {
   const platform = options.platform || process.platform;
   const resolvedPath = findExecutableOnPath(command, { ...options, platform });
   const env = createExecutableSearchEnv({ env: options.env || process.env, platform });

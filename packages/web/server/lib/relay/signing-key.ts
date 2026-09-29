@@ -5,6 +5,31 @@
 // `settings.relaySigningKey = { privateJwk, publicJwk }` — existing installs'
 // serverId must stay stable because push token binding depends on it.
 
+import type * as NodeCrypto from 'node:crypto';
+
+/** `settings.relaySigningKey` as written below; the reads still check both halves. */
+export interface StoredRelaySigningKey {
+  privateJwk: NodeCrypto.JsonWebKey;
+  publicJwk: NodeCrypto.JsonWebKey;
+}
+
+export interface RelaySigningSettings {
+  [key: string]: unknown;
+  relaySigningKey?: StoredRelaySigningKey | null;
+}
+
+export interface RelaySigningKeyDeps {
+  crypto: typeof NodeCrypto;
+  readSettingsFromDiskMigrated: () => Promise<RelaySigningSettings>;
+  writeSettingsToDisk: (settings: RelaySigningSettings) => Promise<void>;
+  readSettingsStrict?: () => Promise<RelaySigningSettings>;
+}
+
+export interface RelaySigningKeypair {
+  privateKey: NodeCrypto.KeyObject;
+  publicJwk: NodeCrypto.JsonWebKey;
+}
+
 /**
  * @param {{
  *   crypto: typeof import('node:crypto'),
@@ -14,8 +39,8 @@
  * }} deps
  * @returns {Promise<{ privateKey: import('node:crypto').KeyObject, publicJwk: JsonWebKey }>}
  */
-export const getOrCreateRelaySigningKeypair = async ({ crypto, readSettingsFromDiskMigrated, writeSettingsToDisk, readSettingsStrict }) => {
-  const toKeypair = (stored) => ({
+export const getOrCreateRelaySigningKeypair = async ({ crypto, readSettingsFromDiskMigrated, writeSettingsToDisk, readSettingsStrict }: RelaySigningKeyDeps): Promise<RelaySigningKeypair> => {
+  const toKeypair = (stored: StoredRelaySigningKey) => ({
     privateKey: crypto.createPrivateKey({ key: stored.privateJwk, format: 'jwk' }),
     publicJwk: stored.publicJwk,
   });
@@ -51,7 +76,7 @@ export const getOrCreateRelaySigningKeypair = async ({ crypto, readSettingsFromD
 // Fixed key order so the hash is stable regardless of stored JSON field order.
 // Byte-for-byte mirror of canonicalJwk in openchamber-website apps/api relay-auth.ts.
 /** @param {JsonWebKey} jwk */
-export const canonicalPublicJwkString = (jwk) =>
+export const canonicalPublicJwkString = (jwk: NodeCrypto.JsonWebKey) =>
   JSON.stringify({ crv: jwk.crv, kty: jwk.kty, x: jwk.x, y: jwk.y });
 
 /**
@@ -60,7 +85,7 @@ export const canonicalPublicJwkString = (jwk) =>
  * @param {{ crypto: typeof import('node:crypto') }} deps
  * @param {JsonWebKey} publicJwk
  */
-export const deriveServerId = ({ crypto }, publicJwk) =>
+export const deriveServerId = ({ crypto }: { crypto: typeof NodeCrypto }, publicJwk: NodeCrypto.JsonWebKey) =>
   crypto.createHash('sha256').update(canonicalPublicJwkString(publicJwk)).digest('base64url');
 
 /**
@@ -69,5 +94,5 @@ export const deriveServerId = ({ crypto }, publicJwk) =>
  * @param {import('node:crypto').KeyObject} privateKey
  * @param {string} message
  */
-export const signRelayMessage = ({ crypto }, privateKey, message) =>
+export const signRelayMessage = ({ crypto }: { crypto: typeof NodeCrypto }, privateKey: NodeCrypto.KeyObject, message: string) =>
   crypto.sign('SHA256', Buffer.from(message), { key: privateKey, dsaEncoding: 'ieee-p1363' }).toString('base64url');

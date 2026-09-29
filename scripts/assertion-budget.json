@@ -4,6 +4,9 @@
     "error as { code?: unknown }": 4,
     "parsed as SettingsRecord": 1
   },
+  "packages/web/server/lib/browser-control/broker.ts": {
+    "onAbort!": 1
+  },
   "packages/web/server/lib/dictation/audio.ts": {
     "int16[i]!": 1,
     "match[1]!": 1,
@@ -16,6 +19,12 @@
   },
   "packages/web/server/lib/dictation/local/sherpa-loader.ts": {
     "error as ErrorLike": 2
+  },
+  "packages/web/server/lib/event-stream/protocol.ts": {
+    "JSON.parse(payloadText) as SseJson": 1
+  },
+  "packages/web/server/lib/event-stream/translate-v2.ts": {
+    "payload.location as WireLocation | null | undefined": 1
   },
   "packages/web/server/lib/foreman/execution.ts": {
     "({ verdict: 'idle' }) as ExecutionTruth": 1,
@@ -74,6 +83,20 @@
   "packages/web/server/lib/permission-auto-accept/modes.ts": {
     "value as PermissionMode": 1
   },
+  "packages/web/server/lib/relay/e2ee.ts": {
+    "BASE64URL_ALPHABET[((b0 & 0x03) << 4) | ((b1 ?? 0) >> 4)]!": 1,
+    "BASE64URL_ALPHABET[((b1 & 0x0f) << 2) | ((b2 ?? 0) >> 6)]!": 1,
+    "BASE64URL_ALPHABET[b0 >> 2]!": 1,
+    "BASE64URL_ALPHABET[b2 & 0x3f]!": 1,
+    "JSON.parse(raw) as HandshakeJson": 1,
+    "bytes[i]!": 1,
+    "source[offset + i]!": 1
+  },
+  "packages/web/server/lib/relay/host-lock.ts": {
+    "JSON.parse(raw) as ClaimFileJson | null": 1,
+    "error as Error | undefined": 1,
+    "error as NodeJS.ErrnoException | undefined": 1
+  },
   "packages/web/server/lib/session-lineage.ts": {
     "isChildById.keys().next().value!": 1
   },
@@ -86,6 +109,12 @@
   "packages/web/server/lib/skills-catalog/source.ts": {
     "pathSegments[pathSegments.length - 1]!": 1,
     "raw.split('@')[1]!": 2
+  },
+  "packages/web/server/lib/terminal/shutdown.ts": {
+    "error as Error": 1,
+    "error as NodeJS.ErrnoException": 3,
+    "fields[3]!": 1,
+    "owned.get(current.parent)!": 1
   },
   "packages/web/server/lib/text/summarization.ts": {
     "(sentences[0] || normalized) .split(/[;:()-]\\s+/)[0]!": 1,
@@ -105,6 +134,16 @@
     "scores.uk!": 1,
     "scores[bestOf(scores, marked)]!": 1,
     "scores[marked]!": 1
+  },
+  "packages/web/server/lib/tunnels/managed-config.ts": {
+    "JSON.parse(legacyRaw) as ManagedTunnelsFileJson | null": 1,
+    "JSON.parse(raw) as ManagedTunnelsFileJson | null": 1,
+    "entry.updatedAt as number": 1,
+    "error as NodeJS.ErrnoException": 2
+  },
+  "packages/web/server/lib/tunnels/types.ts": {
+    "(input.hostname ?? defaults.hostname) as string": 1,
+    "(input.token ?? defaults.token) as string": 1
   },
   "packages/web/server/lib/walkthrough/hunks.ts": {
     "current.hunkDigests!": 2,

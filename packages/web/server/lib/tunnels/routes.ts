@@ -1,4 +1,152 @@
-export const createTunnelRoutesRuntime = (dependencies) => {
+import type { ManagedRemoteTunnelConfig, ManagedRemoteTunnelTokenInput } from './managed-config.js';
+import type {
+  TUNNEL_MODE_MANAGED_LOCAL,
+  TUNNEL_MODE_MANAGED_REMOTE,
+  TUNNEL_MODE_QUICK,
+  TUNNEL_PROVIDER_CLOUDFLARE,
+  TunnelProviderCapabilities,
+  TunnelServiceError,
+  isSupportedTunnelMode,
+  normalizeOptionalPath,
+  normalizeTunnelMode,
+  normalizeTunnelProvider,
+} from './types.js';
+
+/** Query string and JSON body fields as Express parses them; every one is checked. */
+type TunnelRouteFields = Record<string, unknown>;
+
+interface TunnelRouteRequest {
+  query?: TunnelRouteFields;
+  body?: TunnelRouteFields;
+}
+
+interface TunnelRouteResponse {
+  status: (code: number) => TunnelRouteResponse;
+  json: (body: unknown) => unknown;
+}
+
+type TunnelRouteHandler = (req: TunnelRouteRequest, res: TunnelRouteResponse) => unknown;
+
+/** The Express app surface the tunnel routes register on. */
+export interface TunnelRoutesApp {
+  get: (path: string, handler: TunnelRouteHandler) => unknown;
+  post: (path: string, handler: TunnelRouteHandler) => unknown;
+  put: (path: string, handler: TunnelRouteHandler) => unknown;
+}
+
+interface TunnelAvailability {
+  available?: boolean;
+  version?: string | null;
+  dependency?: unknown;
+  installCommand?: string | null;
+  installUrl?: string | null;
+  platform?: string;
+  message?: string | null;
+}
+
+/** A provider's diagnosis of one mode, as the doctor route returns it. */
+interface TunnelModeDiagnosis {
+  mode?: unknown;
+}
+
+interface TunnelDiagnosis {
+  providerChecks?: unknown;
+  modes?: (TunnelModeDiagnosis | null | undefined)[];
+}
+
+/** A registered provider; each one declares its capabilities (the routes still default them). */
+interface TunnelProvider {
+  capabilities: TunnelProviderCapabilities;
+  diagnose?: (request: TunnelRouteFields, context: { capabilities: TunnelProviderCapabilities }) => Promise<TunnelDiagnosis | null | undefined>;
+}
+
+interface TunnelStartResult {
+  provider: string;
+  publicUrl: string;
+  activeMode: string;
+  providerMetadata: unknown;
+}
+
+/** A tunnel start request after the route has normalized every field. */
+export interface NormalizedTunnelRouteStart {
+  provider: string;
+  mode: string;
+  intent: string | undefined;
+  hostname: string | undefined;
+  token: string;
+  configPath: string | null | undefined;
+  selectedPresetId: string;
+  selectedPresetName: string;
+}
+
+interface TunnelDoctorCheck {
+  id: string;
+  label: string;
+  status: string;
+  detail: string;
+}
+
+export interface TunnelRoutesDependencies {
+  crypto: { randomUUID: () => string };
+  URL: typeof URL;
+  tunnelService: {
+    resolveActiveMode: () => string | null;
+    resolveActiveProvider: () => string | null;
+    start: (request: {
+      provider: string;
+      mode: string;
+      intent: string | undefined;
+      configPath: string | null | undefined;
+      token: string;
+      hostname: string | undefined;
+    }) => Promise<TunnelStartResult>;
+    checkAvailability: (providerId: string) => Promise<TunnelAvailability>;
+    getPublicUrl: () => string | null;
+    getProviderMetadata: () => unknown;
+    stop: () => unknown;
+  };
+  tunnelProviderRegistry: {
+    get: (providerId: string) => TunnelProvider | null;
+    listCapabilities: () => unknown;
+  };
+  tunnelAuthController: {
+    listTunnelSessions: () => unknown;
+    getActiveTunnelId: () => string | null;
+    getActiveTunnelHost: () => string | null;
+    getActiveTunnelMode: () => string | null;
+    setActiveTunnel: (tunnel: { tunnelId: string; publicUrl: string; mode: string }) => void;
+    getBootstrapStatus: () => { hasBootstrapToken: boolean; bootstrapExpiresAt: number | null };
+    revokeTunnelArtifacts: (tunnelId: string) => { revokedBootstrapCount: number; invalidatedSessionCount: number };
+    issueBootstrapToken: (options: { ttlMs: number | null }) => { token: string; expiresAt: number | null };
+    clearActiveTunnel: () => void;
+  };
+  hasUiPassword: boolean;
+  readSettingsFromDiskMigrated: () => Promise<TunnelRouteFields | null | undefined>;
+  readManagedRemoteTunnelConfigFromDisk: () => Promise<ManagedRemoteTunnelConfig>;
+  normalizeTunnelProvider: typeof normalizeTunnelProvider;
+  normalizeTunnelMode: typeof normalizeTunnelMode;
+  normalizeOptionalPath: typeof normalizeOptionalPath;
+  normalizeManagedRemoteTunnelHostname: (value: unknown) => string | undefined;
+  normalizeTunnelBootstrapTtlMs: (value: unknown) => number | null;
+  normalizeTunnelSessionTtlMs: (value: unknown) => number;
+  isSupportedTunnelMode: typeof isSupportedTunnelMode;
+  upsertManagedRemoteTunnelToken: (input: ManagedRemoteTunnelTokenInput) => Promise<void>;
+  resolveManagedRemoteTunnelToken: (query: { presetId: string; hostname: string | undefined }) => Promise<string>;
+  TUNNEL_MODE_QUICK: typeof TUNNEL_MODE_QUICK;
+  TUNNEL_MODE_MANAGED_LOCAL: typeof TUNNEL_MODE_MANAGED_LOCAL;
+  TUNNEL_MODE_MANAGED_REMOTE: typeof TUNNEL_MODE_MANAGED_REMOTE;
+  TUNNEL_PROVIDER_CLOUDFLARE: typeof TUNNEL_PROVIDER_CLOUDFLARE;
+  TunnelServiceError: typeof TunnelServiceError;
+  getActivePort: () => number | null;
+  getRuntimeManagedRemoteTunnelHostname: () => string | undefined;
+  setRuntimeManagedRemoteTunnelHostname: (hostname: string | undefined) => void;
+  getRuntimeManagedRemoteTunnelToken: () => string;
+  setRuntimeManagedRemoteTunnelToken: (token: string) => void;
+  getActiveTunnelController: () => unknown;
+  setActiveTunnelController: (controller: null) => void;
+}
+
+export const createTunnelRoutesRuntime = (dependencies: TunnelRoutesDependencies) => {
   const {
     crypto,
     URL,
@@ -42,7 +190,7 @@ export const createTunnelRoutesRuntime = (dependencies) => {
     return TUNNEL_MODE_QUICK;
   };
 
-  const resolveNormalizedTunnelHost = (publicUrl) => {
+  const resolveNormalizedTunnelHost = (publicUrl: string) => {
     if (typeof publicUrl !== 'string' || publicUrl.trim().length === 0) {
       return null;
     }
@@ -53,7 +201,7 @@ export const createTunnelRoutesRuntime = (dependencies) => {
     }
   };
 
-  const resolvePreferredTunnelProvider = async (reqBody = null) => {
+  const resolvePreferredTunnelProvider = async (reqBody: TunnelRouteFields | null = null) => {
     if (typeof reqBody?.provider === 'string' && reqBody.provider.trim().length > 0) {
       return normalizeTunnelProvider(reqBody.provider);
     }
@@ -74,7 +222,7 @@ export const createTunnelRoutesRuntime = (dependencies) => {
     configPath,
     selectedPresetId,
     selectedPresetName,
-  }) => {
+  }: NormalizedTunnelRouteStart) => {
     if (!hasUiPassword) {
       throw new Error('A UI password is required before starting a public tunnel. Restart OpenChamber with --ui-password.');
     }
@@ -110,8 +258,13 @@ export const createTunnelRoutesRuntime = (dependencies) => {
     };
   };
 
-  const createGenericModeChecks = ({ modeKey, requiredFields, doctorRequest, startupReady }) => {
-    const checks = [
+  const createGenericModeChecks = ({ modeKey, requiredFields, doctorRequest, startupReady }: {
+    modeKey: string;
+    requiredFields: string[];
+    doctorRequest: TunnelRouteFields;
+    startupReady: boolean;
+  }) => {
+    const checks: TunnelDoctorCheck[] = [
       {
         id: 'startup_readiness',
         label: 'Provider startup readiness',
@@ -152,7 +305,11 @@ export const createTunnelRoutesRuntime = (dependencies) => {
     };
   };
 
-  const runTunnelDoctor = async ({ providerId, modeFilter, doctorRequest }) => {
+  const runTunnelDoctor = async ({ providerId, modeFilter, doctorRequest }: {
+    providerId: string;
+    modeFilter: string | null;
+    doctorRequest: TunnelRouteFields;
+  }) => {
     const provider = tunnelProviderRegistry.get(providerId);
     if (!provider) {
       throw new TunnelServiceError('provider_unsupported', `Unsupported tunnel provider: ${providerId}`);
@@ -187,7 +344,7 @@ export const createTunnelRoutesRuntime = (dependencies) => {
 
     const availability = await tunnelService.checkAvailability(providerId);
     const dependencyAvailable = Boolean(availability?.available);
-    const providerChecks = [{
+    const providerChecks: TunnelDoctorCheck[] = [{
       id: 'dependency',
       label: 'Provider dependency',
       status: dependencyAvailable ? 'pass' : 'fail',
@@ -213,7 +370,7 @@ export const createTunnelRoutesRuntime = (dependencies) => {
     };
   };
 
-  const registerRoutes = (app) => {
+  const registerRoutes = (app: TunnelRoutesApp) => {
     app.get('/api/openchamber/tunnel/check', async (req, res) => {
       try {
         const requestedProvider = typeof req?.query?.provider === 'string' && req.query.provider.trim().length > 0
@@ -236,7 +393,7 @@ export const createTunnelRoutesRuntime = (dependencies) => {
       }
     });
 
-    const handleTunnelDoctor = async (req, res) => {
+    const handleTunnelDoctor = async (req: TunnelRouteRequest, res: TunnelRouteResponse) => {
       try {
         const params = req.query || {};
         const body = req.body || {};

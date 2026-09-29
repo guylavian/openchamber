@@ -19,12 +19,27 @@
  *   which is the same signal v1 gave once per turn.
  */
 
-const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+type WireRecord = Record<string, unknown>;
 
-const trimmed = (value) => (typeof value === 'string' ? value.trim() : '');
+/** `location` as the directory lookup reads it: `?.directory` is undefined for any other value. */
+interface WireLocation {
+  directory?: unknown;
+}
 
-const compact = (value) => {
-  const result = {};
+/** One event in the server's own vocabulary. */
+export interface TranslatedWireEvent {
+  type: string;
+  id: string;
+  created: unknown;
+  properties: WireRecord;
+}
+
+const isRecord = (value: unknown): value is WireRecord => value !== null && typeof value === 'object' && !Array.isArray(value);
+
+const trimmed = (value: unknown) => (typeof value === 'string' ? value.trim() : '');
+
+const compact = (value: object) => {
+  const result: WireRecord = {};
   for (const [key, entry] of Object.entries(value)) {
     if (entry !== undefined) result[key] = entry;
   }
@@ -32,13 +47,13 @@ const compact = (value) => {
 };
 
 /** Directory an event belongs to. Execution events carry no location. */
-export const wireEventDirectory = (payload) => {
+export const wireEventDirectory = (payload: unknown) => {
   if (!isRecord(payload)) return '';
-  return trimmed(payload.location?.directory);
+  return trimmed((payload.location as WireLocation | null | undefined)?.directory);
 };
 
 /** Structured errors travel as `{ type, message }`; consumers still read `name`. */
-const toServerError = (error) => {
+const toServerError = (error: unknown) => {
   if (!isRecord(error)) return { name: 'Error', type: 'Error', message: typeof error === 'string' ? error : '' };
   const type = trimmed(error.type) || 'Error';
   return compact({ name: type, type, message: trimmed(error.message), status: error.status });
@@ -57,7 +72,7 @@ const ABORTED_ERROR = {
  * consumers deduplicate on the id and route their own OpenCode calls by
  * directory.
  */
-export function translateWireEvent(payload) {
+export function translateWireEvent(payload: unknown): TranslatedWireEvent[] {
   if (!isRecord(payload)) return [];
   const type = trimmed(payload.type);
   if (!type) return [];
@@ -65,7 +80,7 @@ export function translateWireEvent(payload) {
   const directory = wireEventDirectory(payload);
   const created = Number.isFinite(payload.created) ? payload.created : Date.now();
 
-  const event = (outType, properties) => ({
+  const event = (outType: string, properties: object): TranslatedWireEvent => ({
     type: outType,
     id: typeof payload.id === 'string' ? payload.id : '',
     created,
@@ -74,7 +89,7 @@ export function translateWireEvent(payload) {
 
   const sessionID = trimmed(data.sessionID);
 
-  const status = (statusValue) => event('session.status', { sessionID, status: statusValue });
+  const status = (statusValue: unknown) => event('session.status', { sessionID, status: statusValue });
 
   switch (type) {
     case 'server.connected':
@@ -307,7 +322,7 @@ export function translateWireEvent(payload) {
  * Convenience for consumers that hand one payload to one handler: translates
  * and forwards every resulting event in order.
  */
-export function forwardTranslatedWireEvent(payload, handle) {
+export function forwardTranslatedWireEvent(payload: unknown, handle: ((event: TranslatedWireEvent) => void) | null | undefined): void {
   if (typeof handle !== 'function') return;
   for (const translated of translateWireEvent(payload)) handle(translated);
 }

@@ -18,19 +18,30 @@
 // atomicity (the relay worker still enforces a single host); the claim only
 // decides which process KEEPS retrying and which stands down.
 
-/**
- * @param {{
- *   lockFilePath: string,
- *   fs?: typeof import('node:fs'),
- *   process?: NodeJS.Process,
- *   logger?: Pick<Console, 'warn'>,
- * }} deps
- */
-export const createRelayHostLock = ({ lockFilePath, fs, process: proc, logger = console }) => {
+/** The file operations the claim uses (node:fs). */
+export interface RelayHostLockFs {
+  readFileSync: (path: string, encoding: 'utf8') => string;
+  writeFileSync: (path: string, data: string) => void;
+  unlinkSync: (path: string) => void;
+}
+
+export interface RelayHostLockDeps {
+  lockFilePath: string;
+  fs: RelayHostLockFs;
+  process: Pick<NodeJS.Process, 'pid' | 'kill'>;
+  logger?: Pick<Console, 'warn'>;
+}
+
+/** The claim file's content as written by writeClaim; anything else parses to no valid claim. */
+interface ClaimFileJson {
+  pid?: unknown;
+}
+
+export const createRelayHostLock = ({ lockFilePath, fs, process: proc, logger = console }: RelayHostLockDeps) => {
   const fsImpl = fs;
   const selfPid = proc.pid;
 
-  const isPidAlive = (pid) => {
+  const isPidAlive = (pid: number) => {
     if (!Number.isInteger(pid) || pid <= 0) return false;
     try {
       proc.kill(pid, 0);
@@ -38,14 +49,14 @@ export const createRelayHostLock = ({ lockFilePath, fs, process: proc, logger = 
     } catch (error) {
       // EPERM means the process exists but belongs to another user — treat as
       // alive; only ESRCH (no such process) means the claim is stale.
-      return error?.code === 'EPERM';
+      return (error as NodeJS.ErrnoException | undefined)?.code === 'EPERM';
     }
   };
 
   const readClaim = () => {
     try {
       const raw = fsImpl.readFileSync(lockFilePath, 'utf8');
-      const parsed = JSON.parse(raw);
+      const parsed = JSON.parse(raw) as ClaimFileJson | null;
       const pid = Number(parsed?.pid);
       return Number.isInteger(pid) && pid > 0 ? { pid } : null;
     } catch {
@@ -61,7 +72,7 @@ export const createRelayHostLock = ({ lockFilePath, fs, process: proc, logger = 
     } catch (error) {
       // An unwritable data dir must not take the relay down with it — fall back
       // to pre-lock behavior (start the host, let the relay worker arbitrate).
-      logger.warn(`[Relay] could not write host claim file: ${error?.message ?? error}`);
+      logger.warn(`[Relay] could not write host claim file: ${(error as Error | undefined)?.message ?? error}`);
       return true;
     }
   };

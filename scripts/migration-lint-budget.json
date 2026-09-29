@@ -108,6 +108,20 @@
         "reason": "Typing repo as string | null | undefined makes the JavaScript's own String() coercion look unnecessary; removing it would change the emitted code."
       }
     ],
+    "packages/web/server/lib/terminal/shells.ts": [
+      {
+        "rule": "@typescript-eslint/no-unnecessary-type-conversion",
+        "text": "const filename = String(value || '').replace(/\\\\/g, '/').split('/').pop()?.toLowerCase() || '';",
+        "count": 1,
+        "reason": "The JavaScript's own String(value || ''). Once value is typed string | null (what callers pass), lint calls the conversion redundant, but removing it would change the emitted code. Runtime parity wins."
+      },
+      {
+        "rule": "@typescript-eslint/no-unnecessary-type-conversion",
+        "text": "const value = String(candidate);",
+        "count": 1,
+        "reason": "The JavaScript's own String(candidate), after the falsy check. candidate is typed string | undefined (env values, path.join results, literals), so lint calls it redundant, but removing it would change the emitted code. Runtime parity wins."
+      }
+    ],
     "packages/web/server/lib/text/summarization.ts": [
       {
         "rule": "@typescript-eslint/no-meaningless-void-operator",
@@ -120,6 +134,14 @@
         "text": ".replace(/[\\[\\]{}()]/g, '')",
         "count": 1,
         "reason": "Removing the escape inside the JavaScript's character class changes the regular expression text the file emits."
+      }
+    ],
+    "packages/web/server/lib/tunnels/routes.ts": [
+      {
+        "rule": "@typescript-eslint/no-unused-vars",
+        "text": "} catch (error) {",
+        "count": 2,
+        "reason": "The JavaScript binds a catch variable it never reads (managed-remote-token route). Dropping the binding (`catch {`) changes the emitted code."
       }
     ]
   }

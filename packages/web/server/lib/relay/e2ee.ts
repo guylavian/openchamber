@@ -6,6 +6,13 @@
 // WebCrypto only: `globalThis.crypto.subtle` (Node >= 22).
 // Spec: .opencode/plans/private-relay/01-protocol-spec.md (Layer 2).
 
+import type { webcrypto } from 'node:crypto';
+
+// The server compiles without the DOM library; these are Node's WebCrypto types.
+type CryptoKey = webcrypto.CryptoKey;
+type JsonWebKey = webcrypto.JsonWebKey;
+type KeyUsage = webcrypto.KeyUsage;
+
 const subtle = globalThis.crypto.subtle;
 
 export const RELAY_PROTOCOL_VERSION = 1;
@@ -31,8 +38,74 @@ const GCM_TAG_BYTES = 16;
 const IV_PREFIX_BYTES = 4;
 const IV_COUNTER_BYTES = 8;
 
+/** One direction's AES-GCM key per side, derived from the ECDH handshake. */
+export interface RelaySessionKeys {
+  clientToHost: CryptoKey;
+  hostToClient: CryptoKey;
+}
+
+export interface RelayFrameEncryptor {
+  encrypt: (plaintext: Uint8Array<ArrayBuffer>) => Promise<Uint8Array<ArrayBuffer>>;
+}
+
+export interface RelayFrameDecryptor {
+  decrypt: (frame: Uint8Array) => Promise<Uint8Array<ArrayBuffer>>;
+}
+
+/** The fields a handshake frame is read for; JSON.parse may return any JSON value. */
+interface HandshakeWireFields {
+  v?: unknown;
+  t?: unknown;
+  batch?: unknown;
+  flowControl?: unknown;
+  nonce?: unknown;
+  clientPubJwk?: JsonWebKey | string | number | boolean | null;
+}
+
+type HandshakeJson = HandshakeWireFields | string | number | boolean | null;
+
+// Layer 2 handshake messages, as packages/ui/src/lib/relay/protocol.ts declares them.
+interface E2eeHelloMessage {
+  t: 'hello';
+  v: typeof RELAY_PROTOCOL_VERSION;
+  clientPubJwk: JsonWebKey;
+  nonce: string;
+  batch?: boolean;
+  flowControl?: boolean;
+}
+
+interface E2eeReadyMessage {
+  t: 'ready';
+  v: typeof RELAY_PROTOCOL_VERSION;
+  batch?: boolean;
+  flowControl?: boolean;
+}
+
+interface HandshakeFail {
+  type: 'fail';
+  closeCode: number;
+  reason: string;
+}
+
+export type HostHandshakeResult =
+  | { type: 'send-text'; text: string }
+  | {
+    type: 'established';
+    batch: boolean;
+    flowControl: boolean;
+    replyText: string;
+    channel: { encryptor: RelayFrameEncryptor; decryptor: RelayFrameDecryptor };
+  }
+  | { type: 'ignore' }
+  | HandshakeFail;
+
+export interface HostHandshakeOptions {
+  batch?: boolean;
+  flowControl?: boolean;
+}
+
 export class RelayCryptoError extends Error {
-  constructor(message) {
+  constructor(message: string) {
     super(message);
     this.name = 'RelayCryptoError';
   }
@@ -45,13 +118,13 @@ export const generateEcdhKeyPair = () => subtle.generateKey(ECDH_PARAMS, true, [
  * @param {CryptoKey} key
  * @returns {Promise<JsonWebKey>} public JWK reduced to the fields that define the point
  */
-export const exportPublicKeyJwk = async (key) => {
+export const exportPublicKeyJwk = async (key: CryptoKey) => {
   const jwk = await subtle.exportKey('jwk', key);
   return { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y };
 };
 
 /** @param {JsonWebKey} jwk */
-export const importEcdhPublicKey = async (jwk) => {
+export const importEcdhPublicKey = async (jwk: JsonWebKey) => {
   if (jwk.kty !== 'EC' || jwk.crv !== 'P-256' || typeof jwk.x !== 'string' || typeof jwk.y !== 'string') {
     throw new RelayCryptoError('invalid ECDH public key JWK');
   }
@@ -69,7 +142,7 @@ export const importEcdhPublicKey = async (jwk) => {
 };
 
 /** @param {JsonWebKey} jwk private ECDH JWK (d + point) */
-export const importEcdhPrivateKey = async (jwk) => {
+export const importEcdhPrivateKey = async (jwk: JsonWebKey) => {
   try {
     return await subtle.importKey('jwk', jwk, ECDH_PARAMS, false, ['deriveBits']);
   } catch {
@@ -79,7 +152,7 @@ export const importEcdhPrivateKey = async (jwk) => {
 
 // Stable fingerprint of a public key, used to detect rekey attempts on re-hello.
 /** @param {JsonWebKey} jwk */
-export const publicKeyJwkFingerprint = (jwk) =>
+export const publicKeyJwkFingerprint = (jwk: JsonWebKey) =>
   JSON.stringify({ crv: jwk.crv, kty: jwk.kty, x: jwk.x, y: jwk.y });
 
 export const generateHandshakeNonce = () => {
@@ -96,7 +169,7 @@ export const generateHandshakeNonce = () => {
  * @param {Uint8Array} handshakeNonce
  * @returns {Promise<{ clientToHost: CryptoKey, hostToClient: CryptoKey }>}
  */
-export const deriveSessionKeys = async (ownPrivateKey, peerPublicKey, handshakeNonce) => {
+export const deriveSessionKeys = async (ownPrivateKey: CryptoKey, peerPublicKey: CryptoKey, handshakeNonce: Uint8Array<ArrayBuffer>): Promise<RelaySessionKeys> => {
   if (handshakeNonce.length !== HANDSHAKE_NONCE_BYTES) {
     throw new RelayCryptoError('invalid handshake nonce length');
   }
@@ -114,30 +187,30 @@ export const deriveSessionKeys = async (ownPrivateKey, peerPublicKey, handshakeN
       SESSION_KEY_BYTES * 2 * 8,
     ),
   );
-  const importAesKey = (bytes, usage) => subtle.importKey('raw', bytes, { name: 'AES-GCM' }, false, usage);
+  const importAesKey = (bytes: Uint8Array<ArrayBuffer>, usage: KeyUsage[]) => subtle.importKey('raw', bytes, { name: 'AES-GCM' }, false, usage);
   return {
     clientToHost: await importAesKey(keyMaterial.slice(0, SESSION_KEY_BYTES), ['encrypt', 'decrypt']),
     hostToClient: await importAesKey(keyMaterial.slice(SESSION_KEY_BYTES), ['encrypt', 'decrypt']),
   };
 };
 
-const writeCounter = (target, offset, counter) => {
+const writeCounter = (target: Uint8Array, offset: number, counter: bigint) => {
   for (let i = IV_COUNTER_BYTES - 1; i >= 0; i -= 1) {
     target[offset + i] = Number(counter & 0xffn);
     counter >>= 8n;
   }
 };
 
-const readCounter = (source, offset) => {
+const readCounter = (source: Uint8Array, offset: number) => {
   let value = 0n;
   for (let i = 0; i < IV_COUNTER_BYTES; i += 1) {
-    value = (value << 8n) | BigInt(source[offset + i]);
+    value = (value << 8n) | BigInt(source[offset + i]!);
   }
   return value;
 };
 
 /** @param {CryptoKey} key AES-256-GCM key for this direction */
-export const createFrameEncryptor = (key) => {
+export const createFrameEncryptor = (key: CryptoKey): RelayFrameEncryptor => {
   const ivPrefix = new Uint8Array(IV_PREFIX_BYTES);
   globalThis.crypto.getRandomValues(ivPrefix);
   let counter = 0n;
@@ -164,7 +237,7 @@ export const createFrameEncryptor = (key) => {
 // Enforces strictly increasing per-direction counters: the relay WS preserves
 // ordering, so any regression or replay means tampering and must fail closed.
 /** @param {CryptoKey} key AES-256-GCM key for this direction */
-export const createFrameDecryptor = (key) => {
+export const createFrameDecryptor = (key: CryptoKey): RelayFrameDecryptor => {
   let lastCounter = 0n;
   return {
     /** @param {Uint8Array} frame */
@@ -180,7 +253,7 @@ export const createFrameDecryptor = (key) => {
       if (counter <= lastCounter) {
         throw new RelayCryptoError('frame counter regression');
       }
-      let plaintext;
+      let plaintext: ArrayBuffer;
       try {
         plaintext = await subtle.decrypt({ name: 'AES-GCM', iv }, key, frame.slice(ENCRYPTED_FRAME_HEADER_BYTES));
       } catch {
@@ -195,22 +268,22 @@ export const createFrameDecryptor = (key) => {
 const BASE64URL_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 
 /** @param {Uint8Array} bytes */
-export const bytesToBase64Url = (bytes) => {
+export const bytesToBase64Url = (bytes: Uint8Array) => {
   let out = '';
   for (let i = 0; i < bytes.length; i += 3) {
-    const b0 = bytes[i];
+    const b0 = bytes[i]!;
     const b1 = i + 1 < bytes.length ? bytes[i + 1] : undefined;
     const b2 = i + 2 < bytes.length ? bytes[i + 2] : undefined;
-    out += BASE64URL_ALPHABET[b0 >> 2];
-    out += BASE64URL_ALPHABET[((b0 & 0x03) << 4) | ((b1 ?? 0) >> 4)];
-    if (b1 !== undefined) out += BASE64URL_ALPHABET[((b1 & 0x0f) << 2) | ((b2 ?? 0) >> 6)];
-    if (b2 !== undefined) out += BASE64URL_ALPHABET[b2 & 0x3f];
+    out += BASE64URL_ALPHABET[b0 >> 2]!;
+    out += BASE64URL_ALPHABET[((b0 & 0x03) << 4) | ((b1 ?? 0) >> 4)]!;
+    if (b1 !== undefined) out += BASE64URL_ALPHABET[((b1 & 0x0f) << 2) | ((b2 ?? 0) >> 6)]!;
+    if (b2 !== undefined) out += BASE64URL_ALPHABET[b2 & 0x3f]!;
   }
   return out;
 };
 
 /** @param {string} value */
-export const base64UrlToBytes = (value) => {
+export const base64UrlToBytes = (value: string) => {
   if (!/^[A-Za-z0-9_-]*$/.test(value) || value.length % 4 === 1) {
     throw new RelayCryptoError('invalid base64url input');
   }
@@ -241,10 +314,10 @@ export const base64UrlToBytes = (value) => {
 // - plaintext after `ready`, or any decrypt failure -> close 1011.
 // ---------------------------------------------------------------------------
 
-const parseHandshakeMessage = (raw) => {
-  let parsed;
+const parseHandshakeMessage = (raw: string): E2eeHelloMessage | E2eeReadyMessage | null => {
+  let parsed: HandshakeJson;
   try {
-    parsed = JSON.parse(raw);
+    parsed = JSON.parse(raw) as HandshakeJson;
   } catch {
     return null;
   }
@@ -262,7 +335,7 @@ const parseHandshakeMessage = (raw) => {
   return null;
 };
 
-const failClosed = (reason) => ({
+const failClosed = (reason: string): HandshakeFail => ({
   type: 'fail',
   closeCode: RelayCloseCode.ChannelFailure,
   reason,
@@ -278,18 +351,18 @@ const failClosed = (reason) => ({
  * @param {CryptoKey} hostEncPrivateKey long-lived ECDH private key
  * @param {{ batch?: boolean, flowControl?: boolean }} [options] Capabilities default true.
  */
-export const createHostHandshake = (hostEncPrivateKey, options = {}) => {
+export const createHostHandshake = (hostEncPrivateKey: CryptoKey, options: HostHandshakeOptions = {}) => {
   const localBatch = options.batch !== false;
   let established = false;
-  let acceptedClientKeyFingerprint = null;
-  let readyText = null;
+  let acceptedClientKeyFingerprint: string | null = null;
+  let readyText: string | null = null;
   let negotiatedBatch = false;
   return {
     get established() {
       return established;
     },
     /** @param {string} raw */
-    async handleText(raw) {
+    async handleText(raw: string): Promise<HostHandshakeResult> {
       const message = parseHandshakeMessage(raw);
       if (message?.t !== 'hello') {
         if (established) {
@@ -305,15 +378,15 @@ export const createHostHandshake = (hostEncPrivateKey, options = {}) => {
         }
         return { type: 'fail', closeCode: RelayCloseCode.RekeyMismatch, reason: 'rekey mismatch' };
       }
-      let clientPublicKey;
-      let nonce;
+      let clientPublicKey: CryptoKey;
+      let nonce: Uint8Array<ArrayBuffer>;
       try {
         clientPublicKey = await importEcdhPublicKey(message.clientPubJwk);
         nonce = base64UrlToBytes(message.nonce);
       } catch {
         return failClosed('malformed hello');
       }
-      let keys;
+      let keys: RelaySessionKeys;
       try {
         keys = await deriveSessionKeys(hostEncPrivateKey, clientPublicKey, nonce);
       } catch {
@@ -323,7 +396,7 @@ export const createHostHandshake = (hostEncPrivateKey, options = {}) => {
       // Batching runs only if both peers advertised it.
       negotiatedBatch = localBatch && message.batch === true;
       const flowControl = options.flowControl !== false && message.flowControl === true;
-      const ready = { t: 'ready', v: RELAY_PROTOCOL_VERSION };
+      const ready: E2eeReadyMessage = { t: 'ready', v: RELAY_PROTOCOL_VERSION };
       if (negotiatedBatch) ready.batch = true;
       if (flowControl) ready.flowControl = true;
       readyText = JSON.stringify(ready);

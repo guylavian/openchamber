@@ -12,6 +12,47 @@ export const MESSAGE_STREAM_WS_MAX_BUFFERED_BYTES = 16 * 1024 * 1024;
 export const MESSAGE_STREAM_WS_BACKPRESSURE_WARN_BYTES = 12 * 1024 * 1024;
 
 /**
+ * The fields this module reads from a parsed SSE payload. JSON.parse yields any
+ * JSON value; every field is checked before it is used.
+ */
+interface SsePayloadFields {
+  id?: unknown;
+  directory?: unknown;
+  payload?: SseJson;
+  location?: { directory?: unknown } | null;
+}
+
+type SseJson = SsePayloadFields | string | number | boolean | null;
+
+export interface SseEventEnvelope {
+  eventId: string | null;
+  directory: string | null;
+  payload: SseJson;
+}
+
+/** The WebSocket surface the message stream writes to (a `ws` socket). */
+export interface MessageStreamSocket {
+  readyState: number;
+  bufferedAmount?: number;
+  send: (data: string) => void;
+  close: (code: number, reason: string) => void;
+  /** Set while a backpressure warning is outstanding for this socket. */
+  _ocBackpressureWarned?: boolean;
+}
+
+export interface MessageStreamWsEventOptions {
+  eventId?: string | null;
+  directory?: string | null;
+}
+
+interface MessageStreamWsEventFrame {
+  type: 'event';
+  payload: unknown;
+  eventId?: string;
+  directory?: string;
+}
+
+/**
  * Parses one SSE block from OpenCode's `/api/event` stream.
  *
  * OpenCode v2 sends no `id:` lines: the event id lives in the JSON payload as
@@ -19,7 +60,7 @@ export const MESSAGE_STREAM_WS_BACKPRESSURE_WARN_BYTES = 12 * 1024 * 1024;
  * from the payload here so the replay buffer and the per-directory routing keep
  * working unchanged.
  */
-export function parseSseEventEnvelope(block) {
+export function parseSseEventEnvelope(block: unknown): SseEventEnvelope | null {
   if (!block || typeof block !== 'string') {
     return null;
   }
@@ -39,7 +80,7 @@ export function parseSseEventEnvelope(block) {
   }
 
   try {
-    const parsed = JSON.parse(payloadText);
+    const parsed = JSON.parse(payloadText) as SseJson;
     if (
       parsed &&
       typeof parsed === 'object' &&
@@ -65,19 +106,19 @@ export function parseSseEventEnvelope(block) {
   }
 }
 
-function readEventId(payload) {
+function readEventId(payload: SseJson | undefined): string | null {
   return payload && typeof payload === 'object' && typeof payload.id === 'string' && payload.id.length > 0
     ? payload.id
     : null;
 }
 
-function readDirectory(payload) {
+function readDirectory(payload: SseJson | undefined): string | null {
   if (!payload || typeof payload !== 'object') return null;
   const directory = payload.location?.directory;
   return typeof directory === 'string' && directory.length > 0 ? directory : null;
 }
 
-export function sendMessageStreamWsFrame(socket, payload) {
+export function sendMessageStreamWsFrame(socket: MessageStreamSocket | null | undefined, payload: unknown): boolean {
   try {
     return sendSerializedMessageStreamWsFrame(socket, JSON.stringify(payload));
   } catch {
@@ -85,7 +126,7 @@ export function sendMessageStreamWsFrame(socket, payload) {
   }
 }
 
-export function sendSerializedMessageStreamWsFrame(socket, serializedFrame) {
+export function sendSerializedMessageStreamWsFrame(socket: MessageStreamSocket | null | undefined, serializedFrame: string): boolean {
   if (!socket || socket.readyState !== 1) {
     return false;
   }
@@ -96,6 +137,7 @@ export function sendSerializedMessageStreamWsFrame(socket, serializedFrame) {
     try {
       socket.close(1013, 'Message stream client is too slow');
     } catch {
+      // Already closing; the frame is dropped either way.
     }
     return false;
   }
@@ -107,6 +149,7 @@ export function sendSerializedMessageStreamWsFrame(socket, serializedFrame) {
       try {
         socket.close(1013, 'Message stream client is too slow');
       } catch {
+        // Already closing; the frame is dropped either way.
       }
       return false;
     }
@@ -138,7 +181,7 @@ export function sendSerializedMessageStreamWsFrame(socket, serializedFrame) {
   }
 }
 
-export function sendMessageStreamWsEvent(socket, payload, options = {}) {
+export function sendMessageStreamWsEvent(socket: MessageStreamSocket | null | undefined, payload: unknown, options: MessageStreamWsEventOptions = {}): boolean {
   try {
     return sendSerializedMessageStreamWsFrame(socket, serializeMessageStreamWsEvent(payload, options));
   } catch {
@@ -146,8 +189,8 @@ export function sendMessageStreamWsEvent(socket, payload, options = {}) {
   }
 }
 
-export function serializeMessageStreamWsEvent(payload, options = {}) {
-  const frame = { type: 'event', payload };
+export function serializeMessageStreamWsEvent(payload: unknown, options: MessageStreamWsEventOptions = {}): string {
+  const frame: MessageStreamWsEventFrame = { type: 'event', payload };
   if (typeof options.eventId === 'string' && options.eventId.length > 0) frame.eventId = options.eventId;
   if (typeof options.directory === 'string' && options.directory.length > 0) frame.directory = options.directory;
   return JSON.stringify(frame);

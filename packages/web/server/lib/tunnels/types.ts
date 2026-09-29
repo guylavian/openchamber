@@ -12,6 +12,37 @@ export const TUNNEL_INTENT_EPHEMERAL_PUBLIC = 'ephemeral-public';
 export const TUNNEL_INTENT_PERSISTENT_PUBLIC = 'persistent-public';
 const TUNNEL_INTENT_PRIVATE_NETWORK = 'private-network';
 
+/** Tunnel start fields as callers pass them (CLI options, request bodies); every one is checked. */
+export interface TunnelStartInput {
+  provider?: unknown;
+  mode?: unknown;
+  intent?: unknown;
+  configPath?: unknown;
+  token?: unknown;
+  hostname?: unknown;
+}
+
+export interface NormalizedTunnelStartRequest {
+  provider: string;
+  mode: string;
+  intent: string | undefined;
+  configPath: string | null | undefined;
+  token: string;
+  hostname: string;
+}
+
+/** One mode a provider declares in its capabilities. */
+export interface TunnelModeDescriptor {
+  key: string;
+  intent?: string;
+  requires?: string[];
+}
+
+export interface TunnelProviderCapabilities {
+  provider: string;
+  modes?: TunnelModeDescriptor[];
+}
+
 const SUPPORTED_TUNNEL_INTENTS = new Set([
   TUNNEL_INTENT_EPHEMERAL_PUBLIC,
   TUNNEL_INTENT_PERSISTENT_PUBLIC,
@@ -25,7 +56,10 @@ const SUPPORTED_TUNNEL_MODES = new Set([
 ]);
 
 export class TunnelServiceError extends Error {
-  constructor(code, message, details = null) {
+  declare code: string;
+  declare details: unknown;
+
+  constructor(code: string, message: string, details: unknown = null) {
     super(message);
     this.name = 'TunnelServiceError';
     this.code = code;
@@ -38,9 +72,9 @@ const SUPPORTED_TUNNEL_PROVIDERS = new Set([
   TUNNEL_PROVIDER_NGROK,
 ]);
 
-const getPathApiForPlatform = (platform) => (platform === 'win32' ? path.win32 : path);
+const getPathApiForPlatform = (platform: NodeJS.Platform) => (platform === 'win32' ? path.win32 : path);
 
-export function isPathWithinDirectory(candidatePath, directoryPath, platform = process.platform) {
+export function isPathWithinDirectory(candidatePath: string, directoryPath: string, platform: NodeJS.Platform = process.platform): boolean {
   if (typeof candidatePath !== 'string' || typeof directoryPath !== 'string') {
     return false;
   }
@@ -57,9 +91,9 @@ export function isPathWithinDirectory(candidatePath, directoryPath, platform = p
   return comparableCandidate === comparableDirectory || comparableCandidate.startsWith(directoryPrefix);
 }
 
-export function resolveTunnelConfigPath(value, home = os.homedir(), platform = process.platform) {
+export function resolveTunnelConfigPath(value: string, home: string = os.homedir(), platform: NodeJS.Platform = process.platform): string {
   const pathApi = getPathApiForPlatform(platform);
-  let resolved;
+  let resolved: string;
   if (value === '~') {
     resolved = home;
   } else if (value.startsWith('~/') || value.startsWith('~\\')) {
@@ -77,7 +111,7 @@ export function resolveTunnelConfigPath(value, home = os.homedir(), platform = p
   return resolved;
 }
 
-export function normalizeTunnelProvider(value) {
+export function normalizeTunnelProvider(value: unknown): string {
   if (typeof value !== 'string') {
     return TUNNEL_PROVIDER_CLOUDFLARE;
   }
@@ -88,7 +122,7 @@ export function normalizeTunnelProvider(value) {
   return provider;
 }
 
-export function normalizeTunnelMode(value) {
+export function normalizeTunnelMode(value: unknown) {
   if (typeof value !== 'string') {
     return TUNNEL_MODE_QUICK;
   }
@@ -108,7 +142,7 @@ export function normalizeTunnelMode(value) {
   return TUNNEL_MODE_QUICK;
 }
 
-function normalizeTunnelIntent(value) {
+function normalizeTunnelIntent(value: unknown) {
   if (typeof value !== 'string') {
     return undefined;
   }
@@ -119,7 +153,7 @@ function normalizeTunnelIntent(value) {
   return intent;
 }
 
-function modeIntentFallback(mode) {
+function modeIntentFallback(mode: string) {
   if (mode === TUNNEL_MODE_QUICK) {
     return TUNNEL_INTENT_EPHEMERAL_PUBLIC;
   }
@@ -129,7 +163,7 @@ function modeIntentFallback(mode) {
   return undefined;
 }
 
-function normalizeTunnelModeForRequest(value) {
+function normalizeTunnelModeForRequest(value: unknown) {
   if (typeof value === 'string') {
     const mode = value.trim().toLowerCase();
     if (mode === TUNNEL_MODE_QUICK || mode === TUNNEL_MODE_MANAGED_REMOTE || mode === TUNNEL_MODE_MANAGED_LOCAL) {
@@ -139,7 +173,7 @@ function normalizeTunnelModeForRequest(value) {
   return TUNNEL_MODE_QUICK;
 }
 
-export function normalizeOptionalPath(value) {
+export function normalizeOptionalPath(value: unknown): string | null | undefined {
   if (value === null) {
     return null;
   }
@@ -153,11 +187,11 @@ export function normalizeOptionalPath(value) {
   return resolveTunnelConfigPath(trimmed);
 }
 
-export function isSupportedTunnelMode(mode) {
+export function isSupportedTunnelMode(mode: string): boolean {
   return SUPPORTED_TUNNEL_MODES.has(mode);
 }
 
-export function normalizeTunnelStartRequest(input = {}, defaults = {}) {
+export function normalizeTunnelStartRequest(input: TunnelStartInput = {}, defaults: TunnelStartInput = {}): NormalizedTunnelStartRequest {
   const provider = normalizeTunnelProvider(input.provider ?? defaults.provider);
   const mode = normalizeTunnelModeForRequest(input.mode ?? defaults.mode);
   const explicitIntent = normalizeTunnelIntent(input.intent ?? defaults.intent);
@@ -168,11 +202,11 @@ export function normalizeTunnelStartRequest(input = {}, defaults = {}) {
   const configPath = normalizeOptionalPath(configPathValue);
 
   const token = typeof (input.token ?? defaults.token) === 'string'
-    ? (input.token ?? defaults.token).trim()
+    ? ((input.token ?? defaults.token) as string).trim()
     : '';
 
   const hostname = typeof (input.hostname ?? defaults.hostname) === 'string'
-    ? (input.hostname ?? defaults.hostname).trim().toLowerCase()
+    ? ((input.hostname ?? defaults.hostname) as string).trim().toLowerCase()
     : '';
 
   return {
@@ -185,7 +219,7 @@ export function normalizeTunnelStartRequest(input = {}, defaults = {}) {
   };
 }
 
-export function validateTunnelStartRequest(request, capabilities) {
+export function validateTunnelStartRequest(request: NormalizedTunnelStartRequest | null | undefined, capabilities: TunnelProviderCapabilities | null | undefined): void {
   if (!request || typeof request !== 'object') {
     throw new TunnelServiceError('validation_error', 'Tunnel start request must be an object');
   }
