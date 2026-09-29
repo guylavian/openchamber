@@ -84,6 +84,9 @@
     "{ setDefaultAutoSelectFamily, setDefaultAutoSelectFamilyAttemptTimeout } as Pick<typeof net, 'setDefaultAutoSelectFamily' | 'setDefaultAutoSelectFamilyAttemptTimeout'>": 1,
     "{} as Pick<typeof net, 'setDefaultAutoSelectFamilyAttemptTimeout'>": 1
   },
+  "packages/web/server/lib/opencode/claude-cli-auth.ts": {
+    "JSON.parse(output) as ClaudeAuthStatusPayload | null": 1
+  },
   "packages/web/server/lib/opencode/input-history-scope.ts": {
     "value as number": 2
   },

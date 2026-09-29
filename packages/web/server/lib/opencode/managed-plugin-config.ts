@@ -1,8 +1,15 @@
 import { parse as parseJsonc } from 'jsonc-parser';
+import type { ParseError } from 'jsonc-parser';
 
-const isJsonObject = (value) => value !== null && value !== undefined && Object.getPrototypeOf(value) === Object.prototype;
+type JsonValue = string | number | boolean | null | JsonValue[] | JsonObject;
 
-const matchesEntry = (value, pluginDirectory) => (
+interface JsonObject {
+  [key: string]: JsonValue;
+}
+
+const isJsonObject = (value: unknown): value is JsonObject => value !== null && value !== undefined && Object.getPrototypeOf(value) === Object.prototype;
+
+const matchesEntry = (value: unknown, pluginDirectory: string): boolean => (
   value === pluginDirectory || (Array.isArray(value) && value[0] === pluginDirectory)
 );
 
@@ -30,10 +37,10 @@ const matchesEntry = (value, pluginDirectory) => (
  * @param {string} purpose short noun phrase for the error message, e.g. "managed tool"
  * @returns {string} the merged config as JSON
  */
-export const appendManagedPlugin = (rawConfig, pluginDirectory, purpose) => {
-  const errors = [];
+export const appendManagedPlugin = (rawConfig: string | null | undefined, pluginDirectory: string, purpose: string): string => {
+  const errors: ParseError[] = [];
   const text = (rawConfig ?? '').trim();
-  const parsed = text ? parseJsonc(text, errors, { allowTrailingComma: true }) : {};
+  const parsed: unknown = text ? parseJsonc(text, errors, { allowTrailingComma: true }) : {};
   if (errors.length > 0 || !isJsonObject(parsed)) {
     throw new Error(`OPENCODE_CONFIG_CONTENT must contain a valid JSON object before OpenChamber can inject its ${purpose}`);
   }

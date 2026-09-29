@@ -1,5 +1,19 @@
 import path from 'path';
 
+interface ParsedNpmSpec {
+  name: string;
+  version: string | null;
+}
+
+interface MalformedSpec {
+  malformed: true;
+  raw: string;
+}
+
+interface ParsedPathSpec {
+  absolutePath: string;
+}
+
 /**
  * @typedef {Object} ParsedNpmSpec
  * @property {string} name
@@ -25,7 +39,7 @@ import path from 'path';
  * @param {unknown} spec
  * @returns {ParsedNpmSpec | MalformedSpec}
  */
-export function parseNpmSpec(spec) {
+export function parseNpmSpec(spec: unknown): ParsedNpmSpec | MalformedSpec {
   if (typeof spec !== 'string') {
     return { malformed: true, raw: String(spec) };
   }
@@ -62,7 +76,7 @@ export function parseNpmSpec(spec) {
  * @param {string} version
  * @returns {boolean}
  */
-export function isExactSemver(version) {
+export function isExactSemver(version: string): boolean {
   return /^\d+\.\d+\.\d+([-+][\w.-]+)?$/.test(version);
 }
 
@@ -73,7 +87,7 @@ export function isExactSemver(version) {
  * @param {string} spec
  * @returns {boolean}
  */
-export function isPathSpec(spec) {
+export function isPathSpec(spec: string): boolean {
   return spec.startsWith('/')
     || spec.startsWith('./')
     || spec.startsWith('../')
@@ -90,7 +104,7 @@ export function isPathSpec(spec) {
  * @param {{ homedir: string, cwd: string }} options
  * @returns {ParsedPathSpec}
  */
-export function parsePathSpec(spec, { homedir, cwd }) {
+export function parsePathSpec(spec: string, { homedir, cwd }: { homedir: string; cwd: string }): ParsedPathSpec {
   if (spec === '~') {
     return { absolutePath: path.resolve(homedir) };
   }

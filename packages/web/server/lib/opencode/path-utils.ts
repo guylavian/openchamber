@@ -38,7 +38,7 @@ const TOOLCHAIN_BASENAMES = new Set([
  * @param {string} home   - The user's home directory (os.homedir()).
  * @param {string} delim  - The PATH delimiter (':' on POSIX, ';' on Windows).
  */
-export function pathLooksUserConfigured(value, home, delim) {
+export function pathLooksUserConfigured(value: string | null | undefined, home: string | null | undefined, delim: string): boolean {
   if (typeof value !== 'string' || !value) {
     return false;
   }
@@ -79,11 +79,11 @@ export function pathLooksUserConfigured(value, home, delim) {
  * @param {string} fallback - The secondary PATH to fill gaps from.
  * @param {string} delim    - The PATH delimiter.
  */
-export function mergePathValues(primary, fallback, delim) {
-  const seen = new Set();
-  const result = [];
+export function mergePathValues(primary: string | null | undefined, fallback: string | null | undefined, delim: string): string {
+  const seen = new Set<string>();
+  const result: string[] = [];
 
-  const addSegments = (value) => {
+  const addSegments = (value: string | null | undefined): void => {
     if (typeof value !== 'string' || !value) return;
     for (const segment of value.split(delim)) {
       if (segment && !seen.has(segment)) {

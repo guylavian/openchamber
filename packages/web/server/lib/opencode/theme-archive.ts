@@ -4,9 +4,16 @@ import { promisify } from 'node:util';
 const inflate = promisify(inflateRaw);
 const MAX_FILE_BYTES = 512 * 1024;
 
+interface ThemeArchiveEntry {
+  offset: number;
+  compressed: number;
+  size: number;
+  method: number;
+}
+
 // Read only selected JSON entries in memory. Nothing from a VSIX is executed or
 // extracted onto the host filesystem.
-export function openThemeArchive(bytes) {
+export function openThemeArchive(bytes: Buffer): (name: string) => Promise<string> {
   let end = bytes.length - 22;
   const lower = Math.max(0, end - 65535);
   while (end >= lower && (bytes.readUInt32LE(end) !== 0x06054b50 || end + 22 + bytes.readUInt16LE(end + 20) !== bytes.length)) end--;
@@ -16,7 +23,7 @@ export function openThemeArchive(bytes) {
   let cursor = bytes.readUInt32LE(end + 16);
   if (count > 5000 || bytes.readUInt16LE(end + 4) || bytes.readUInt16LE(end + 6)
     || bytes.readUInt16LE(end + 8) !== count || cursor + directorySize !== end) throw new Error('Unsupported VSIX directory');
-  const entries = new Map();
+  const entries = new Map<string, ThemeArchiveEntry>();
   let totalSize = 0;
   for (let index = 0; index < count; index++) {
     if (cursor + 46 > end || bytes.readUInt32LE(cursor) !== 0x02014b50) throw new Error('Invalid VSIX entry');

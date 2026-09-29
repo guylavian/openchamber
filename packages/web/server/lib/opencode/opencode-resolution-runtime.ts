@@ -1,4 +1,35 @@
-export const createOpenCodeResolutionRuntime = (dependencies) => {
+interface ResolvedState {
+  resolvedOpencodeBinary: string | null;
+  resolvedOpencodeBinarySource: string | null;
+  useWslForOpencode: boolean;
+  resolvedWslBinary: string | null;
+  resolvedWslOpencodePath: string | null;
+  resolvedWslDistro: string | null;
+  resolvedNodeBinary: string | null;
+  resolvedBunBinary: string | null;
+}
+
+interface ManagedLaunchSpec {
+  binary?: string | null;
+  args?: string[];
+  wrapperType?: string | null;
+}
+
+interface OpenCodeResolutionDependencies {
+  path: { dirname: (path: string) => string };
+  resolveOpencodeCliPath: () => string | null;
+  applyOpencodeBinaryFromSettings: () => Promise<unknown>;
+  ensureOpencodeCliEnv: () => unknown;
+  resolveManagedOpenCodeLaunchSpec: (opencodePath: string) => ManagedLaunchSpec | null;
+  getResolvedState: () => ResolvedState;
+  setResolvedOpencodeBinarySource: (value: string | null) => void;
+}
+
+interface OpenCodeResolutionSettings {
+  opencodeBinary?: unknown;
+}
+
+export const createOpenCodeResolutionRuntime = (dependencies: OpenCodeResolutionDependencies) => {
   const {
     path,
     resolveOpencodeCliPath,
@@ -9,7 +40,7 @@ export const createOpenCodeResolutionRuntime = (dependencies) => {
     setResolvedOpencodeBinarySource,
   } = dependencies;
 
-  const getOpenCodeResolutionSnapshot = async (settings) => {
+  const getOpenCodeResolutionSnapshot = async (settings?: OpenCodeResolutionSettings | null) => {
     const configured = typeof settings?.opencodeBinary === 'string' ? settings.opencodeBinary : null;
 
     const { resolvedOpencodeBinarySource: previousSource } = getResolvedState();

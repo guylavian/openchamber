@@ -18,7 +18,7 @@
  * user exactly which config file changed — including a v1 file that was
  * rewritten in place in v2 shape.
  */
-export function buildAppliedResponse(message, details) {
+export function buildAppliedResponse(message: string, details?: unknown) {
   return {
     success: true,
     message,
@@ -26,7 +26,7 @@ export function buildAppliedResponse(message, details) {
   };
 }
 
-export function buildExternalManualRestartResponse(message) {
+export function buildExternalManualRestartResponse(message: string) {
   return {
     success: true,
     requiresReload: false,

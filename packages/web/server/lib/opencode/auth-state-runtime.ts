@@ -1,4 +1,15 @@
-export const createOpenCodeAuthStateRuntime = (dependencies) => {
+interface OpenCodeAuthStateDependencies {
+  crypto: { randomBytes: (size: number) => Buffer };
+  process: { env: NodeJS.ProcessEnv };
+  getAuthPassword: () => string | null;
+  setAuthPassword: (value: string | null) => void;
+  getAuthSource: () => string | null;
+  setAuthSource: (value: string | null) => void;
+  getUserProvidedPassword: () => string | null;
+  syncToHmrState: () => void;
+}
+
+export const createOpenCodeAuthStateRuntime = (dependencies: OpenCodeAuthStateDependencies) => {
   const {
     crypto,
     process,
@@ -10,14 +21,14 @@ export const createOpenCodeAuthStateRuntime = (dependencies) => {
     syncToHmrState,
   } = dependencies;
 
-  const normalizeOpenCodePassword = (value) => {
+  const normalizeOpenCodePassword = (value: unknown): string => {
     if (typeof value !== 'string') {
       return '';
     }
     return value.trim();
   };
 
-  const isValidOpenCodePassword = (password) => typeof password === 'string' && password.trim().length > 0;
+  const isValidOpenCodePassword = (password: unknown): boolean => typeof password === 'string' && password.trim().length > 0;
 
   const generateSecureOpenCodePassword = () =>
     crypto
@@ -27,7 +38,7 @@ export const createOpenCodeAuthStateRuntime = (dependencies) => {
       .replace(/\//g, '_')
       .replace(/=+$/g, '');
 
-  const setOpenCodeAuthState = (password, source) => {
+  const setOpenCodeAuthState = (password: unknown, source: string): string | null => {
     const normalized = normalizeOpenCodePassword(password);
     if (!isValidOpenCodePassword(normalized)) {
       setAuthPassword(null);
@@ -58,7 +69,7 @@ export const createOpenCodeAuthStateRuntime = (dependencies) => {
 
   const isOpenCodeConnectionSecure = () => Object.prototype.hasOwnProperty.call(getOpenCodeAuthHeaders(), 'Authorization');
 
-  const ensureLocalOpenCodeServerPassword = async ({ rotateManaged = false } = {}) => {
+  const ensureLocalOpenCodeServerPassword = async ({ rotateManaged = false }: { rotateManaged?: boolean } = {}) => {
     const userProvidedPassword = getUserProvidedPassword();
     if (isValidOpenCodePassword(userProvidedPassword)) {
       return setOpenCodeAuthState(userProvidedPassword, 'user-env');
