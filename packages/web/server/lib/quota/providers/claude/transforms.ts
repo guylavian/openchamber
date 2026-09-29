@@ -21,10 +21,19 @@ const EXTRA_USAGE_WINDOW = 'extra_usage';
 const SESSION_WINDOW_SECONDS = 5 * 60 * 60;
 const WEEKLY_WINDOW_SECONDS = 7 * 24 * 60 * 60;
 
-const asArray = (value) => (Array.isArray(value) ? value : []);
+type UsageWindows = Record<string, object>;
+
+interface WindowInput {
+  percent: number | null;
+  resetAt: number | null;
+  valueLabel?: string | null;
+  windowSeconds?: number | null;
+}
+
+const asArray = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
 
 /** Money in Anthropic's minor-unit form, e.g. `{ amount_minor: 10000, exponent: 2 }`. */
-const toAmount = (value) => {
+const toAmount = (value: unknown) => {
   const money = asObject(value);
   const minor = toNumber(money?.amount_minor);
   if (minor === null) return null;
@@ -32,7 +41,7 @@ const toAmount = (value) => {
   return minor / 10 ** exponent;
 };
 
-const formatSpendLabel = (used, limit, currency) => {
+const formatSpendLabel = (used: number | null, limit: number | null, currency: string | null) => {
   const usedLabel = formatMoney(used);
   if (usedLabel === null) return null;
   const prefix = currency === 'USD' || !currency ? '$' : `${currency} `;
@@ -40,12 +49,12 @@ const formatSpendLabel = (used, limit, currency) => {
   return limitLabel === null ? `${prefix}${usedLabel}` : `${prefix}${usedLabel} / ${prefix}${limitLabel}`;
 };
 
-const addWindow = (target, key, { percent, resetAt, valueLabel, windowSeconds = null }) => {
+const addWindow = (target: UsageWindows, key: string, { percent, resetAt, valueLabel, windowSeconds = null }: WindowInput) => {
   if (percent === null && !valueLabel) return;
-  target[key] = toUsageWindow({ usedPercent: percent, windowSeconds, resetAt, valueLabel });
+  target[key] = toUsageWindow({ usedPercent: percent, windowSeconds, resetAt, valueLabel } as Parameters<typeof toUsageWindow>[0]);
 };
 
-const applyLimitsArray = (limits, windows, models) => {
+const applyLimitsArray = (limits: unknown[], windows: UsageWindows, models: Record<string, { windows: UsageWindows }>) => {
   for (const entry of limits) {
     const limit = asObject(entry);
     if (!limit) continue;
@@ -62,14 +71,14 @@ const applyLimitsArray = (limits, windows, models) => {
       continue;
     }
     if (limit.kind === 'weekly_scoped' && modelName) {
-      const modelWindows = {};
+      const modelWindows: UsageWindows = {};
       addWindow(modelWindows, WEEKLY_WINDOW, { percent, resetAt, windowSeconds: WEEKLY_WINDOW_SECONDS });
       if (Object.keys(modelWindows).length > 0) models[modelName] = { windows: modelWindows };
     }
   }
 };
 
-const applyLegacyFields = (payload, windows) => {
+const applyLegacyFields = (payload: Record<string, unknown>, windows: UsageWindows) => {
   const fiveHour = asObject(payload.five_hour);
   const sevenDay = asObject(payload.seven_day);
   if (fiveHour) {
@@ -93,7 +102,7 @@ const applyLegacyFields = (payload, windows) => {
  * once the account has it enabled; a disabled block would render as a permanent
  * empty bar.
  */
-const applyExtraUsage = (payload, windows) => {
+const applyExtraUsage = (payload: Record<string, unknown>, windows: UsageWindows) => {
   const spend = asObject(payload.spend);
   if (!spend || spend.enabled !== true) return;
   const used = toAmount(spend.used);
@@ -109,10 +118,10 @@ const applyExtraUsage = (payload, windows) => {
  * @param {unknown} rawPayload Parsed JSON body of the OAuth usage endpoint.
  * @returns {{ windows: Record<string, object>, models: Record<string, object> }}
  */
-export const toClaudeUsage = (rawPayload) => {
-  const payload = asObject(rawPayload) ?? {};
-  const windows = {};
-  const models = {};
+export const toClaudeUsage = (rawPayload: unknown) => {
+  const payload: Record<string, unknown> = asObject(rawPayload) ?? {};
+  const windows: UsageWindows = {};
+  const models: Record<string, { windows: UsageWindows }> = {};
 
   const limits = asArray(payload.limits);
   if (limits.length > 0) {

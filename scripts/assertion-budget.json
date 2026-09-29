@@ -161,6 +161,13 @@
     "JSON.parse(content) as GitIdentityStore": 1,
     "profiles[index]!": 2
   },
+  "packages/web/server/lib/github/auth.ts": {
+    "(Array.isArray(raw) ? raw : [raw]) .map((entry: StoredGitHubAuthEntry | null) => normalizeAuthEntry(entry)) .filter(Boolean) as GitHubAuthEntry[]": 1,
+    "JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8')) as GitHubSettings | null": 3
+  },
+  "packages/web/server/lib/github/device-flow.ts": {
+    "await response.json().catch(() => null) as GitHubDeviceFlowPayload | null": 1
+  },
   "packages/web/server/lib/guests/clone.ts": {
     "addresses[0]!": 1,
     "match as RegExpExecArray & [string, string | undefined, string, string]": 1
@@ -325,6 +332,15 @@
     "document.setupWorktreeMode as SetupWorktreeMode": 1,
     "patch.setupWorktreeMode as SetupWorktreeMode": 1,
     "value.trustedAt as number": 1
+  },
+  "packages/web/server/lib/quota/providers/claude/transforms.ts": {
+    "{ usedPercent: percent, windowSeconds, resetAt, valueLabel } as Parameters<typeof toUsageWindow>[0]": 1
+  },
+  "packages/web/server/lib/quota/providers/google/api.ts": {
+    "await response.json() as { access_token?: unknown } | null": 1
+  },
+  "packages/web/server/lib/quota/utils/transformers.ts": {
+    "value as Record<string, unknown>": 1
   },
   "packages/web/server/lib/relay/e2ee.ts": {
     "BASE64URL_ALPHABET[((b0 & 0x03) << 4) | ((b1 ?? 0) >> 4)]!": 1,

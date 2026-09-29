@@ -180,6 +180,14 @@
         "reason": "The JavaScript's own fire-and-forget call; the promise is deliberately not awaited (its rejection is routed to the deferred or swallowed by the chain), and adding void or await would change the emitted JavaScript."
       }
     ],
+    "packages/web/server/lib/github/auth.ts": [
+      {
+        "rule": "@typescript-eslint/no-unnecessary-type-conversion",
+        "text": "current: Boolean(entry.current),",
+        "count": 1,
+        "reason": "getGitHubAuthAccounts maps normalized GitHubAuthEntry values whose current is already boolean; removing the JavaScript's own Boolean() would change the emitted code."
+      }
+    ],
     "packages/web/server/lib/guests/auth-store.ts": [
       {
         "rule": "@typescript-eslint/no-dynamic-delete",

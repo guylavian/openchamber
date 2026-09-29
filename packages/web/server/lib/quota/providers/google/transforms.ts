@@ -12,10 +12,23 @@ import {
   toUsageWindow
 } from '../../utils/index.js';
 
+interface GoogleQuotaBucket {
+  modelId?: unknown;
+  remainingFraction?: unknown;
+  resetTime?: unknown;
+}
+
+interface GoogleModelData {
+  quotaInfo?: {
+    remainingFraction?: unknown;
+    resetTime?: string | number | null;
+  } | null;
+}
+
 const GOOGLE_FIVE_HOUR_WINDOW_SECONDS = 5 * 60 * 60;
 const GOOGLE_DAILY_WINDOW_SECONDS = 24 * 60 * 60;
 
-export const parseGoogleRefreshToken = (rawRefreshToken) => {
+export const parseGoogleRefreshToken = (rawRefreshToken: unknown) => {
   const refreshToken = asNonEmptyString(rawRefreshToken);
   if (!refreshToken) {
     return { refreshToken: null, projectId: null, managedProjectId: null };
@@ -29,7 +42,7 @@ export const parseGoogleRefreshToken = (rawRefreshToken) => {
   };
 };
 
-const resolveGoogleWindow = (sourceId, resetAt) => {
+const resolveGoogleWindow = (sourceId: string, resetAt: number | null) => {
   if (sourceId === 'gemini') {
     return { label: 'daily', seconds: GOOGLE_DAILY_WINDOW_SECONDS };
   }
@@ -49,7 +62,7 @@ const resolveGoogleWindow = (sourceId, resetAt) => {
   return { label: 'daily', seconds: GOOGLE_DAILY_WINDOW_SECONDS };
 };
 
-export const transformQuotaBucket = (bucket, sourceId) => {
+export const transformQuotaBucket = (bucket: GoogleQuotaBucket | null | undefined, sourceId: string) => {
   const modelId = asNonEmptyString(bucket?.modelId);
   if (!modelId) {
     return null;
@@ -80,7 +93,7 @@ export const transformQuotaBucket = (bucket, sourceId) => {
   };
 };
 
-export const transformModelData = (modelName, modelData, sourceId) => {
+export const transformModelData = (modelName: string, modelData: GoogleModelData | null | undefined, sourceId: string) => {
   const scopedName = modelName.startsWith(`${sourceId}/`)
     ? modelName
     : `${sourceId}/${modelName}`;

@@ -20,7 +20,7 @@ const GOOGLE_HEADERS = {
     '{"ideType":"IDE_UNSPECIFIED","platform":"PLATFORM_UNSPECIFIED","pluginType":"GEMINI"}'
 };
 
-export const refreshGoogleAccessToken = async (refreshToken, clientId, clientSecret) => {
+export const refreshGoogleAccessToken = async (refreshToken: string, clientId: string, clientSecret: string) => {
   const response = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -36,11 +36,11 @@ export const refreshGoogleAccessToken = async (refreshToken, clientId, clientSec
     return null;
   }
 
-  const data = await response.json();
+  const data = await response.json() as { access_token?: unknown } | null;
   return typeof data?.access_token === 'string' ? data.access_token : null;
 };
 
-export const fetchGoogleQuotaBuckets = async (accessToken, projectId) => {
+export const fetchGoogleQuotaBuckets = async (accessToken: string, projectId: string | null | undefined): Promise<unknown> => {
   const body = projectId ? { project: projectId } : {};
 
   try {
@@ -64,7 +64,7 @@ export const fetchGoogleQuotaBuckets = async (accessToken, projectId) => {
   }
 };
 
-export const fetchGoogleModels = async (accessToken, projectId) => {
+export const fetchGoogleModels = async (accessToken: string, projectId: string | null | undefined): Promise<unknown> => {
   const body = projectId ? { project: projectId } : {};
 
   for (const endpoint of GOOGLE_ENDPOINTS) {

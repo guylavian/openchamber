@@ -1,4 +1,25 @@
-export const createNotificationEmitterRuntime = (dependencies) => {
+export interface SseClient {
+  write: (chunk: string) => unknown;
+}
+
+export interface UiNotificationEvent {
+  type: string;
+  properties: object;
+}
+
+export type DesktopNotificationHandler = (payload: object) => void;
+
+export interface NotificationEmitterDependencies {
+  process: { stdout: { write: (chunk: string) => unknown } };
+  getDesktopNotifyEnabled: () => boolean;
+  desktopNotifyPrefix: string;
+  getUiNotificationClients: () => Set<SseClient>;
+  getOpenChamberEventClients?: () => Set<SseClient>;
+  getBroadcastGlobalUiEvent?: () => ((event: UiNotificationEvent) => void) | null | undefined;
+  onDesktopNotification?: DesktopNotificationHandler | null;
+}
+
+export const createNotificationEmitterRuntime = (dependencies: NotificationEmitterDependencies) => {
   const {
     process,
     getDesktopNotifyEnabled,
@@ -19,15 +40,15 @@ export const createNotificationEmitterRuntime = (dependencies) => {
     ? initialOnDesktopNotification
     : null;
 
-  const setOnDesktopNotification = (cb) => {
+  const setOnDesktopNotification = (cb: DesktopNotificationHandler | null | undefined) => {
     onDesktopNotification = typeof cb === 'function' ? cb : null;
   };
 
-  const writeSseEvent = (res, payload, serializedPayload = JSON.stringify(payload)) => {
+  const writeSseEvent = (res: SseClient, payload: unknown, serializedPayload = JSON.stringify(payload)) => {
     res.write(`data: ${serializedPayload}\n\n`);
   };
 
-  const emitDesktopNotification = (payload) => {
+  const emitDesktopNotification = (payload: unknown) => {
     const desktopNotifyEnabled = getDesktopNotifyEnabled();
     if (!desktopNotifyEnabled) {
       return false;
@@ -58,7 +79,7 @@ export const createNotificationEmitterRuntime = (dependencies) => {
     return false;
   };
 
-  const broadcastUiNotification = (payload, options = {}) => {
+  const broadcastUiNotification = (payload: unknown, options: { desktopNotificationDelivered?: boolean } = {}) => {
     const desktopNotifyEnabled = getDesktopNotifyEnabled();
     if (!payload || typeof payload !== 'object') {
       return;

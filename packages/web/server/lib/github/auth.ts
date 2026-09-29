@@ -14,6 +14,55 @@ const DEFAULT_GITHUB_CLIENT_ID = 'Ov23lizomPOC3eFYo56r';
 const DEFAULT_GITHUB_SCOPES = 'repo read:org workflow read:user user:email';
 export const GH_CLI_ACCOUNT_ID = 'gh-cli';
 
+export interface GitHubAuthUser {
+  login?: string | null | undefined;
+  avatarUrl?: string | null | undefined;
+  id?: number | null | undefined;
+  name?: string | null | undefined;
+  email?: string | null | undefined;
+}
+
+export interface GitHubAuthEntry {
+  accessToken: string;
+  scope: string;
+  tokenType: string;
+  createdAt: number | null;
+  user: GitHubAuthUser | null;
+  current: boolean;
+  accountId: string;
+}
+
+export interface GitHubAuthInput {
+  accessToken: string;
+  scope?: string;
+  tokenType?: string;
+  user?: GitHubAuthUser | null;
+  accountId?: string;
+}
+
+interface StoredGitHubAuthEntry {
+  accessToken?: unknown;
+  scope?: unknown;
+  tokenType?: unknown;
+  createdAt?: unknown;
+  user?: { [Key in keyof GitHubAuthUser]?: unknown } | null;
+  current?: unknown;
+  accountId?: unknown;
+}
+
+interface GitHubSettings {
+  githubClientId?: unknown;
+  githubScopes?: unknown;
+  ghCliDisabled?: unknown;
+  ghCliActive?: unknown;
+}
+
+interface AccountIdSource {
+  user: GitHubAuthUser | null | undefined;
+  accessToken: string;
+  accountId: string | undefined;
+}
+
 function ensureStorageDir() {
   if (!fs.existsSync(STORAGE_DIR)) {
     fs.mkdirSync(STORAGE_DIR, { recursive: true });
@@ -31,7 +80,7 @@ function readJsonFile() {
     if (!trimmed) {
       return null;
     }
-    const parsed = JSON.parse(trimmed);
+    const parsed: unknown = JSON.parse(trimmed);
     if (!parsed || typeof parsed !== 'object') {
       return null;
     }
@@ -42,7 +91,7 @@ function readJsonFile() {
   }
 }
 
-function writeJsonFile(payload) {
+function writeJsonFile(payload: GitHubAuthEntry[]) {
   ensureStorageDir();
 
   // Atomic write so multiple OpenChamber instances can safely share the same file.
@@ -62,7 +111,7 @@ function writeJsonFile(payload) {
   }
 }
 
-function resolveAccountId({ user, accessToken, accountId }) {
+function resolveAccountId({ user, accessToken, accountId }: AccountIdSource): string {
   if (typeof accountId === 'string' && accountId.trim()) {
     return accountId.trim();
   }
@@ -78,7 +127,7 @@ function resolveAccountId({ user, accessToken, accountId }) {
   return '';
 }
 
-function normalizeAuthEntry(entry) {
+function normalizeAuthEntry(entry: StoredGitHubAuthEntry | null | undefined): GitHubAuthEntry | null {
   if (!entry || typeof entry !== 'object') return null;
   const accessToken = typeof entry.accessToken === 'string' ? entry.accessToken : '';
   if (!accessToken) return null;
@@ -109,10 +158,10 @@ function normalizeAuthEntry(entry) {
   };
 }
 
-function normalizeAuthList(raw) {
+function normalizeAuthList(raw: object): { list: GitHubAuthEntry[]; changed: boolean } {
   const list = (Array.isArray(raw) ? raw : [raw])
-    .map((entry) => normalizeAuthEntry(entry))
-    .filter(Boolean);
+    .map((entry: StoredGitHubAuthEntry | null) => normalizeAuthEntry(entry))
+    .filter(Boolean) as GitHubAuthEntry[];
 
   if (!list.length) {
     return { list: [], changed: false };
@@ -144,7 +193,7 @@ function normalizeAuthList(raw) {
   return { list, changed };
 }
 
-function readAuthList() {
+function readAuthList(): GitHubAuthEntry[] {
   const data = readJsonFile();
   if (!data) {
     return [];
@@ -156,14 +205,14 @@ function readAuthList() {
   return list;
 }
 
-function writeAuthList(list) {
+function writeAuthList(list: GitHubAuthEntry[]) {
   writeJsonFile(list);
 }
 
-function readSettingsFile() {
+function readSettingsFile(): GitHubSettings {
   try {
     if (fs.existsSync(SETTINGS_FILE)) {
-      return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8')) || {};
+      return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8')) as GitHubSettings | null || {};
     }
   } catch {
     // ignore
@@ -171,7 +220,7 @@ function readSettingsFile() {
   return {};
 }
 
-function writeSettingsFile(settings) {
+function writeSettingsFile(settings: GitHubSettings) {
   ensureStorageDir();
   const tmpFile = `${SETTINGS_FILE}.${process.pid}.${Date.now()}.tmp`;
   fs.writeFileSync(tmpFile, JSON.stringify(settings, null, 2), 'utf8');
@@ -212,7 +261,7 @@ export function getGitHubAuthAccounts() {
     }));
 }
 
-export function setGitHubAuth({ accessToken, scope, tokenType, user, accountId }) {
+export function setGitHubAuth({ accessToken, scope, tokenType, user, accountId }: GitHubAuthInput): GitHubAuthEntry {
   if (!accessToken || typeof accessToken !== 'string') {
     throw new Error('accessToken is required');
   }
@@ -234,7 +283,7 @@ export function setGitHubAuth({ accessToken, scope, tokenType, user, accountId }
 
   const list = readAuthList();
   const existingIndex = list.findIndex((entry) => entry.accountId === resolvedAccountId);
-  const nextEntry = {
+  const nextEntry: GitHubAuthEntry = {
     accessToken,
     scope: typeof scope === 'string' ? scope : '',
     tokenType: typeof tokenType === 'string' ? tokenType : 'bearer',
@@ -257,7 +306,7 @@ export function setGitHubAuth({ accessToken, scope, tokenType, user, accountId }
   return nextEntry;
 }
 
-export function activateGitHubAuth(accountId) {
+export function activateGitHubAuth(accountId: string) {
   if (typeof accountId !== 'string' || !accountId.trim()) {
     return false;
   }
@@ -305,7 +354,7 @@ export function getGitHubClientId() {
 
   try {
     if (fs.existsSync(SETTINGS_FILE)) {
-      const parsed = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+      const parsed = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8')) as GitHubSettings | null;
       const stored = typeof parsed?.githubClientId === 'string' ? parsed.githubClientId.trim() : '';
       if (stored) return stored;
     }
@@ -323,7 +372,7 @@ export function getGitHubScopes() {
 
   try {
     if (fs.existsSync(SETTINGS_FILE)) {
-      const parsed = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+      const parsed = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8')) as GitHubSettings | null;
       const stored = typeof parsed?.githubScopes === 'string' ? parsed.githubScopes.trim() : '';
       if (stored) return stored;
     }
@@ -340,7 +389,7 @@ export function isGhCliDisabled() {
   return Boolean(readSettingsFile()?.ghCliDisabled);
 }
 
-export function setGhCliDisabled(disabled) {
+export function setGhCliDisabled(disabled: unknown) {
   const settings = readSettingsFile();
   settings.ghCliDisabled = Boolean(disabled);
   if (settings.ghCliDisabled) {
@@ -354,7 +403,7 @@ export function isGhCliActive() {
   return !settings?.ghCliDisabled && Boolean(settings?.ghCliActive);
 }
 
-export function setGhCliActive(active) {
+export function setGhCliActive(active: unknown) {
   const settings = readSettingsFile();
   settings.ghCliActive = Boolean(active) && !settings.ghCliDisabled;
   writeSettingsFile(settings);
