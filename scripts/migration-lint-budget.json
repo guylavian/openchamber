@@ -96,6 +96,14 @@
         "reason": "The JavaScript deletes a dynamic key from its copied overrides map; replacing the delete would change the emitted code."
       }
     ],
+    "packages/web/server/lib/openchamber-control/screenshots.ts": [
+      {
+        "rule": "@typescript-eslint/no-base-to-string",
+        "text": "const slug = String(label ?? '')",
+        "count": 1,
+        "reason": "The JavaScript's own String(label ?? '') coerces an arbitrary agent-supplied label (a tool input field, so honestly unknown) into a filename fragment; changing the stringification would change the emitted code and the slug for non-string labels."
+      }
+    ],
     "packages/web/server/lib/skills-catalog/git.ts": [
       {
         "rule": "@typescript-eslint/no-unnecessary-type-conversion",

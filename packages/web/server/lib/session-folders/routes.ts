@@ -1,8 +1,44 @@
+import type { Express } from 'express';
+
+interface SessionFolder {
+  id: string;
+  name: string;
+  sessionIds: string[];
+  createdAt: number;
+  parentId?: string | null | undefined;
+}
+
+interface SessionFolderSnapshot {
+  version: 1;
+  foldersMap: Record<string, SessionFolder[]>;
+  collapsedFolderIds: string[];
+  updatedAt?: unknown;
+}
+
+interface SessionFoldersFs {
+  mkdir: (directory: string, options: { recursive: true }) => Promise<unknown>;
+  readFile: (file: string, encoding: 'utf8') => Promise<string>;
+  writeFile: (file: string, data: string, encoding: 'utf8') => Promise<unknown>;
+  rename: (from: string, to: string) => Promise<unknown>;
+  unlink: (file: string) => Promise<unknown>;
+}
+
+interface SessionFoldersPath {
+  join: (...segments: string[]) => string;
+  dirname: (file: string) => string;
+}
+
+export interface SessionFoldersDependencies {
+  fsPromises: SessionFoldersFs;
+  path: SessionFoldersPath;
+  openchamberDataDir: string;
+}
+
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
 
-const isObjectRecord = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+const isObjectRecord = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
-const hasValidFolderShape = (folder) => (
+const hasValidFolderShape = (folder: unknown): folder is SessionFolder => (
   isObjectRecord(folder)
   && typeof folder.id === 'string'
   && typeof folder.name === 'string'
@@ -13,14 +49,14 @@ const hasValidFolderShape = (folder) => (
   && (folder.parentId === undefined || folder.parentId === null || typeof folder.parentId === 'string')
 );
 
-const hasValidFoldersMapShape = (foldersMap) => (
+const hasValidFoldersMapShape = (foldersMap: unknown): foldersMap is Record<string, SessionFolder[]> => (
   isObjectRecord(foldersMap)
   && Object.values(foldersMap).every((folders) => (
     Array.isArray(folders) && folders.every(hasValidFolderShape)
   ))
 );
 
-const hasValidFolderSnapshotShape = (snapshot) => (
+const hasValidFolderSnapshotShape = (snapshot: unknown): snapshot is SessionFolderSnapshot => (
   isObjectRecord(snapshot)
   && snapshot.version === 1
   && hasValidFoldersMapShape(snapshot.foldersMap)
@@ -28,7 +64,7 @@ const hasValidFolderSnapshotShape = (snapshot) => (
   && snapshot.collapsedFolderIds.every((folderId) => typeof folderId === 'string')
 );
 
-export const registerSessionFoldersRoutes = (app, dependencies) => {
+export const registerSessionFoldersRoutes = (app: Express, dependencies: SessionFoldersDependencies): void => {
   const {
     fsPromises,
     path,
@@ -44,15 +80,15 @@ export const registerSessionFoldersRoutes = (app, dependencies) => {
 
   app.get('/api/session-folders', async (_req, res) => {
     try {
-      const raw = await fsPromises.readFile(filePath, 'utf8').catch((error) => {
-        if (error && error.code === 'ENOENT') return null;
+      const raw = await fsPromises.readFile(filePath, 'utf8').catch((error: unknown) => {
+        if (error && (error as NodeJS.ErrnoException).code === 'ENOENT') return null;
         throw error;
       });
       if (!raw) {
         return res.json({ version: 1, exists: false });
       }
       try {
-        const parsed = JSON.parse(raw);
+        const parsed: unknown = JSON.parse(raw);
         if (
           !hasValidFolderSnapshotShape(parsed)
           || typeof parsed.updatedAt !== 'number'
@@ -72,7 +108,7 @@ export const registerSessionFoldersRoutes = (app, dependencies) => {
   });
 
   app.post('/api/session-folders', async (req, res) => {
-    const body = req.body;
+    const body: unknown = req.body;
     if (!isObjectRecord(body)) {
       return res.status(400).json({ error: 'Body must be an object' });
     }
@@ -88,22 +124,22 @@ export const registerSessionFoldersRoutes = (app, dependencies) => {
     }
 
     const save = async () => {
-      let tmp;
+      let tmp: string | undefined;
       let saved = false;
       try {
-        const currentRaw = await fsPromises.readFile(filePath, 'utf8').catch((error) => {
-          if (error && error.code === 'ENOENT') return null;
+        const currentRaw = await fsPromises.readFile(filePath, 'utf8').catch((error: unknown) => {
+          if (error && (error as NodeJS.ErrnoException).code === 'ENOENT') return null;
           throw error;
         });
         if (currentRaw) {
           try {
-            const current = JSON.parse(currentRaw);
+            const current: unknown = JSON.parse(currentRaw);
             const currentUpdatedAt = hasValidFolderSnapshotShape(current)
               && typeof current.updatedAt === 'number'
               && Number.isFinite(current.updatedAt)
               ? current.updatedAt
               : 0;
-            if (currentUpdatedAt >= body.updatedAt) {
+            if (currentUpdatedAt >= (body.updatedAt as number)) {
               return res.json({ success: true, ignored: true });
             }
           } catch { /* A valid new snapshot repairs malformed prior state. */ }

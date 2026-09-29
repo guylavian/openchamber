@@ -26,7 +26,7 @@ const MAX_LABEL_LENGTH = 48;
  * value reaches the filesystem, and a label is a name, never a path. `..`, a
  * separator, or a leading dot cannot survive this.
  */
-export const screenshotSlug = (label) => {
+export const screenshotSlug = (label?: unknown): string => {
   const slug = String(label ?? '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
@@ -37,13 +37,32 @@ export const screenshotSlug = (label) => {
 };
 
 /** File-safe timestamp: sorts chronologically and reads as a date. */
-const screenshotStamp = (date) => date.toISOString().replace(/[:.]/g, '-').replace('Z', '');
+const screenshotStamp = (date: Date): string => date.toISOString().replace(/[:.]/g, '-').replace('Z', '');
 
-const EXTENSIONS = new Map([
+const EXTENSIONS = new Map<string, string>([
   ['image/jpeg', '.jpg'],
   ['image/png', '.png'],
   ['image/webp', '.webp'],
 ]);
+
+interface ScreenshotFs {
+  mkdir: (target: string, options: { recursive: true }) => Promise<unknown>;
+  writeFile: (target: string, data: Buffer) => Promise<unknown>;
+}
+
+interface WriteScreenshotInput {
+  directory: unknown;
+  base64: unknown;
+  mime?: string | undefined;
+  label?: unknown;
+  now?: Date | undefined;
+  fs?: ScreenshotFs | undefined;
+}
+
+interface SavedScreenshot {
+  path: string;
+  absolutePath: string;
+}
 
 /**
  * Writes one capture into the project and reports where it went.
@@ -59,7 +78,7 @@ export const writeScreenshot = async ({
   label,
   now = new Date(),
   fs = fsPromises,
-}) => {
+}: WriteScreenshotInput): Promise<SavedScreenshot> => {
   if (typeof directory !== 'string' || directory.trim().length === 0) {
     throw new Error('A project directory is required to save a screenshot');
   }

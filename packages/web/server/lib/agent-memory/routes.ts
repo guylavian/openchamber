@@ -17,21 +17,48 @@
  */
 
 import express from 'express';
+import type { Express, NextFunction, Response } from 'express';
+
+type MemoryType = 'fact' | 'preference' | 'reference';
+
+type MemoryTarget = { scope: 'global' } | { scope: 'project'; projectId: string };
+
+type ScopeResolution =
+  | { target: MemoryTarget; error?: undefined }
+  | { target?: undefined; error: 'projectId is required for project scope' | 'scope must be global or project' };
+
+interface MemoryPatch {
+  title?: string;
+  body?: string;
+  type?: MemoryType;
+}
+
+interface AgentMemoryRuntime {
+  read: (target: MemoryTarget) => Promise<unknown>;
+  readAll: (projectId: string | null) => Promise<unknown>;
+  update: (target: MemoryTarget, memoryId: string, patch: MemoryPatch) => Promise<unknown>;
+  remove: (target: MemoryTarget, memoryId: string) => Promise<{ deleted: boolean }>;
+}
+
+export interface AgentMemoryRoutesDependencies {
+  agentMemoryRuntime: AgentMemoryRuntime;
+  isAgentMemoryEnabled?: (() => boolean | Promise<boolean>) | undefined;
+}
 
 const parseJsonBody = express.json({ limit: '1mb' });
 
-const MEMORY_TYPES = new Set(['fact', 'preference', 'reference']);
+const MEMORY_TYPES = new Set<unknown>(['fact', 'preference', 'reference']);
 
-const isObjectRecord = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+const isObjectRecord = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
-const isValidationError = (error) => {
+const isValidationError = (error: unknown): boolean => {
   const message = error instanceof Error ? error.message : '';
   return message.includes('is required')
     || message.includes('unsupported characters')
     || message.includes('holds at most');
 };
 
-const respondWithError = (res, error, fallbackMessage) => {
+const respondWithError = (res: Response, error: unknown, fallbackMessage: string): Response => {
   const message = error instanceof Error ? error.message : fallbackMessage;
   if (isValidationError(error)) {
     return res.status(400).json({ error: message });
@@ -44,7 +71,7 @@ const respondWithError = (res, error, fallbackMessage) => {
  * A project request without an id is rejected here rather than quietly falling
  * back to global, which would write project facts into every other project.
  */
-const resolveScope = (query) => {
+const resolveScope = (query: Record<string, unknown>): ScopeResolution => {
   if (query.scope === 'global') {
     return { target: { scope: 'global' } };
   }
@@ -57,7 +84,7 @@ const resolveScope = (query) => {
   return { error: 'scope must be global or project' };
 };
 
-export const registerAgentMemoryRoutes = (app, dependencies) => {
+export const registerAgentMemoryRoutes = (app: Express, dependencies: AgentMemoryRoutesDependencies): void => {
   const { agentMemoryRuntime, isAgentMemoryEnabled } = dependencies;
 
   /**
@@ -66,7 +93,7 @@ export const registerAgentMemoryRoutes = (app, dependencies) => {
    * store at all, or a stale client would keep editing memory the user believes
    * is turned off.
    */
-  const requireEnabled = async (_req, res, next) => {
+  const requireEnabled = async (_req: unknown, res: Response, next: NextFunction) => {
     if (!isAgentMemoryEnabled) {
       return next();
     }
@@ -121,7 +148,7 @@ export const registerAgentMemoryRoutes = (app, dependencies) => {
       return res.status(400).json({ error });
     }
 
-    const body = req.body;
+    const body: unknown = req.body;
     if (!isObjectRecord(body)) {
       return res.status(400).json({ error: 'Body must be an object' });
     }
@@ -139,7 +166,7 @@ export const registerAgentMemoryRoutes = (app, dependencies) => {
       const result = await agentMemoryRuntime.update(target, req.params.memoryId, {
         ...(body.title !== undefined ? { title: body.title } : {}),
         ...(body.body !== undefined ? { body: body.body } : {}),
-        ...(body.type !== undefined ? { type: body.type } : {}),
+        ...(body.type !== undefined ? { type: body.type as MemoryType } : {}),
       });
       if (!result) {
         return res.status(404).json({ error: 'Memory not found' });
