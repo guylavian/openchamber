@@ -1,25 +1,30 @@
 import { describe, expect, it } from 'vitest';
 import { createSerialRefresh } from './serial-refresh.js';
 
-const createGate = () => {
-  let release;
-  const opened = new Promise((resolve) => {
+interface Gate {
+  opened: Promise<void>;
+  release: () => void;
+}
+
+const createGate = (): Gate => {
+  let release!: () => void;
+  const opened = new Promise<void>((resolve) => {
     release = resolve;
   });
   return { opened, release };
 };
 
-const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 describe('createSerialRefresh', () => {
   it('runs one refresh per key and answers later callers with one follow-up run', async () => {
-    const refresh = createSerialRefresh();
-    const gates = [createGate(), createGate()];
-    const executions = [];
-    const execute = async (requests) => {
+    const refresh = createSerialRefresh<string, string>();
+    const gates: [Gate, Gate] = [createGate(), createGate()];
+    const executions: string[][] = [];
+    const execute = async (requests: string[]) => {
       const index = executions.length;
       executions.push(requests);
-      await gates[index].opened;
+      await gates[index]!.opened;
       return `run-${index}`;
     };
 
@@ -44,7 +49,7 @@ describe('createSerialRefresh', () => {
   });
 
   it('never serves a caller from a run that started before it asked', async () => {
-    const refresh = createSerialRefresh();
+    const refresh = createSerialRefresh<null, number>();
     const gate = createGate();
     let reads = 0;
     const execute = async () => {
@@ -64,10 +69,10 @@ describe('createSerialRefresh', () => {
   });
 
   it('keeps keys independent and bounds how many run at once', async () => {
-    const refresh = createSerialRefresh({ maxConcurrent: 2 });
-    const gates = new Map();
-    const started = [];
-    const execute = (key) => async () => {
+    const refresh = createSerialRefresh<null, string>({ maxConcurrent: 2 });
+    const gates = new Map<string, Gate>();
+    const started: string[] = [];
+    const execute = (key: string) => async () => {
       started.push(key);
       const gate = createGate();
       gates.set(key, gate);
@@ -79,17 +84,17 @@ describe('createSerialRefresh', () => {
     await flush();
     expect(started).toEqual(['a', 'b']);
 
-    gates.get('a').release();
+    gates.get('a')!.release();
     await flush();
     expect(started).toEqual(['a', 'b', 'c']);
 
-    gates.get('b').release();
-    gates.get('c').release();
+    gates.get('b')!.release();
+    gates.get('c')!.release();
     await expect(Promise.all(runs)).resolves.toEqual(['a', 'b', 'c']);
   });
 
   it('propagates a failed run to its callers and still runs the follow-up', async () => {
-    const refresh = createSerialRefresh();
+    const refresh = createSerialRefresh<null, string>();
     const gate = createGate();
     let calls = 0;
     const execute = async () => {

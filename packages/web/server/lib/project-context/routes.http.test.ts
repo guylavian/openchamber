@@ -3,6 +3,7 @@ import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 
 import { registerProjectContextRoutes } from './routes.js';
+import type { NoteInput, NotePatch } from './runtime.js';
 
 /**
  * End-to-end route tests over real HTTP.
@@ -20,9 +21,89 @@ import { registerProjectContextRoutes } from './routes.js';
 
 const emptyContext = { version: 2, notes: [], todos: [], plans: [] };
 
-const createApp = (overrides = {}) => {
-  const received = {};
-  const runtime = {
+interface MockContext {
+  version: number;
+  notes: unknown[];
+  todos: unknown;
+  plans: unknown[];
+}
+
+interface MockNote {
+  id: string;
+  body: unknown;
+  createdAt: number;
+  updatedAt: number;
+  source: unknown;
+  pinned: boolean;
+}
+
+interface MockPlan {
+  id: string;
+  file: string;
+  title: unknown;
+  createdAt: number;
+  pinned: unknown;
+  source?: string;
+}
+
+interface NoteResult {
+  note: MockNote;
+  context: MockContext;
+}
+
+interface PlanResult {
+  plan: MockPlan;
+  context: MockContext;
+}
+
+interface PlanContent extends PlanResult {
+  title: string;
+  body: string;
+  raw: unknown;
+}
+
+interface DeleteResult {
+  deleted: boolean;
+  context: MockContext;
+}
+
+interface PlanDraft {
+  title?: unknown;
+  body?: unknown;
+}
+
+interface PlanSave {
+  raw?: unknown;
+}
+
+interface MockRuntime {
+  readContext: (projectId: string) => Promise<MockContext>;
+  saveTodos: (projectId: string, todos: unknown) => Promise<MockContext>;
+  createNote: (projectId: string, value: NoteInput) => Promise<NoteResult>;
+  updateNote: (projectId: string, noteId: string, patch: NotePatch) => Promise<NoteResult | null>;
+  deleteNote: (projectId: string, noteId: string) => Promise<DeleteResult>;
+  readPlan: (projectId: string, planId: string) => Promise<object | null>;
+  createPlan: (projectId: string, value: PlanDraft) => Promise<PlanResult>;
+  updatePlan: (projectId: string, planId: string, value: PlanSave) => Promise<PlanContent | null>;
+  setPlanPinned: (projectId: string, planId: string, pinned: unknown) => Promise<PlanResult>;
+  deletePlan: (projectId: string, planId: string) => Promise<DeleteResult>;
+  sharePlan: (projectId: string, planId: string) => Promise<PlanResult | null>;
+  unsharePlan: (projectId: string, planId: string) => Promise<PlanResult | null>;
+}
+
+interface Received {
+  todos: unknown;
+  note: NoteInput;
+  notePatch: NotePatch;
+  plan: PlanDraft;
+  planRaw: PlanSave;
+}
+
+type ProjectContextRuntime = Parameters<typeof registerProjectContextRoutes>[1]['projectContextRuntime'];
+
+const createApp = (overrides: Partial<MockRuntime> = {}) => {
+  const received = {} as Received;
+  const runtime: MockRuntime = {
     readContext: async () => emptyContext,
     saveTodos: async (_projectId, todos) => {
       received.todos = todos;
@@ -66,7 +147,7 @@ const createApp = (overrides = {}) => {
   // Deliberately NO app.use(express.json()): production does not have one on
   // this path, so adding it here would hide the very defect these tests exist
   // to catch.
-  registerProjectContextRoutes(app, { projectContextRuntime: runtime });
+  registerProjectContextRoutes(app, { projectContextRuntime: runtime as ProjectContextRuntime });
   return { app, received };
 };
 
@@ -93,7 +174,7 @@ describe('project context routes over HTTP', () => {
   it('accepts a note create with a JSON body', async () => {
     const { app, received } = createApp();
 
-    const res = await request(app)
+    const res: { body: NoteResult } = await request(app)
       .post(`${BASE}/notes`)
       .send({ body: 'hello', source: 'selection', origin: { sessionId: 'ses_1' } })
       .expect(201);
@@ -106,7 +187,7 @@ describe('project context routes over HTTP', () => {
   it('accepts a note pin patch with a JSON body', async () => {
     const { app, received } = createApp();
 
-    const res = await request(app)
+    const res: { body: NoteResult } = await request(app)
       .patch(`${BASE}/notes/n1`)
       .send({ pinned: true })
       .expect(200);
@@ -129,7 +210,7 @@ describe('project context routes over HTTP', () => {
   it('accepts a plan pin patch with a JSON body', async () => {
     const { app } = createApp();
 
-    const res = await request(app)
+    const res: { body: PlanResult } = await request(app)
       .patch(`${BASE}/plans/p1`)
       .send({ pinned: true })
       .expect(200);
@@ -216,10 +297,10 @@ describe('project context routes over HTTP', () => {
 
   it('shares and unshares a plan, and answers 404 for an unknown one', async () => {
     const { app } = createApp();
-    const shared = await request(app).post('/api/project-context/proj/plans/p1/share');
+    const shared: { status: number; body: PlanResult } = await request(app).post('/api/project-context/proj/plans/p1/share');
     expect(shared.status).toBe(200);
     expect(shared.body.plan.id).toBe('shared:a.md');
-    const back = await request(app).post('/api/project-context/proj/plans/shared%3Aa.md/unshare');
+    const back: { status: number; body: PlanResult } = await request(app).post('/api/project-context/proj/plans/shared%3Aa.md/unshare');
     expect(back.status).toBe(200);
     expect(back.body.plan.source).toBe('personal');
     expect((await request(app).post('/api/project-context/proj/plans/nope/share')).status).toBe(404);
