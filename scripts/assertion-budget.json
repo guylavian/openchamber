@@ -458,6 +458,19 @@
     "runtime as ProjectContextRuntime": 1,
     "{} as Received": 1
   },
+  "packages/web/server/lib/project-context/runtime.test.ts": {
+    "(await runtime.readContext(PROJECT_ID)).notes[0]!": 1,
+    "(await runtime.readContext(PROJECT_ID)).plans[0]!": 2,
+    "(await runtime.readContext(PROJECT_ID)).todos[0]!": 1,
+    "JSON.parse(await fsPromises.readFile(filePath, 'utf8')) as T": 1,
+    "context.plans.find((plan) => plan.id === 'shared:untitled.md')!": 1,
+    "context.plans[0]!": 2,
+    "createProjectContextRuntime({ fsPromises, path, projectsDirPath, createId: () => `plan-${++idCounter}`, resolveSharedPlansDir: async () => sharedDir, }) as TestRuntime": 1,
+    "createProjectContextRuntime({ fsPromises, path, projectsDirPath, createId: () => `plan-${++idCounter}`, }) as TestRuntime": 1,
+    "expect.arrayContaining<string>([ `${mine.plan.id}:personal`, 'shared:roadmap.md:shared', 'shared:untitled.md:shared', ]) as string[]": 1,
+    "notes[0]!": 3,
+    "shared.plan!": 2
+  },
   "packages/web/server/lib/project-context/runtime.ts": {
     "entry.createdAt as number": 8,
     "entry.source as NoteSource": 1,
@@ -591,6 +604,10 @@
     "since[0]!": 1,
     "space.read() as Buffer | null": 2,
     "space.read(16 * 1024) as Buffer | null": 1
+  },
+  "packages/web/server/lib/spaces/labels.ts": {
+    "labels[LABEL_ID] as string": 1,
+    "labels[LABEL_ROLE] as string": 2
   },
   "packages/web/server/lib/terminal/shutdown.test.ts": {
     "JSON.parse(line) as ShutdownEvent": 1,

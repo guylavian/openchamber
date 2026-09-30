@@ -410,6 +410,98 @@
         "reason": "The JavaScript rethrows the caught value as it is; wrapping it in an Error would change what callers receive."
       }
     ],
+    "packages/web/server/lib/project-context/runtime.test.ts": [
+      {
+        "rule": "@typescript-eslint/await-thenable",
+        "text": "await expect(fsPromises.access(contextPath())).rejects.toThrow();",
+        "count": 1,
+        "reason": "bun:test types expect() results as non-thenable, but rejects.toThrow() is awaited in the original; awaiting is runtime behaviour and stays."
+      },
+      {
+        "rule": "@typescript-eslint/await-thenable",
+        "text": "await expect(fsPromises.access(path.join(plansDir(), plan.file))).rejects.toThrow();",
+        "count": 3,
+        "reason": "bun:test types expect() results as non-thenable, but rejects.toThrow() is awaited in the original; awaiting is runtime behaviour and stays."
+      },
+      {
+        "rule": "@typescript-eslint/await-thenable",
+        "text": "await expect(fsPromises.access(path.join(sharedDir, 'a.md'))).rejects.toThrow();",
+        "count": 1,
+        "reason": "bun:test types expect() results as non-thenable, but rejects.toThrow() is awaited in the original; awaiting is runtime behaviour and stays."
+      },
+      {
+        "rule": "@typescript-eslint/await-thenable",
+        "text": "await expect(fsPromises.access(path.join(sharedDir, plan.file))).rejects.toThrow();",
+        "count": 1,
+        "reason": "bun:test types expect() results as non-thenable, but rejects.toThrow() is awaited in the original; awaiting is runtime behaviour and stays."
+      },
+      {
+        "rule": "@typescript-eslint/await-thenable",
+        "text": "await expect(fsPromises.readdir(plansDir())).rejects.toThrow();",
+        "count": 1,
+        "reason": "bun:test types expect() results as non-thenable, but rejects.toThrow() is awaited in the original; awaiting is runtime behaviour and stays."
+      },
+      {
+        "rule": "@typescript-eslint/await-thenable",
+        "text": "await expect(runtime.createNote(PROJECT_ID, { body: ' ' })).rejects.toThrow('body is required');",
+        "count": 1,
+        "reason": "bun:test types expect() results as non-thenable, but rejects.toThrow() is awaited in the original; awaiting is runtime behaviour and stays."
+      },
+      {
+        "rule": "@typescript-eslint/await-thenable",
+        "text": "await expect(runtime.createNote(PROJECT_ID, { body: 'one too many' })).rejects.toThrow('at most 200 notes');",
+        "count": 1,
+        "reason": "bun:test types expect() results as non-thenable, but rejects.toThrow() is awaited in the original; awaiting is runtime behaviour and stays."
+      },
+      {
+        "rule": "@typescript-eslint/await-thenable",
+        "text": "await expect(runtime.readContext('../escape')).rejects.toThrow('unsupported characters');",
+        "count": 1,
+        "reason": "bun:test types expect() results as non-thenable, but rejects.toThrow() is awaited in the original; awaiting is runtime behaviour and stays."
+      },
+      {
+        "rule": "@typescript-eslint/await-thenable",
+        "text": "await expect(runtime.readContext('')).rejects.toThrow('projectId is required');",
+        "count": 1,
+        "reason": "bun:test types expect() results as non-thenable, but rejects.toThrow() is awaited in the original; awaiting is runtime behaviour and stays."
+      },
+      {
+        "rule": "@typescript-eslint/await-thenable",
+        "text": "await expect(runtime.readContext('a/b')).rejects.toThrow('unsupported characters');",
+        "count": 1,
+        "reason": "bun:test types expect() results as non-thenable, but rejects.toThrow() is awaited in the original; awaiting is runtime behaviour and stays."
+      },
+      {
+        "rule": "@typescript-eslint/await-thenable",
+        "text": "await expect(runtime.readContext(PROJECT_ID)).rejects.toThrow('malformed');",
+        "count": 1,
+        "reason": "bun:test types expect() results as non-thenable, but rejects.toThrow() is awaited in the original; awaiting is runtime behaviour and stays."
+      },
+      {
+        "rule": "@typescript-eslint/await-thenable",
+        "text": "await expect(runtime.sharePlan(PROJECT_ID, plan.id)).rejects.toThrow('shared plans folder is required');",
+        "count": 1,
+        "reason": "bun:test types expect() results as non-thenable, but rejects.toThrow() is awaited in the original; awaiting is runtime behaviour and stays."
+      },
+      {
+        "rule": "@typescript-eslint/await-thenable",
+        "text": "await expect(runtime.updateNote(PROJECT_ID, note.id, { body: ' ' })).rejects.toThrow('body is required');",
+        "count": 1,
+        "reason": "bun:test types expect() results as non-thenable, but rejects.toThrow() is awaited in the original; awaiting is runtime behaviour and stays."
+      },
+      {
+        "rule": "@typescript-eslint/await-thenable",
+        "text": "await expect(runtime.updateNote(PROJECT_ID, note.id, {})).rejects.toThrow('body or pinned is required');",
+        "count": 1,
+        "reason": "bun:test types expect() results as non-thenable, but rejects.toThrow() is awaited in the original; awaiting is runtime behaviour and stays."
+      },
+      {
+        "rule": "@typescript-eslint/await-thenable",
+        "text": "await expect(runtime.updatePlan(PROJECT_ID, plan.id, {})).rejects.toThrow('raw is required');",
+        "count": 1,
+        "reason": "bun:test types expect() results as non-thenable, but rejects.toThrow() is awaited in the original; awaiting is runtime behaviour and stays."
+      }
+    ],
     "packages/web/server/lib/project-context/runtime.ts": [
       {
         "rule": "@typescript-eslint/no-unused-vars",
@@ -552,6 +644,38 @@
         "text": "socket.on('data', (chunk: Buffer) => { text += chunk; });",
         "count": 1,
         "reason": "The JavaScript's own string += chunk on a stream 'data' Buffer, which relies on Buffer's implicit toString; making it explicit would change the emitted JavaScript."
+      }
+    ],
+    "packages/web/server/lib/spaces/labels.ts": [
+      {
+        "rule": "@typescript-eslint/no-unnecessary-type-conversion",
+        "text": "const name = String(value ?? '').trim();",
+        "count": 1,
+        "reason": "String(x ?? '') is the original runtime coercion; parity forbids removing it."
+      },
+      {
+        "rule": "@typescript-eslint/no-unnecessary-type-conversion",
+        "text": "const text = String(description ?? '').trim();",
+        "count": 1,
+        "reason": "String(x ?? '') is the original runtime coercion; parity forbids removing it."
+      },
+      {
+        "rule": "@typescript-eslint/no-unnecessary-type-conversion",
+        "text": "const text = String(directory ?? '');",
+        "count": 1,
+        "reason": "String(x ?? '') is the original runtime coercion; parity forbids removing it."
+      },
+      {
+        "rule": "@typescript-eslint/no-unnecessary-type-conversion",
+        "text": "const text = String(name ?? '');",
+        "count": 1,
+        "reason": "String(x ?? '') is the original runtime coercion; parity forbids removing it."
+      },
+      {
+        "rule": "no-control-regex",
+        "text": "const CONTROL_CHARACTERS = /[\\x00-\\x1f\\x7f\\x85\\u2028\\u2029]/;",
+        "count": 1,
+        "reason": "Regex literal is the runtime expression: it deliberately matches control characters."
       }
     ],
     "packages/web/server/lib/spaces/places/registry.ts": [

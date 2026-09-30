@@ -8,20 +8,34 @@ import { createProjectContextRuntime, parsePlanMarkdown } from './runtime.js';
 
 const PROJECT_ID = 'path_dGVzdA';
 
-let projectsDirPath;
-let runtime;
-let idCounter;
+interface StoredJsonFile {
+  notes: [{ body: string }];
+  todos: unknown[];
+  plans: [Record<string, unknown>];
+}
+
+type ProjectContextRuntime = ReturnType<typeof createProjectContextRuntime>;
+
+type TestRuntime = {
+  [K in keyof ProjectContextRuntime]: ProjectContextRuntime[K] extends (...args: infer A) => Promise<infer R>
+    ? (...args: A) => Promise<NonNullable<R>>
+    : ProjectContextRuntime[K];
+};
+
+let projectsDirPath: string;
+let runtime: TestRuntime;
+let idCounter: number;
 
 const legacyConfigPath = () => path.join(projectsDirPath, `${PROJECT_ID}.json`);
 const contextPath = () => path.join(projectsDirPath, PROJECT_ID, 'context.json');
 const plansDir = () => path.join(projectsDirPath, PROJECT_ID, 'plans');
 
-const writeJson = async (filePath, value) => {
+const writeJson = async (filePath: string, value: unknown) => {
   await fsPromises.mkdir(path.dirname(filePath), { recursive: true });
   await fsPromises.writeFile(filePath, JSON.stringify(value, null, 2), 'utf8');
 };
 
-const readJson = async (filePath) => JSON.parse(await fsPromises.readFile(filePath, 'utf8'));
+const readJson = async <T>(filePath: string) => JSON.parse(await fsPromises.readFile(filePath, 'utf8')) as T;
 
 beforeEach(async () => {
   projectsDirPath = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'oc-project-context-'));
@@ -31,7 +45,7 @@ beforeEach(async () => {
     path,
     projectsDirPath,
     createId: () => `plan-${++idCounter}`,
-  });
+  }) as TestRuntime;
 });
 
 afterEach(async () => {
@@ -88,7 +102,7 @@ describe('readContext', () => {
       todos: [],
       plans: [],
     });
-    expect((await runtime.readContext(PROJECT_ID)).notes[0].body).toHaveLength(3000);
+    expect((await runtime.readContext(PROJECT_ID)).notes[0]!.body).toHaveLength(3000);
   });
 
   test('converts a version 1 string note into a single entry', async () => {
@@ -96,9 +110,9 @@ describe('readContext', () => {
 
     const notes = (await runtime.readContext(PROJECT_ID)).notes;
     expect(notes).toHaveLength(1);
-    expect(notes[0].body).toBe('legacy blob');
-    expect(notes[0].source).toBe('manual');
-    expect(notes[0].pinned).toBe(false);
+    expect(notes[0]!.body).toBe('legacy blob');
+    expect(notes[0]!.source).toBe('manual');
+    expect(notes[0]!.pinned).toBe(false);
   });
 
   test('an empty version 1 string converts to no notes at all', async () => {
@@ -138,7 +152,7 @@ describe('legacy migration', () => {
     expect(context.todos).toEqual([{ id: 't1', text: 'legacy todo', completed: true, createdAt: 5 }]);
     expect(context.plans).toEqual([{ id: 'p1', file: '10-old.md', title: 'Old plan', createdAt: 10, pinned: false, source: 'personal' }]);
 
-    const remaining = await readJson(legacyConfigPath());
+    const remaining = await readJson<Record<string, unknown>>(legacyConfigPath());
     expect(remaining).toEqual({
       projectPath: '/tmp/test',
       'setup-worktree': ['bun install'],
@@ -174,7 +188,7 @@ describe('legacy migration', () => {
 
     expect(await runtime.readContext(PROJECT_ID)).toEqual({ version: 2, notes: [], todos: [], plans: [], sharedPlansDir: null });
     await expect(fsPromises.access(contextPath())).rejects.toThrow();
-    expect(await readJson(legacyConfigPath())).toEqual({ 'setup-worktree': ['bun install'] });
+    expect(await readJson<Record<string, unknown>>(legacyConfigPath())).toEqual({ 'setup-worktree': ['bun install'] });
   });
 
   test('is idempotent across repeated reads', async () => {
@@ -183,7 +197,7 @@ describe('legacy migration', () => {
     const first = await runtime.readContext(PROJECT_ID);
     const second = await runtime.readContext(PROJECT_ID);
     expect(second).toEqual(first);
-    expect(await readJson(legacyConfigPath())).toEqual({});
+    expect(await readJson<Record<string, unknown>>(legacyConfigPath())).toEqual({});
   });
 
   test('concurrent reads converge on the same migrated content', async () => {
@@ -197,7 +211,7 @@ describe('legacy migration', () => {
     for (const result of results) {
       expect(result.notes.map((note) => note.body)).toEqual(['concurrent']);
     }
-    expect((await readJson(contextPath())).notes[0].body).toBe('concurrent');
+    expect((await readJson<StoredJsonFile>(contextPath())).notes[0].body).toBe('concurrent');
   });
 });
 
@@ -233,7 +247,7 @@ describe('long project ids', () => {
     expect(context.plans.map((entry) => entry.id)).toEqual([plan.id]);
     expect((await runtime.readPlan(longProjectId, plan.id)).body).toBe('step one');
 
-    expect((await readJson(path.join(projectsDirPath, stem, 'context.json'))).todos).toHaveLength(1);
+    expect((await readJson<StoredJsonFile>(path.join(projectsDirPath, stem, 'context.json'))).todos).toHaveLength(1);
     await fsPromises.access(path.join(projectsDirPath, stem, 'plans', plan.file));
     expect(await fsPromises.readdir(projectsDirPath)).toEqual([stem]);
   });
@@ -249,8 +263,8 @@ describe('long project ids', () => {
     const context = await runtime.readContext(longProjectId);
     expect(context.notes.map((entry) => entry.body)).toEqual(['legacy notes']);
     expect(context.todos).toEqual([{ id: 't1', text: 'legacy todo', completed: true, createdAt: 5 }]);
-    expect(await readJson(boundedConfigPath)).toEqual({ 'setup-worktree': ['bun install'] });
-    expect((await readJson(path.join(projectsDirPath, stem, 'context.json'))).notes[0].body).toBe('legacy notes');
+    expect(await readJson<Record<string, unknown>>(boundedConfigPath)).toEqual({ 'setup-worktree': ['bun install'] });
+    expect((await readJson<StoredJsonFile>(path.join(projectsDirPath, stem, 'context.json'))).notes[0].body).toBe('legacy notes');
   });
 });
 
@@ -285,7 +299,7 @@ describe('todos', () => {
 
   test('clamps oversized todo text', async () => {
     await runtime.saveTodos(PROJECT_ID, [{ id: 't1', text: 'z'.repeat(300), createdAt: 1 }]);
-    expect((await runtime.readContext(PROJECT_ID)).todos[0].text).toHaveLength(120);
+    expect((await runtime.readContext(PROJECT_ID)).todos[0]!.text).toHaveLength(120);
   });
 });
 
@@ -463,7 +477,7 @@ describe('plans', () => {
     expect(result.plan.file).toBe(plan.file);
 
     expect(await fsPromises.readFile(path.join(plansDir(), plan.file), 'utf8')).toBe('# New title\n\n- step\n- step two\n');
-    expect((await runtime.readContext(PROJECT_ID)).plans[0].title).toBe('New title');
+    expect((await runtime.readContext(PROJECT_ID)).plans[0]!.title).toBe('New title');
   });
 
   test('update keeps the file name when the title changes', async () => {
@@ -472,7 +486,7 @@ describe('plans', () => {
     await runtime.updatePlan(PROJECT_ID, plan.id, { raw: '# Totally different\n\nx' });
 
     const context = await runtime.readContext(PROJECT_ID);
-    expect(context.plans[0].file).toBe(plan.file);
+    expect(context.plans[0]!.file).toBe(plan.file);
     expect(context.plans).toHaveLength(1);
   });
 
@@ -511,7 +525,7 @@ describe('plans', () => {
 
     const result = await runtime.setPlanPinned(PROJECT_ID, plan.id, true);
     expect(result.plan).toEqual({ ...plan, pinned: true });
-    expect((await runtime.readContext(PROJECT_ID)).plans[0].pinned).toBe(true);
+    expect((await runtime.readContext(PROJECT_ID)).plans[0]!.pinned).toBe(true);
   });
 
   test('pinning an unknown plan returns null', async () => {
@@ -535,8 +549,8 @@ describe('plans', () => {
 });
 
 describe('shared plans', () => {
-  let sharedDir;
-  let sharedRuntime;
+  let sharedDir: string;
+  let sharedRuntime: TestRuntime;
 
   beforeEach(async () => {
     sharedDir = path.join(projectsDirPath, 'repo', 'docs', 'plans');
@@ -546,7 +560,7 @@ describe('shared plans', () => {
       projectsDirPath,
       createId: () => `plan-${++idCounter}`,
       resolveSharedPlansDir: async () => sharedDir,
-    });
+    }) as TestRuntime;
   });
 
   test('lists the shared folder\'s markdown files after the personal plans, marked shared, and reads them by file', async () => {
@@ -558,11 +572,11 @@ describe('shared plans', () => {
 
     const context = await sharedRuntime.readContext(PROJECT_ID);
     expect(context.sharedPlansDir).toBe(sharedDir);
-    expect(context.plans.map((plan) => `${plan.id}:${plan.source}`)).toEqual(expect.arrayContaining([
+    expect(context.plans.map((plan) => `${plan.id}:${plan.source}`)).toEqual((expect.arrayContaining<string>([
       `${mine.plan.id}:personal`, 'shared:roadmap.md:shared', 'shared:untitled.md:shared',
-    ]));
-    expect(context.plans[0].id).toBe(mine.plan.id);
-    expect(context.plans.find((plan) => plan.id === 'shared:untitled.md').title).toBe('first line only');
+    ]) as string[]));
+    expect(context.plans[0]!.id).toBe(mine.plan.id);
+    expect(context.plans.find((plan) => plan.id === 'shared:untitled.md')!.title).toBe('first line only');
 
     const read = await sharedRuntime.readPlan(PROJECT_ID, 'shared:roadmap.md');
     expect(read.title).toBe('Roadmap');
@@ -596,12 +610,12 @@ describe('shared plans', () => {
     const { plan } = await sharedRuntime.createPlan(PROJECT_ID, { title: 'Mine', body: 'body' });
     const shared = await sharedRuntime.sharePlan(PROJECT_ID, plan.id);
     // The id survives the move: a session that attached the plan still finds it.
-    expect(shared.plan.id).toBe(plan.id);
-    expect(shared.plan.source).toBe('shared');
+    expect(shared.plan!.id).toBe(plan.id);
+    expect(shared.plan!.source).toBe('shared');
     expect(shared.context.plans.map((entry) => `${entry.id}:${entry.source}`)).toEqual([`${plan.id}:shared`]);
     await expect(fsPromises.access(path.join(plansDir(), plan.file))).rejects.toThrow();
     expect(await fsPromises.readFile(path.join(sharedDir, plan.file), 'utf8')).toBe('# Mine\n\nbody');
-    expect((await readJson(path.join(projectsDirPath, PROJECT_ID, 'context.json'))).plans[0]).toMatchObject({ id: plan.id, shared: true });
+    expect((await readJson<StoredJsonFile>(path.join(projectsDirPath, PROJECT_ID, 'context.json'))).plans[0]).toMatchObject({ id: plan.id, shared: true });
     const readMoved = await sharedRuntime.readPlan(PROJECT_ID, plan.id);
     expect(readMoved.source).toBe('shared');
     expect(readMoved.raw).toBe('# Mine\n\nbody');

@@ -2,6 +2,42 @@ import crypto from 'node:crypto';
 
 import { SpaceError } from './errors.js';
 
+type LabelMap = Record<string, string | undefined>;
+
+interface SpaceLabelInput {
+  id: string;
+  role: string;
+  owner: string;
+  project: string;
+  name: string | null | undefined;
+  created: string;
+}
+
+export interface ParsedSpaceLabels {
+  id: string;
+  role: string;
+  owner: string;
+  project: string;
+  name: string;
+  created: string;
+}
+
+interface ToolsLabelInput {
+  role: string;
+  owner: string;
+  key: string;
+  description: string | null | undefined;
+  created: string;
+}
+
+export interface ParsedToolsLabels {
+  role: string;
+  owner: string;
+  key: string;
+  description: string;
+  created: string;
+}
+
 export const LABEL_MARKER = 'openchamber.space';
 const LABEL_ID = 'openchamber.space.id';
 const LABEL_ROLE = 'openchamber.space.role';
@@ -20,7 +56,7 @@ export const ROLE_VOLUME = 'volume';
 // The inner network keeps the plain `network` role, so nothing that existed changes name.
 export const ROLE_GATEKEEPER = 'gatekeeper';
 export const ROLE_OUTER_NETWORK = 'outer-network';
-const ROLES = new Set([ROLE_SPACE, ROLE_SETUP, ROLE_NETWORK, ROLE_VOLUME, ROLE_GATEKEEPER, ROLE_OUTER_NETWORK]);
+const ROLES = new Set<string | undefined>([ROLE_SPACE, ROLE_SETUP, ROLE_NETWORK, ROLE_VOLUME, ROLE_GATEKEEPER, ROLE_OUTER_NETWORK]);
 
 // The tools volume and its two one-shot containers belong to an owner, not to a space.
 // They carry no space id, so parseSpaceLabels returns null for them and `list` and `remove` pass them by.
@@ -29,7 +65,7 @@ const LABEL_TOOLS_DESCRIPTION = 'openchamber.space.tools.description';
 export const ROLE_TOOLS = 'tools';
 export const ROLE_TOOLS_FILL = 'tools-fill';
 export const ROLE_TOOLS_CHECK = 'tools-check';
-const TOOLS_ROLES = new Set([ROLE_TOOLS, ROLE_TOOLS_FILL, ROLE_TOOLS_CHECK]);
+const TOOLS_ROLES = new Set<string | undefined>([ROLE_TOOLS, ROLE_TOOLS_FILL, ROLE_TOOLS_CHECK]);
 const TOOLS_KEY_PATTERN = /^[0-9a-f]{16}$/;
 
 const SPACE_ID_PATTERN = /^[0-9a-f]{12}$/;
@@ -43,25 +79,25 @@ const MAX_NAME_LENGTH = 100;
 
 export const createSpaceId = () => crypto.randomBytes(6).toString('hex');
 
-export const isSpaceId = (value) => SPACE_ID_PATTERN.test(value);
+export const isSpaceId = (value: string) => SPACE_ID_PATTERN.test(value);
 
-export function requireSpaceId(value) {
+export function requireSpaceId(value: string) {
   if (!isSpaceId(value)) {
     throw new SpaceError('invalid_space_id', 'A space id is 12 lowercase hex characters');
   }
   return value;
 }
 
-const isOwner = (value) => OWNER_PATTERN.test(value ?? '');
+const isOwner = (value: string | null | undefined): value is string => OWNER_PATTERN.test(value ?? '');
 
-export function requireOwner(value) {
+export function requireOwner(value: string) {
   if (!isOwner(value)) {
     throw new SpaceError('invalid_owner', 'The installation id may hold only letters, digits, dots, dashes and underscores, 64 at most');
   }
   return value;
 }
 
-export function normalizeSpaceName(value) {
+export function normalizeSpaceName(value: string | null | undefined) {
   const name = String(value ?? '').trim();
   if (name.length === 0 || name.length > MAX_NAME_LENGTH || CONTROL_CHARACTERS.test(name)) {
     throw new SpaceError('invalid_space_name', `A space name is 1 to ${MAX_NAME_LENGTH} characters on one line`);
@@ -69,7 +105,7 @@ export function normalizeSpaceName(value) {
   return name;
 }
 
-export function hashProjectDirectory(directory) {
+export function hashProjectDirectory(directory: string | null | undefined) {
   const text = String(directory ?? '');
   if (text.trim().length === 0) {
     throw new SpaceError('invalid_project_directory', 'A space needs the project directory it was created for');
@@ -77,11 +113,11 @@ export function hashProjectDirectory(directory) {
   return crypto.createHash('sha256').update(text).digest('hex').slice(0, 16);
 }
 
-export function spaceResourcePrefix(spaceId) {
+export function spaceResourcePrefix(spaceId: string) {
   return `openchamber-space-${requireSpaceId(spaceId)}-`;
 }
 
-export function spaceResourceName(spaceId, role, suffix = '') {
+export function spaceResourceName(spaceId: string, role: string, suffix = '') {
   if (!ROLES.has(role)) {
     throw new SpaceError('invalid_role', `Unknown space resource role '${role}'`);
   }
@@ -94,7 +130,7 @@ export function spaceResourceName(spaceId, role, suffix = '') {
   return `${spaceResourcePrefix(spaceId)}${role}-${suffix}`;
 }
 
-export function buildSpaceLabels({ id, role, owner, project, name, created }) {
+export function buildSpaceLabels({ id, role, owner, project, name, created }: SpaceLabelInput) {
   if (!ROLES.has(role)) {
     throw new SpaceError('invalid_role', `Unknown space resource role '${role}'`);
   }
@@ -115,10 +151,10 @@ export function buildSpaceLabels({ id, role, owner, project, name, created }) {
   };
 }
 
-export const labelArgs = (labels) => Object.entries(labels).flatMap(([key, value]) => ['--label', `${key}=${value}`]);
+export const labelArgs = (labels: LabelMap) => Object.entries(labels).flatMap(([key, value]) => ['--label', `${key}=${value}`]);
 
 /** `--filter` arguments that select this owner's resources, optionally one space. */
-export function labelFilterArgs({ owner, spaceId = null }) {
+export function labelFilterArgs({ owner, spaceId = null }: { owner: string; spaceId?: string | null }) {
   const filters = ['--filter', `label=${LABEL_MARKER}=${MARKER_VALUE}`, '--filter', `label=${LABEL_OWNER}=${requireOwner(owner)}`];
   if (spaceId !== null) {
     filters.push('--filter', `label=${LABEL_ID}=${requireSpaceId(spaceId)}`);
@@ -130,12 +166,12 @@ export function labelFilterArgs({ owner, spaceId = null }) {
  * Reads our labels from the label object of a `docker inspect` entry.
  * Returns null for anything that is not a well-formed resource of ours.
  */
-export function parseSpaceLabels(labels) {
+export function parseSpaceLabels(labels: LabelMap | null | undefined): ParsedSpaceLabels | null {
   if (!labels || labels[LABEL_MARKER] !== MARKER_VALUE) {
     return null;
   }
-  const id = labels[LABEL_ID];
-  const role = labels[LABEL_ROLE];
+  const id = labels[LABEL_ID] as string;
+  const role = labels[LABEL_ROLE] as string;
   const owner = labels[LABEL_OWNER];
   if (!isSpaceId(id) || !ROLES.has(role) || !isOwner(owner)) {
     return null;
@@ -150,9 +186,9 @@ export function parseSpaceLabels(labels) {
   };
 }
 
-const isToolsKey = (value) => TOOLS_KEY_PATTERN.test(value ?? '');
+const isToolsKey = (value: string | null | undefined): value is string => TOOLS_KEY_PATTERN.test(value ?? '');
 
-export function requireToolsKey(value) {
+export function requireToolsKey(value: string) {
   if (!isToolsKey(value)) {
     throw new SpaceError('invalid_tools_key', 'A tools key is 16 lowercase hex characters');
   }
@@ -160,7 +196,7 @@ export function requireToolsKey(value) {
 }
 
 /** One volume per owner and per tools content. A one-shot container adds its role as a suffix. */
-export function toolsResourceName(owner, key, role = ROLE_TOOLS) {
+export function toolsResourceName(owner: string, key: string, role: string = ROLE_TOOLS) {
   if (!TOOLS_ROLES.has(role)) {
     throw new SpaceError('invalid_role', `Unknown tools resource role '${role}'`);
   }
@@ -169,14 +205,14 @@ export function toolsResourceName(owner, key, role = ROLE_TOOLS) {
 }
 
 /** The key inside a tools volume name of this owner, or null for any other name. */
-export function toolsKeyFromVolumeName(name, owner) {
+export function toolsKeyFromVolumeName(name: string | null | undefined, owner: string) {
   const prefix = `openchamber-tools-${requireOwner(owner)}-`;
   const text = String(name ?? '');
   const key = text.slice(prefix.length);
   return text.startsWith(prefix) && isToolsKey(key) ? key : null;
 }
 
-export function buildToolsLabels({ role, owner, key, description, created }) {
+export function buildToolsLabels({ role, owner, key, description, created }: ToolsLabelInput) {
   if (!TOOLS_ROLES.has(role)) {
     throw new SpaceError('invalid_role', `Unknown tools resource role '${role}'`);
   }
@@ -199,7 +235,7 @@ export function buildToolsLabels({ role, owner, key, description, created }) {
 }
 
 /** `--filter` arguments that select this owner's tools resources, optionally of one role and of one key. */
-export function toolsLabelFilterArgs({ owner, role = null, key = null }) {
+export function toolsLabelFilterArgs({ owner, role = null, key = null }: { owner: string; role?: string | null; key?: string | null }) {
   const filters = labelFilterArgs({ owner });
   if (role !== null) {
     filters.push('--filter', `label=${LABEL_ROLE}=${role}`);
@@ -214,11 +250,11 @@ export function toolsLabelFilterArgs({ owner, role = null, key = null }) {
  * Reads the tools labels from the label object of a `docker inspect` entry.
  * Returns null for anything that is not a well-formed tools resource of ours.
  */
-export function parseToolsLabels(labels) {
+export function parseToolsLabels(labels: LabelMap | null | undefined): ParsedToolsLabels | null {
   if (!labels || labels[LABEL_MARKER] !== MARKER_VALUE) {
     return null;
   }
-  const role = labels[LABEL_ROLE];
+  const role = labels[LABEL_ROLE] as string;
   const owner = labels[LABEL_OWNER];
   const key = labels[LABEL_TOOLS_KEY];
   if (!TOOLS_ROLES.has(role) || !isOwner(owner) || !isToolsKey(key)) {
