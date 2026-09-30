@@ -11,11 +11,24 @@
  * `req.body` is parsed here without a per-route parser.
  */
 
+import type { Express, Request, Response } from 'express';
 import { isProjectSetupValidationError } from './project-setup.js';
 
-const isObjectRecord = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+const isObjectRecord = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
-const respondWithError = (res, error, fallbackMessage) => {
+interface ProjectParams {
+  projectId: string;
+}
+
+interface ProjectSetupDeps {
+  projectConfigRuntime: {
+    readProjectSetup: (projectId: string) => Promise<unknown>;
+    updateSharedProjectSetup: (projectId: string, config: unknown) => Promise<unknown>;
+    updateProjectSetup: (projectId: string, config: unknown) => Promise<unknown>;
+  };
+}
+
+const respondWithError = (res: Response, error: unknown, fallbackMessage: string): Response => {
   const message = error instanceof Error ? error.message : fallbackMessage;
   if (isProjectSetupValidationError(error)) {
     return res.status(400).json({ error: message });
@@ -23,10 +36,10 @@ const respondWithError = (res, error, fallbackMessage) => {
   return res.status(500).json({ error: message || fallbackMessage });
 };
 
-export const registerProjectSetupRoutes = (app, dependencies) => {
+export const registerProjectSetupRoutes = (app: Express, dependencies: ProjectSetupDeps): void => {
   const { projectConfigRuntime } = dependencies;
 
-  app.get('/api/projects/:projectId/config', async (req, res) => {
+  app.get('/api/projects/:projectId/config', async (req: Request<ProjectParams>, res: Response): Promise<Response> => {
     try {
       return res.json(await projectConfigRuntime.readProjectSetup(req.params.projectId));
     } catch (error) {
@@ -35,7 +48,7 @@ export const registerProjectSetupRoutes = (app, dependencies) => {
   });
 
   // The team's shared file in the checkout; see `updateSharedProjectSetup`.
-  app.put('/api/projects/:projectId/config/shared', async (req, res) => {
+  app.put('/api/projects/:projectId/config/shared', async (req: Request<ProjectParams>, res: Response): Promise<Response> => {
     if (!isObjectRecord(req.body)) {
       return res.status(400).json({ error: 'Body must be an object' });
     }
@@ -46,7 +59,7 @@ export const registerProjectSetupRoutes = (app, dependencies) => {
     }
   });
 
-  app.put('/api/projects/:projectId/config', async (req, res) => {
+  app.put('/api/projects/:projectId/config', async (req: Request<ProjectParams>, res: Response): Promise<Response> => {
     if (!isObjectRecord(req.body)) {
       return res.status(400).json({ error: 'Body must be an object' });
     }

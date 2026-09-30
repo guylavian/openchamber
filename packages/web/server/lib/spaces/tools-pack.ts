@@ -18,12 +18,30 @@ const STEP_TIMEOUT_MS = 5 * 60_000;
 
 const CHECKOUT_ROOT = fileURLToPath(new URL('../../../../../', import.meta.url));
 
+interface CommandResult {
+  code: number;
+  stdout: string;
+  stderr: string;
+}
+
+interface PackLocalToolsInput {
+  runCommand: (bin: string, args: string[], opts: { cwd: string; timeoutMs: number }) => Promise<CommandResult>;
+  bunPath?: string;
+  checkoutRoot?: string;
+  outputDirectory: string;
+}
+
+interface TarballPaths {
+  webTarballPath: string;
+  sdkTarballPath: string;
+}
+
 /**
  * Resolves `{ webTarballPath, sdkTarballPath }` inside `outputDirectory`, for createPackedToolsSource.
  * Needs the workspace dependencies installed, because the sdk is compiled first.
  */
-export async function packLocalTools({ runCommand, bunPath = 'bun', checkoutRoot = CHECKOUT_ROOT, outputDirectory }) {
-  const step = async (what, packageName, args) => {
+export async function packLocalTools({ runCommand, bunPath = 'bun', checkoutRoot = CHECKOUT_ROOT, outputDirectory }: PackLocalToolsInput): Promise<TarballPaths> {
+  const step = async (what: string, packageName: string, args: string[]): Promise<string> => {
     const cwd = path.join(checkoutRoot, 'packages', packageName);
     const result = await runCommand(bunPath, args, { cwd, timeoutMs: STEP_TIMEOUT_MS });
     if (result.code !== 0) {
@@ -32,7 +50,7 @@ export async function packLocalTools({ runCommand, bunPath = 'bun', checkoutRoot
     return result.stdout;
   };
 
-  const pack = async (packageName) => {
+  const pack = async (packageName: string): Promise<string> => {
     const stdout = await step(`pack the ${packageName} package`, packageName, ['pm', 'pack', '--destination', outputDirectory, '--quiet']);
     const tarball = stdout.split('\n').map((line) => line.trim()).filter(Boolean).pop() ?? '';
     if (!tarball.endsWith('.tgz')) {
