@@ -3,10 +3,11 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import simpleGit from 'simple-git';
+import type { SimpleGitFactory } from 'simple-git';
 
 import { createTaskWorkspaceManager } from './task-workspaces.js';
 
-const roots = [];
+const roots: string[] = [];
 const tempDirectory = async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'foreman-worktree-'));
   roots.push(root);
@@ -20,7 +21,7 @@ describe('Foreman Task workspaces', () => {
     const repositoryDirectory = path.join(root, 'repo');
     const dataDir = path.join(root, 'data');
     await fs.mkdir(repositoryDirectory);
-    const repository = simpleGit(repositoryDirectory);
+    const repository = (simpleGit as typeof simpleGit & SimpleGitFactory)(repositoryDirectory);
     await repository.init();
     await repository.addConfig('user.email', 'foreman@example.invalid');
     await repository.addConfig('user.name', 'Foreman test');
@@ -34,9 +35,9 @@ describe('Foreman Task workspaces', () => {
     expect(first.kind).toBe('git-worktree');
     expect(retry.directory).toBe(first.directory);
     expect(second.directory).not.toBe(first.directory);
-    const canonical = (directory) => path.resolve(directory).replace(/^\/var\/folders\//, '/private/var/folders/');
-    expect(canonical((await simpleGit(first.directory).revparse(['--show-toplevel'])).trim())).toBe(canonical(first.directory));
-    expect(canonical((await simpleGit(second.directory).revparse(['--show-toplevel'])).trim())).toBe(canonical(second.directory));
+    const canonical = (directory: string): string => path.resolve(directory).replace(/^\/var\/folders\//, '/private/var/folders/');
+    expect(canonical((await (simpleGit as typeof simpleGit & SimpleGitFactory)(first.directory).revparse(['--show-toplevel'])).trim())).toBe(canonical(first.directory));
+    expect(canonical((await (simpleGit as typeof simpleGit & SimpleGitFactory)(second.directory).revparse(['--show-toplevel'])).trim())).toBe(canonical(second.directory));
   });
 
   it('keeps a non-Git directory on a shared, explicitly limited safe path', async () => {
@@ -52,7 +53,7 @@ describe('Foreman Task workspaces', () => {
     const repositoryDirectory = path.join(root, 'repo');
     const dataDir = path.join(root, 'data');
     await fs.mkdir(repositoryDirectory);
-    const repository = simpleGit(repositoryDirectory);
+    const repository = (simpleGit as typeof simpleGit & SimpleGitFactory)(repositoryDirectory);
     await repository.init();
     await repository.addConfig('user.email', 'foreman@example.invalid');
     await repository.addConfig('user.name', 'Foreman test');
@@ -71,7 +72,7 @@ describe('Foreman Task workspaces', () => {
     const repositoryDirectory = path.join(root, 'repo');
     const dataDir = path.join(root, 'data');
     await fs.mkdir(repositoryDirectory);
-    const repository = simpleGit(repositoryDirectory);
+    const repository = (simpleGit as typeof simpleGit & SimpleGitFactory)(repositoryDirectory);
     await repository.init();
     await repository.addConfig('user.email', 'foreman@example.invalid');
     await repository.addConfig('user.name', 'Foreman test');

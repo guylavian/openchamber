@@ -169,7 +169,6 @@
   "packages/web/server/lib/event-stream/translate-v2.test.js": 209,
   "packages/web/server/lib/event-stream/upstream-reader.js": 241,
   "packages/web/server/lib/event-stream/upstream-reader.test.js": 275,
-  "packages/web/server/lib/foreman/task-workspaces.test.js": 97,
   "packages/web/server/lib/fs/byte-range.js": 35,
   "packages/web/server/lib/fs/git-process.test.js": 77,
   "packages/web/server/lib/fs/routes.js": 1831,

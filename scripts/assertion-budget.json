@@ -187,6 +187,9 @@
     "{ id: randomUUID() as RunId, taskId, status: 'queued', createdAt: at, updatedAt: at } as Run": 1,
     "{ id: randomUUID() as TaskId, jobId, title, status: 'pending', createdAt: at, updatedAt: at } as Task": 1
   },
+  "packages/web/server/lib/foreman/task-workspaces.test.ts": {
+    "simpleGit as typeof simpleGit & SimpleGitFactory": 5
+  },
   "packages/web/server/lib/foreman/task-workspaces.ts": {
     "error as { code?: unknown } | null | undefined": 1
   },
