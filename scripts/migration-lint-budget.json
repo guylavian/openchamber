@@ -486,6 +486,20 @@
         "reason": "The JavaScript destructures readSettingsFromDiskMigrated from its dependencies without using it; removing it changes the emitted destructuring pattern."
       }
     ],
+    "packages/web/server/lib/opencode/pwa-manifest-routes.test.ts": [
+      {
+        "rule": "@typescript-eslint/no-base-to-string",
+        "text": "const sessions = String(url).includes('?directory=')",
+        "count": 1,
+        "reason": "The JavaScript's own String(url) stringifies a fetch input (string, URL or Request) exactly as written; changing it would change behaviour."
+      },
+      {
+        "rule": "@typescript-eslint/no-base-to-string",
+        "text": "fetchCalls.push(String(url));",
+        "count": 2,
+        "reason": "The JavaScript's own String(url) stringifies a fetch input (string, URL or Request) exactly as written; changing it would change behaviour."
+      }
+    ],
     "packages/web/server/lib/opencode/server-startup-runtime.ts": [
       {
         "rule": "@typescript-eslint/no-misused-promises",
@@ -506,6 +520,14 @@
         "reason": "The JavaScript rejects the caught value as it is; wrapping it in an Error would change the rejection value."
       }
     ],
+    "packages/web/server/lib/opencode/settings-helpers.test.ts": [
+      {
+        "rule": "@typescript-eslint/no-unused-vars",
+        "text": "const helpers = createTestHelpersWithRealSanitizers();",
+        "count": 1,
+        "reason": "The JavaScript's own unused binding (test keeps the helper call); removing it changes the emitted code."
+      }
+    ],
     "packages/web/server/lib/opencode/settings-helpers.ts": [
       {
         "rule": "@typescript-eslint/no-dynamic-delete",
@@ -518,6 +540,20 @@
         "text": "delete sanitized[key];",
         "count": 1,
         "reason": "The JavaScript deletes non-persistable keys by name from the sanitized patch; the fix would replace the delete."
+      }
+    ],
+    "packages/web/server/lib/opencode/settings-runtime.ts": [
+      {
+        "rule": "@typescript-eslint/no-dynamic-delete",
+        "text": "delete next[key];",
+        "count": 1,
+        "reason": "The JavaScript's own delete obj[key] on a settings document keyed by runtime names; the fix would change the emitted code."
+      },
+      {
+        "rule": "@typescript-eslint/no-dynamic-delete",
+        "text": "delete sanitized[key];",
+        "count": 2,
+        "reason": "The JavaScript's own delete obj[key] on a settings document keyed by runtime names; the fix would change the emitted code."
       }
     ],
     "packages/web/server/lib/opencode/startup-performance.ts": [

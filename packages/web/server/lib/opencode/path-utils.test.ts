@@ -12,7 +12,7 @@ describe('pathLooksUserConfigured', () => {
     expect(pathLooksUserConfigured('', home, delim)).toBe(false);
     expect(pathLooksUserConfigured(null, home, delim)).toBe(false);
     expect(pathLooksUserConfigured(undefined, home, delim)).toBe(false);
-    expect(pathLooksUserConfigured(42, home, delim)).toBe(false);
+    expect(pathLooksUserConfigured(42 as never, home, delim)).toBe(false);
   });
 
   it('returns false for minimal system PATH', () => {

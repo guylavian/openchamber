@@ -1,17 +1,26 @@
 import { describe, expect, it } from 'vitest';
 
-import { createSettingsNormalizationRuntime } from './settings-normalization-runtime.js';
+import type { PlatformPath } from 'node:path';
 
-const createTestRuntime = (overrides = {}) => {
+import { createSettingsNormalizationRuntime } from './settings-normalization-runtime.js';
+import type { SettingsNormalizationDependencies } from './settings-normalization-runtime.js';
+
+interface TestOverrides {
+  path?: PlatformPath;
+  processLike?: { platform: string; env: Record<string, string> };
+  realpathSync?: ((value: string) => string) | null | undefined;
+}
+
+const createTestRuntime = (overrides: TestOverrides = {}) => {
   const defaults = {
     os: { homedir: () => '/home/testuser' },
     path: {
-      resolve: (...args) => args[args.length - 1],
+      resolve: (...args: string[]) => args[args.length - 1]!,
       sep: '/',
-      dirname: (p) => p.split('/').slice(0, -1).join('/') || '/',
-    },
+      dirname: (p: string) => p.split('/').slice(0, -1).join('/') || '/',
+    } as PlatformPath,
     processLike: { platform: 'linux', env: {} },
-    realpathSync: (p) => p,
+    realpathSync: (p: string) => p,
     tunnelBootstrapTtlDefaultMs: 600000,
     tunnelBootstrapTtlMinMs: 60000,
     tunnelBootstrapTtlMaxMs: 3600000,
@@ -20,7 +29,7 @@ const createTestRuntime = (overrides = {}) => {
     tunnelSessionTtlMaxMs: 604800000,
   };
 
-  return createSettingsNormalizationRuntime({ ...defaults, ...overrides });
+  return createSettingsNormalizationRuntime({ ...defaults, ...overrides } as SettingsNormalizationDependencies);
 };
 
 describe('settings normalization runtime - symlink resolution', () => {
@@ -88,28 +97,28 @@ describe('settings normalization runtime - symlink resolution', () => {
         { id: 'proj1', path: '/home/user/workplace/MyProject', label: 'MyProject', color: 'primary', addedAt: 1000, lastOpenedAt: 1000 },
       ];
 
-      const result = runtime.sanitizeProjects(projects);
-      expect(result[0].path).toBe('/workplace/user/MyProject');
+      const result = runtime.sanitizeProjects(projects)!;
+      expect(result[0]!.path).toBe('/workplace/user/MyProject');
     });
 
     it('falls back to path.resolve when realpathSync throws', () => {
       const runtime = createTestRuntime({
         realpathSync: () => { throw new Error('ENOENT'); },
-        path: { resolve: (p) => '/resolved' + p, sep: '/', dirname: (p) => p.split('/').slice(0, -1).join('/') || '/' },
+        path: { resolve: (p) => '/resolved' + p, sep: '/', dirname: (p) => p.split('/').slice(0, -1).join('/') || '/' } as PlatformPath,
       });
 
       const projects = [
         { id: 'proj1', path: '/missing/path', label: 'Missing', color: 'primary', addedAt: 1000, lastOpenedAt: 1000 },
       ];
 
-      const result = runtime.sanitizeProjects(projects);
-      expect(result[0].path).toBe('/resolved/missing/path');
+      const result = runtime.sanitizeProjects(projects)!;
+      expect(result[0]!.path).toBe('/resolved/missing/path');
     });
 
     it('keeps a default thinking level next to its model and drops it alone', () => {
       const runtime = createTestRuntime({
         realpathSync: (p) => p,
-        path: { resolve: (p) => p, sep: '/', dirname: (p) => p.split('/').slice(0, -1).join('/') || '/' },
+        path: { resolve: (p) => p, sep: '/', dirname: (p) => p.split('/').slice(0, -1).join('/') || '/' } as PlatformPath,
       });
 
       const projects = [
@@ -117,28 +126,28 @@ describe('settings normalization runtime - symlink resolution', () => {
         { id: 'proj2', path: '/b', defaultVariant: 'high' },
       ];
 
-      const result = runtime.sanitizeProjects(projects);
-      expect(result[0].defaultVariant).toBe('high');
-      expect(result[1].defaultVariant).toBe(undefined);
+      const result = runtime.sanitizeProjects(projects)!;
+      expect(result[0]!.defaultVariant).toBe('high');
+      expect(result[1]!.defaultVariant).toBe(undefined);
     });
 
     it('keeps a project default agent', () => {
       const runtime = createTestRuntime({
         realpathSync: (p) => p,
-        path: { resolve: (p) => p, sep: '/', dirname: (p) => p.split('/').slice(0, -1).join('/') || '/' },
+        path: { resolve: (p) => p, sep: '/', dirname: (p) => p.split('/').slice(0, -1).join('/') || '/' } as PlatformPath,
       });
 
       const result = runtime.sanitizeProjects([
         { id: 'proj1', path: '/a', defaultAgent: 'plan' },
-      ]);
+      ])!;
 
-      expect(result[0].defaultAgent).toBe('plan');
+      expect(result[0]!.defaultAgent).toBe('plan');
     });
 
     it('deduplicates projects that resolve to the same realpath', () => {
       const runtime = createTestRuntime({
         realpathSync: (p) => p.startsWith('/symlink') ? '/real/project' : p,
-        path: { resolve: (p) => p, sep: '/', dirname: (p) => p.split('/').slice(0, -1).join('/') || '/' },
+        path: { resolve: (p) => p, sep: '/', dirname: (p) => p.split('/').slice(0, -1).join('/') || '/' } as PlatformPath,
       });
 
       const projects = [
@@ -146,9 +155,9 @@ describe('settings normalization runtime - symlink resolution', () => {
         { id: 'proj2', path: '/symlink/b', label: 'B', color: 'keyword', addedAt: 2000, lastOpenedAt: 2000 },
       ];
 
-      const result = runtime.sanitizeProjects(projects);
+      const result = runtime.sanitizeProjects(projects)!;
       expect(result).toHaveLength(1);
-      expect(result[0].id).toBe('proj1');
+      expect(result[0]!.id).toBe('proj1');
     });
   });
 

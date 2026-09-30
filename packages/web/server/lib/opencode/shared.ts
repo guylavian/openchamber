@@ -3,7 +3,81 @@ import path from 'path';
 import os from 'os';
 import yaml from 'yaml';
 import { parse as parseJsonc, printParseErrorCode } from 'jsonc-parser';
+import type { ParseError } from 'jsonc-parser';
+import type { Dirent } from 'fs';
 import { readSectionEntry, readMcpEntry } from './config-v2.js';
+import type { SectionKind, SectionLookup } from './config-v2.js';
+
+type ConfigObject = Record<string, unknown>;
+
+interface ErrorWithCode extends Error {
+  code?: string | undefined;
+}
+
+interface ParsedMarkdown {
+  frontmatter: ConfigObject;
+  body: string;
+}
+
+interface ConfigPaths {
+  userPaths: string[];
+  projectPath: string | null;
+  customPath: string | null;
+}
+
+interface ConfigLayer {
+  config: ConfigObject;
+  error: ErrorWithCode | null;
+}
+
+interface LayerError {
+  path: string;
+  code: string | undefined;
+  message: string;
+}
+
+interface ConfigLayers {
+  userConfig: ConfigObject;
+  userOverrideConfig: ConfigObject;
+  projectConfig: ConfigObject;
+  customConfig: ConfigObject;
+  mergedConfig: ConfigObject;
+  paths: {
+    userPath: string;
+    userOverridePath: string | null;
+    projectPath: string | null;
+    customPath: string | null;
+  };
+  layerErrors: LayerError[];
+}
+
+interface JsonEntrySource {
+  section: unknown;
+  config: ConfigObject | null;
+  path: string | null;
+  exists: boolean;
+  sectionKey: string | null;
+  legacy: boolean;
+}
+
+interface JsonWriteTarget {
+  config: ConfigObject;
+  path: string;
+}
+
+interface SkillEntry {
+  name: string;
+  path: string;
+  scope: string;
+  source: string;
+  description: string;
+}
+
+interface SkillSupportingFile {
+  name: string;
+  path: string;
+  fullPath: string;
+}
 
 // ============== PATH CONSTANTS ==============
 
@@ -61,14 +135,14 @@ function ensureDirs() {
 // values (e.g. `description: Build agent: creates builds`), which strict YAML
 // rejects. Rewrite those values as block scalars and retry the parse, so files
 // OpenCode accepts are parsed identically here.
-function sanitizeFrontmatter(frontmatter) {
+function sanitizeFrontmatter(frontmatter: string): string {
   return frontmatter
     .split(/\r?\n/)
     .flatMap((line) => {
       if (line.trim().startsWith('#') || line.trim() === '' || /^\s+/.test(line)) return [line];
       const entry = line.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*(.*)$/);
       if (!entry) return [line];
-      const value = entry[2].trim();
+      const value = entry[2]!.trim();
       if (value === '' || value === '>' || value === '|' || value.startsWith('"') || value.startsWith("'")) return [line];
       if (!value.includes(':')) return [line];
       return [`${entry[1]}: |-`, `  ${value}`];
@@ -76,7 +150,7 @@ function sanitizeFrontmatter(frontmatter) {
     .join('\n');
 }
 
-function parseMdFile(filePath) {
+function parseMdFile(filePath: string): ParsedMarkdown {
   const rawContent = fs.readFileSync(filePath, 'utf8');
   // Strip a UTF-8 BOM so frontmatter is recognized regardless of the editor
   // that saved the file.
@@ -91,25 +165,25 @@ function parseMdFile(filePath) {
     return { frontmatter: {}, body: content.trim() };
   }
 
-  let frontmatter = {};
+  let frontmatter: ConfigObject = {};
   try {
-    frontmatter = yaml.parse(match[1]) || {};
+    frontmatter = (yaml.parse(match[1]!) as ConfigObject) || {};
   } catch (error) {
     // Lenient fallback for frontmatter that strict YAML rejects but OpenCode
     // still accepts (unquoted colons in scalar values).
     try {
-      frontmatter = yaml.parse(sanitizeFrontmatter(match[1])) || {};
+      frontmatter = (yaml.parse(sanitizeFrontmatter(match[1]!)) as ConfigObject) || {};
     } catch {
       console.warn(`Failed to parse markdown frontmatter ${filePath}, treating as empty:`, error);
       frontmatter = {};
     }
   }
 
-  const body = match[2].trim();
+  const body = match[2]!.trim();
   return { frontmatter, body };
 }
 
-function writeMdFile(filePath, frontmatter, body) {
+function writeMdFile(filePath: string, frontmatter: ConfigObject, body: string) {
   try {
     const cleanedFrontmatter = Object.fromEntries(
       Object.entries(frontmatter).filter(([, value]) => value != null)
@@ -134,7 +208,7 @@ function writeMdFile(filePath, frontmatter, body) {
  * project scope (OpenCode merges them all; an entry that lives only in a
  * lower file is visible through the resolved catalog but not editable here).
  */
-function getProjectConfigCandidates(workingDirectory) {
+function getProjectConfigCandidates(workingDirectory: string | null | undefined): string[] {
   if (!workingDirectory) return [];
   return [
     path.join(workingDirectory, '.opencode', 'opencode.json'),
@@ -144,7 +218,7 @@ function getProjectConfigCandidates(workingDirectory) {
   ];
 }
 
-function getProjectConfigPath(workingDirectory) {
+function getProjectConfigPath(workingDirectory: string | null | undefined): string | null {
   if (!workingDirectory) return null;
 
   const candidates = getProjectConfigCandidates(workingDirectory);
@@ -156,10 +230,10 @@ function getProjectConfigPath(workingDirectory) {
   }
 
   // A new project config goes beside the project's other `.opencode/` files.
-  return candidates[0];
+  return candidates[0]!;
 }
 
-function getConfigPaths(workingDirectory) {
+function getConfigPaths(workingDirectory: string | null | undefined): ConfigPaths {
   return {
     userPaths: [
       path.join(OPENCODE_CONFIG_DIR, 'opencode.json'),
@@ -173,7 +247,7 @@ function getConfigPaths(workingDirectory) {
   };
 }
 
-function getPrimaryUserConfigPath(userPaths) {
+function getPrimaryUserConfigPath(userPaths: string[]): string {
   for (const userPath of userPaths) {
     if (fs.existsSync(userPath)) {
       return userPath;
@@ -185,11 +259,12 @@ function getPrimaryUserConfigPath(userPaths) {
 
 const INVALID_JSONC = 'INVALID_JSONC';
 
-function isInvalidJsoncError(error) {
-  return Boolean(error && typeof error === 'object' && error.code === INVALID_JSONC);
+function isInvalidJsoncError(error: unknown): error is ErrorWithCode;
+function isInvalidJsoncError(error: unknown) {
+  return Boolean(error && typeof error === 'object' && (error as ErrorWithCode).code === INVALID_JSONC);
 }
 
-function formatJsoncParseError(filePath, errors) {
+function formatJsoncParseError(filePath: string, errors: ParseError[]): string {
   const first = Array.isArray(errors) && errors.length > 0 ? errors[0] : null;
   const location = first && Number.isFinite(first.offset)
     ? ` (${printParseErrorCode(first.error)} at offset ${first.offset})`
@@ -197,7 +272,7 @@ function formatJsoncParseError(filePath, errors) {
   return `OpenCode configuration at ${filePath} contains invalid JSONC and cannot be loaded safely${location}`;
 }
 
-function isCommentOnlyParse(parsed, errors) {
+function isCommentOnlyParse(parsed: unknown, errors: ParseError[]): boolean {
   // Comment-only / whitespace-only files parse to undefined with nothing but
   // ValueExpected. Any other error means real content we failed to understand
   // (YAML, plain text, a stray leading token), which must not read as empty.
@@ -205,21 +280,21 @@ function isCommentOnlyParse(parsed, errors) {
     && errors.every((entry) => printParseErrorCode(entry.error) === 'ValueExpected');
 }
 
-function parseConfigObject(content, filePath) {
-  const errors = [];
-  const parsed = parseJsonc(content, errors, { allowTrailingComma: true });
+function parseConfigObject(content: string, filePath: string): ConfigObject {
+  const errors: ParseError[] = [];
+  const parsed: unknown = parseJsonc(content, errors, { allowTrailingComma: true });
   if (isCommentOnlyParse(parsed, errors)) {
     return {};
   }
   if (errors.length > 0 || !parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    const error = new Error(formatJsoncParseError(filePath, errors));
+    const error: ErrorWithCode = new Error(formatJsoncParseError(filePath, errors));
     error.code = INVALID_JSONC;
     throw error;
   }
-  return parsed;
+  return parsed as ConfigObject;
 }
 
-function readConfigFile(filePath) {
+function readConfigFile(filePath: string | null | undefined): ConfigObject {
   if (!filePath || !fs.existsSync(filePath)) {
     return {};
   }
@@ -241,11 +316,12 @@ function readConfigFile(filePath) {
   }
 }
 
-function isPlainObject(value) {
+function isPlainObject(value: unknown): value is ConfigObject;
+function isPlainObject(value: unknown) {
   return value && typeof value === 'object' && !Array.isArray(value);
 }
 
-function mergeConfigs(base, override) {
+function mergeConfigs(base: ConfigObject, override: ConfigObject): ConfigObject {
   if (!isPlainObject(base) || !isPlainObject(override)) {
     return override;
   }
@@ -265,7 +341,7 @@ function mergeConfigs(base, override) {
   return result;
 }
 
-function readConfigLayer(filePath) {
+function readConfigLayer(filePath: string | null | undefined): ConfigLayer {
   try {
     return { config: readConfigFile(filePath), error: null };
   } catch (error) {
@@ -277,7 +353,7 @@ function readConfigLayer(filePath) {
   }
 }
 
-function readConfigLayers(workingDirectory) {
+function readConfigLayers(workingDirectory: string | null | undefined): ConfigLayers {
   const { userPaths, projectPath, customPath } = getConfigPaths(workingDirectory);
   const userPath = getPrimaryUserConfigPath(userPaths);
   // OpenCode loads every global config file in order, so an `opencode.jsonc`
@@ -293,7 +369,7 @@ function readConfigLayers(workingDirectory) {
     customLayer.config,
   );
 
-  const layerErrors = [];
+  const layerErrors: LayerError[] = [];
   if (userLayer.error) {
     layerErrors.push({ path: userPath, code: userLayer.error.code, message: userLayer.error.message });
   }
@@ -318,11 +394,11 @@ function readConfigLayers(workingDirectory) {
   };
 }
 
-function readConfig(workingDirectory) {
+function readConfig(workingDirectory: string | null | undefined): ConfigObject {
   return readConfigLayers(workingDirectory).mergedConfig;
 }
 
-function getConfigForPath(layers, targetPath) {
+function getConfigForPath(layers: ConfigLayers, targetPath: string | null | undefined): ConfigObject {
   if (!targetPath) {
     return layers.userConfig;
   }
@@ -335,7 +411,7 @@ function getConfigForPath(layers, targetPath) {
   return layers.userConfig;
 }
 
-function writeConfig(config, filePath = CONFIG_FILE) {
+function writeConfig(config: unknown, filePath = CONFIG_FILE) {
   try {
     if (fs.existsSync(filePath)) {
       // Defense in depth: never overwrite a file we cannot fully parse.
@@ -361,19 +437,19 @@ function writeConfig(config, filePath = CONFIG_FILE) {
   }
 }
 
-function getLayerError(layers, filePath) {
+function getLayerError(layers: ConfigLayers, filePath: string | null | undefined): LayerError | null {
   if (!filePath || !Array.isArray(layers?.layerErrors)) {
     return null;
   }
   return layers.layerErrors.find((entry) => entry.path === filePath) || null;
 }
 
-function throwIfLayerError(layers, filePath) {
+function throwIfLayerError(layers: ConfigLayers, filePath: string | null | undefined) {
   const failed = getLayerError(layers, filePath);
   if (!failed) {
     return;
   }
-  const error = new Error(failed.message);
+  const error: ErrorWithCode = new Error(failed.message);
   error.code = failed.code;
   throw error;
 }
@@ -383,16 +459,16 @@ function throwIfLayerError(layers, filePath) {
  * and the v1 keys v2 still decodes. `sectionKind` is `agents`, `commands`,
  * `providers`, or `mcp`.
  */
-function lookupSectionEntry(config, sectionKind, entryName) {
+function lookupSectionEntry(config: ConfigObject, sectionKind: SectionKind | 'mcp', entryName: string): SectionLookup {
   if (sectionKind === 'mcp') {
     return readMcpEntry(config, entryName);
   }
   return readSectionEntry(config, sectionKind, entryName);
 }
 
-function getJsonEntrySource(layers, sectionKind, entryName) {
+function getJsonEntrySource(layers: ConfigLayers, sectionKind: SectionKind | 'mcp', entryName: string): JsonEntrySource {
   const { userConfig, projectConfig, customConfig, paths } = layers;
-  const found = (config, filePath) => {
+  const found = (config: ConfigObject, filePath: string): JsonEntrySource | null => {
     const entry = lookupSectionEntry(config, sectionKind, entryName);
     if (entry.value === undefined) return null;
     return {
@@ -429,7 +505,7 @@ function getJsonEntrySource(layers, sectionKind, entryName) {
   return { section: null, config: null, path: null, exists: false, sectionKey: null, legacy: false };
 }
 
-function getJsonWriteTarget(layers, preferredScope) {
+function getJsonWriteTarget(layers: ConfigLayers, preferredScope: string | undefined): JsonWriteTarget {
   const { userConfig, projectConfig, customConfig, paths } = layers;
   if (paths.customPath) {
     throwIfLayerError(layers, paths.customPath);
@@ -445,9 +521,9 @@ function getJsonWriteTarget(layers, preferredScope) {
 
 // ============== GIT/WORKTREE HELPERS ==============
 
-function getAncestors(startDir, stopDir) {
+function getAncestors(startDir: string | null | undefined, stopDir?: string | null): string[] {
   if (!startDir) return [];
-  const result = [];
+  const result: string[] = [];
   let current = path.resolve(startDir);
   const resolvedStop = stopDir ? path.resolve(stopDir) : null;
 
@@ -466,7 +542,7 @@ function getAncestors(startDir, stopDir) {
   return result;
 }
 
-function findWorktreeRoot(startDir) {
+function findWorktreeRoot(startDir: string | null | undefined): string | null {
   if (!startDir) return null;
   let current = path.resolve(startDir);
 
@@ -484,19 +560,19 @@ function findWorktreeRoot(startDir) {
 
 // ============== PROMPT FILE HELPERS ==============
 
-function isPromptFileReference(value) {
+function isPromptFileReference(value: unknown): boolean {
   if (typeof value !== 'string') {
     return false;
   }
   return PROMPT_FILE_PATTERN.test(value.trim());
 }
 
-function resolvePromptFilePath(reference) {
+function resolvePromptFilePath(reference: unknown): string | null {
   const match = typeof reference === 'string' ? reference.trim().match(PROMPT_FILE_PATTERN) : null;
   if (!match) {
     return null;
   }
-  let target = match[1].trim();
+  let target = match[1]!.trim();
   if (!target) {
     return null;
   }
@@ -511,7 +587,7 @@ function resolvePromptFilePath(reference) {
   return target;
 }
 
-function writePromptFile(filePath, content) {
+function writePromptFile(filePath: string, content: string | null | undefined) {
   const dir = path.dirname(filePath);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(filePath, content ?? '', 'utf8');
@@ -520,17 +596,17 @@ function writePromptFile(filePath, content) {
 
 // ============== SKILL FILE OPERATIONS ==============
 
-function walkSkillMdFiles(rootDir) {
+function walkSkillMdFiles(rootDir: string | null | undefined): string[] {
   if (!rootDir || !fs.existsSync(rootDir)) return [];
 
-  const results = [];
+  const results: string[] = [];
   // Real paths of the directories on the current walk path. Links (symlinks and
   // Windows junctions) are followed at any depth; a link back to one of its own
   // ancestors is skipped instead of recursing forever. Two links to the same
   // target elsewhere in the tree are both walked, as the top level always did.
-  const ancestors = new Set();
-  const walk = (dir) => {
-    let realDir;
+  const ancestors = new Set<string>();
+  const walk = (dir: string): void => {
+    let realDir: string;
     try {
       realDir = fs.realpathSync(dir);
     } catch {
@@ -538,7 +614,7 @@ function walkSkillMdFiles(rootDir) {
     }
     if (ancestors.has(realDir)) return;
 
-    let entries = [];
+    let entries: Dirent[] = [];
     try {
       entries = fs.readdirSync(dir, { withFileTypes: true });
     } catch {
@@ -578,8 +654,8 @@ function walkSkillMdFiles(rootDir) {
   return results;
 }
 
-function addSkillFromMdFile(skillsMap, skillMdPath, scope, source) {
-  let parsed;
+function addSkillFromMdFile(skillsMap: Map<string, SkillEntry>, skillMdPath: string, scope: string, source: string) {
+  let parsed: ParsedMarkdown;
   try {
     parsed = parseMdFile(skillMdPath);
   } catch {
@@ -606,9 +682,9 @@ function addSkillFromMdFile(skillsMap, skillMdPath, scope, source) {
   });
 }
 
-function resolveSkillSearchDirectories(workingDirectory) {
-  const directories = [];
-  const pushDir = (dir) => {
+function resolveSkillSearchDirectories(workingDirectory: string | null | undefined): string[] {
+  const directories: string[] = [];
+  const pushDir = (dir: string | null | undefined) => {
     if (!dir) return;
     const resolved = path.resolve(dir);
     if (!directories.includes(resolved)) {
@@ -635,14 +711,14 @@ function resolveSkillSearchDirectories(workingDirectory) {
   return directories;
 }
 
-function listSkillSupportingFiles(skillDir) {
+function listSkillSupportingFiles(skillDir: string): SkillSupportingFile[] {
   if (!fs.existsSync(skillDir)) {
     return [];
   }
 
-  const files = [];
+  const files: SkillSupportingFile[] = [];
 
-  function walkDir(dir, relativePath = '') {
+  function walkDir(dir: string, relativePath = '') {
     const entries = fs.readdirSync(dir, { withFileTypes: true });
     for (const entry of entries) {
       const fullPath = path.join(dir, entry.name);
@@ -664,14 +740,14 @@ function listSkillSupportingFiles(skillDir) {
   return files;
 }
 
-function assertPathWithinSkillDir(skillDir, relativePath) {
+function assertPathWithinSkillDir(skillDir: string, relativePath: string): string {
   const root = fs.realpathSync(skillDir);
   const target = path.resolve(root, relativePath);
   const relative = path.relative(root, target);
   const isWithin = relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 
   if (!isWithin) {
-    const error = new Error('Access to file denied');
+    const error: ErrorWithCode = new Error('Access to file denied');
     error.code = 'EACCES';
     throw error;
   }
@@ -679,7 +755,7 @@ function assertPathWithinSkillDir(skillDir, relativePath) {
   return target;
 }
 
-function readSkillSupportingFile(skillDir, relativePath) {
+function readSkillSupportingFile(skillDir: string, relativePath: string): string | null {
   const fullPath = assertPathWithinSkillDir(skillDir, relativePath);
   if (!fs.existsSync(fullPath)) {
     return null;
@@ -687,14 +763,14 @@ function readSkillSupportingFile(skillDir, relativePath) {
   return fs.readFileSync(fullPath, 'utf8');
 }
 
-function writeSkillSupportingFile(skillDir, relativePath, content) {
+function writeSkillSupportingFile(skillDir: string, relativePath: string, content: string) {
   const fullPath = assertPathWithinSkillDir(skillDir, relativePath);
   const dir = path.dirname(fullPath);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(fullPath, content, 'utf8');
 }
 
-function deleteSkillSupportingFile(skillDir, relativePath) {
+function deleteSkillSupportingFile(skillDir: string, relativePath: string) {
   const root = fs.realpathSync(skillDir);
   const fullPath = assertPathWithinSkillDir(skillDir, relativePath);
   if (fs.existsSync(fullPath)) {

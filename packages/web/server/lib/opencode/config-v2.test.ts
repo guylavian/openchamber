@@ -27,6 +27,15 @@ import {
   writeWebSearchSelection,
   findWebSearchProjectOverride,
 } from './config-v2.js';
+import type { McpEntity, SectionLookup } from './config-v2.js';
+
+interface McpEntityWithProtocol extends McpEntity {
+  protocol?: string;
+}
+
+interface McpLookup extends SectionLookup {
+  value: McpEntity;
+}
 
 describe('permission translation', () => {
   it('renames the v1 actions v2 renamed', () => {
@@ -224,12 +233,12 @@ describe('mcp entity', () => {
   });
 
   it('keeps a non-default protocol on both transports', () => {
-    expect(toMcpEntity({ type: 'local', command: ['a'], protocol: 'auto' }).protocol).toBe('auto');
-    expect(toMcpEntity({
+    expect((toMcpEntity({ type: 'local', command: ['a'], protocol: 'auto' }) as McpEntityWithProtocol).protocol).toBe('auto');
+    expect((toMcpEntity({
       type: 'remote',
       url: 'https://mcp.example.com',
       protocol: '2026-07-28',
-    }).protocol).toBe('2026-07-28');
+    }) as McpEntityWithProtocol).protocol).toBe('2026-07-28');
   });
 
   it('drops the protocol key for legacy, for an unknown value and for a removal', () => {
@@ -237,7 +246,7 @@ describe('mcp entity', () => {
     // so the config file only ever names a non-default negotiation.
     expect(toMcpEntity({ type: 'local', command: ['a'], protocol: null })).not.toHaveProperty('protocol');
     expect(toMcpEntity({ type: 'local', command: ['a'], protocol: 'made-up' })).not.toHaveProperty('protocol');
-    expect(toMcpEntity({ type: 'local', command: ['a'], protocol: 'legacy' }).protocol).toBe('legacy');
+    expect((toMcpEntity({ type: 'local', command: ['a'], protocol: 'legacy' }) as McpEntityWithProtocol).protocol).toBe('legacy');
   });
 
   it('keeps auth_server_metadata_url and drops it again when emptied', () => {
@@ -280,7 +289,7 @@ describe('mcp entity', () => {
     };
     const entries = readMcpEntries(config);
     expect([...entries.keys()]).toEqual(['legacy', 'shared']);
-    expect(entries.get('shared').value.command).toEqual(['new']);
+    expect((entries.get('shared') as McpLookup).value.command).toEqual(['new']);
   });
 
   it('applies layer precedence after normalizing each layer', () => {
@@ -294,8 +303,8 @@ describe('mcp entity', () => {
       key: 'mcp',
       legacy: true,
     });
-    expect(entries.get('only').value.command).toEqual(['u']);
-    expect(readLayeredMcpEntries([project, user]).get('shared').value.url).toBe('https://global');
+    expect((entries.get('only') as McpLookup).value.command).toEqual(['u']);
+    expect((readLayeredMcpEntries([project, user]).get('shared') as McpLookup).value.url).toBe('https://global');
   });
 
   it('rewrites a v1 mcp entry into mcp.servers in place', () => {
@@ -333,7 +342,7 @@ describe('provider entity', () => {
       },
     };
     expect(toProviderEntity(native)).toEqual(native);
-    expect(toProviderEntity({ models: { m: { compatibility: {} } } }).models.m).toEqual({});
+    expect(toProviderEntity({ models: { m: { compatibility: {} } } }).models!.m).toEqual({});
   });
 
   it('migrates v1 interleaved into compatibility.reasoningField', () => {
@@ -343,7 +352,7 @@ describe('provider entity', () => {
         field: { interleaved: { field: 'reasoning' } },
         flag: { interleaved: true },
       },
-    }).models;
+    }).models!;
     expect(models.text).toEqual({ compatibility: { reasoningField: 'reasoning_text' } });
     expect(models.field).toEqual({ compatibility: { reasoningField: 'reasoning' } });
     expect(models.flag).toEqual({});
@@ -362,7 +371,7 @@ describe('provider entity', () => {
           variants: { high: { reasoningEffort: 'high' } },
         },
       },
-    }).models.m).toEqual({
+    }).models!.m).toEqual({
       modelID: 'real-model-id',
       name: 'M',
       capabilities: { tools: false, input: ['text'], output: ['text'] },
@@ -427,7 +436,7 @@ describe('web search choice', () => {
   });
 
   it('writes the OpenCode shape and leaves other keys alone', () => {
-    const config = { model: 'openai/gpt-5' };
+    const config: Record<string, unknown> = { model: 'openai/gpt-5' };
     expect(writeWebSearchSelection(config, 'exa')).toBe(true);
     expect(config).toEqual({ model: 'openai/gpt-5', websearch: { provider: 'exa' } });
     expect(writeWebSearchSelection(config, 'exa')).toBe(false);
@@ -468,7 +477,7 @@ describe('findWebSearchProjectOverride', () => {
 
 describe('session warming', () => {
   it('turns warming on and off, keeping a hand-tuned object', () => {
-    const config = { model: 'openai/gpt-5' };
+    const config: Record<string, unknown> = { model: 'openai/gpt-5' };
     expect(writeWarmingEnabled(config, true)).toBe(true);
     expect(config.warming).toBe(true);
     expect(writeWarmingEnabled(config, true)).toBe(false);

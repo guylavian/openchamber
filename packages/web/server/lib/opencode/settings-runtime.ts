@@ -1,4 +1,10 @@
+import type * as FsPromises from 'node:fs/promises';
+import type * as NodeCrypto from 'node:crypto';
+import type { Dirent } from 'node:fs';
+import type { PlatformPath } from 'node:path';
+
 import { createProjectIdFromPath, projectConfigFileStemOf } from '../projects/project-id.js';
+import type { ManagedRemoteTunnelTokenInput } from '../tunnels/managed-config.js';
 import {
   buildPreferencesFields,
   flattenPreferences,
@@ -13,22 +19,105 @@ import {
   seedPreferencesFrom,
   serializePreferencesDocument,
 } from './settings-files.js';
+import type { PreferenceFields } from './settings-files.js';
+import type { createSettingsNormalizationRuntime, ManagedRemoteTunnelPreset, SanitizedProject } from './settings-normalization-runtime.js';
 
-const DEFAULT_NOTIFICATION_TEMPLATES = {
+type SettingsNormalization = ReturnType<typeof createSettingsNormalizationRuntime>;
+
+interface Settings {
+  projects?: SanitizedProject[] | undefined;
+  activeProjectId?: string | undefined;
+  managedRemoteTunnelPresets?: ManagedRemoteTunnelPreset[] | undefined;
+  managedRemoteTunnelPresetTokens?: Record<string, unknown> | undefined;
+  [key: string]: unknown;
+}
+
+interface ProjectItem {
+  id?: string;
+  path?: string;
+  file?: string;
+  name?: string;
+  command?: string;
+}
+
+type ProjectItems = (ProjectItem | null)[] | string | undefined;
+
+interface ProjectConfigData {
+  projectNotes?: unknown;
+  'setup-worktree'?: unknown[];
+  projectTodos?: ProjectItems;
+  projectActions?: ProjectItems;
+  scheduledTasks?: ProjectItems;
+  projectPlanFiles?: ProjectItems;
+  projectActionsPrimaryId?: unknown;
+}
+
+interface ProjectContextData {
+  notes?: ProjectItems;
+  todos?: ProjectItems;
+  plans?: ProjectItems;
+}
+
+interface Orphan {
+  orphanId: string;
+  filePath: string;
+  content: ProjectConfigData;
+}
+
+type PreferenceFieldsResult =
+  | { status: 'missing' }
+  | { status: 'failed' }
+  | { status: 'ok'; fields: PreferenceFields };
+
+interface SurfaceOptions {
+  surface?: string | null;
+}
+
+interface NotificationTemplate {
+  title: string;
+  message: string;
+}
+
+interface NotificationTemplateInput {
+  title?: unknown;
+  message?: unknown;
+}
+
+export interface SettingsRuntimeDependencies {
+  fsPromises: typeof FsPromises;
+  path: PlatformPath;
+  crypto: typeof NodeCrypto;
+  SETTINGS_FILE_PATH: string;
+  sanitizeProjects: SettingsNormalization['sanitizeProjects'];
+  sanitizeSettingsUpdate: (changes: unknown) => Settings;
+  mergePersistedSettings: (current: Settings, changes: Settings) => Settings;
+  normalizeSettingsPaths: SettingsNormalization['normalizeSettingsPaths'];
+  normalizeStringArray: SettingsNormalization['normalizeStringArray'];
+  formatSettingsResponse: (settings: Settings) => unknown;
+  resolveDirectoryCandidate: (value: unknown) => string | null;
+  normalizeManagedRemoteTunnelHostname: SettingsNormalization['normalizeManagedRemoteTunnelHostname'];
+  normalizeManagedRemoteTunnelPresets: SettingsNormalization['normalizeManagedRemoteTunnelPresets'];
+  normalizeManagedRemoteTunnelPresetTokens: SettingsNormalization['normalizeManagedRemoteTunnelPresetTokens'];
+  syncManagedRemoteTunnelConfigWithPresets: (presets: unknown) => Promise<unknown>;
+  upsertManagedRemoteTunnelToken: (entry: ManagedRemoteTunnelTokenInput) => Promise<unknown>;
+  onManagedPluginSettingsChanged?: (settings: Settings) => unknown;
+}
+
+const DEFAULT_NOTIFICATION_TEMPLATES: Record<string, NotificationTemplate> = {
   completion: { title: '{agent_name} is ready', message: '{model_name} completed the task' },
   error: { title: 'Tool error', message: '{last_message}' },
   question: { title: 'Input needed', message: '{last_message}' },
   subtask: { title: '{agent_name} is ready', message: '{model_name} completed the task' },
 };
 
-const ensureNotificationTemplateShape = (templates) => {
-  const input = templates && typeof templates === 'object' ? templates : {};
+const ensureNotificationTemplateShape = (templates: unknown) => {
+  const input: Record<string, NotificationTemplateInput | null | undefined> = templates && typeof templates === 'object' ? templates as Record<string, NotificationTemplateInput | null | undefined> : {};
   let changed = false;
-  const next = {};
+  const next: Record<string, NotificationTemplate> = {};
 
   for (const event of Object.keys(DEFAULT_NOTIFICATION_TEMPLATES)) {
     const currentEntry = input[event];
-    const base = DEFAULT_NOTIFICATION_TEMPLATES[event];
+    const base = DEFAULT_NOTIFICATION_TEMPLATES[event]!;
     const currentTitle = typeof currentEntry?.title === 'string' ? currentEntry.title : base.title;
     const currentMessage = typeof currentEntry?.message === 'string' ? currentEntry.message : base.message;
     if (!currentEntry || typeof currentEntry.title !== 'string' || typeof currentEntry.message !== 'string') {
@@ -48,7 +137,7 @@ const MANAGED_PLUGIN_SETTINGS_KEYS = new Set([
   'agentNotifyToolEnabled',
 ]);
 
-export const createSettingsRuntime = (deps) => {
+export const createSettingsRuntime = (deps: SettingsRuntimeDependencies) => {
   const {
     fsPromises,
     path,
@@ -69,7 +158,7 @@ export const createSettingsRuntime = (deps) => {
     onManagedPluginSettingsChanged = async () => {},
   } = deps;
 
-  let persistSettingsLock = Promise.resolve();
+  let persistSettingsLock: Promise<unknown> = Promise.resolve();
 
   const PREFERENCES_FILE_PATH = preferencesFilePathFor(SETTINGS_FILE_PATH, path);
   // True while preferences.json exists but cannot be read. Profile writes are
@@ -89,33 +178,33 @@ export const createSettingsRuntime = (deps) => {
   const PROJECTS_ROOT_DIR = path.join(path.dirname(SETTINGS_FILE_PATH), 'projects');
   const PROJECT_ICONS_DIR = path.join(path.dirname(SETTINGS_FILE_PATH), 'project-icons');
 
-  const sha1Hex = (value) => crypto.createHash('sha1').update(value).digest('hex');
-  const projectIconBaseName = (projectId) => `project-${sha1Hex(projectId)}`;
+  const sha1Hex = (value: string) => crypto.createHash('sha1').update(value).digest('hex');
+  const projectIconBaseName = (projectId: string) => `project-${sha1Hex(projectId)}`;
   const PROJECT_ICON_EXTENSIONS = ['png', 'jpg', 'svg', 'webp', 'ico'];
 
-  const readJsonFile = async (filePath) => {
+  const readJsonFile = async <T extends object = ProjectConfigData>(filePath: string): Promise<T | null> => {
     try {
       const raw = await fsPromises.readFile(filePath, 'utf8');
-      const parsed = JSON.parse(raw);
-      return parsed && typeof parsed === 'object' ? parsed : null;
+      const parsed: unknown = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? parsed as T : null;
     } catch (error) {
-      if (error && typeof error === 'object' && error.code === 'ENOENT') {
+      if (error && typeof error === 'object' && (error as NodeJS.ErrnoException).code === 'ENOENT') {
         return null;
       }
       throw error;
     }
   };
 
-  const writeJsonFile = async (filePath, value) => {
+  const writeJsonFile = async (filePath: string, value: unknown) => {
     await fsPromises.mkdir(path.dirname(filePath), { recursive: true });
     await fsPromises.writeFile(filePath, JSON.stringify(value, null, 2), 'utf8');
   };
 
-  const uniqueStrings = (values) => Array.from(new Set(values.filter((value) => typeof value === 'string' && value.trim().length > 0)));
+  const uniqueStrings = (values: unknown[]) => Array.from(new Set(values.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)));
 
-  const mergeByKey = (oldItems, newItems, getKey) => {
-    const result = [];
-    const seen = new Set();
+  const mergeByKey = (oldItems: ProjectItems, newItems: ProjectItems, getKey: (item: ProjectItem) => unknown) => {
+    const result: ProjectItem[] = [];
+    const seen = new Set<unknown>();
     for (const item of [...(Array.isArray(newItems) ? newItems : []), ...(Array.isArray(oldItems) ? oldItems : [])]) {
       if (!item || typeof item !== 'object') continue;
       const key = getKey(item);
@@ -126,7 +215,7 @@ export const createSettingsRuntime = (deps) => {
     return result;
   };
 
-  const remapPlanPaths = (entries, fromDir, toDir) => {
+  const remapPlanPaths = (entries: ProjectItems, fromDir: string, toDir: string) => {
     if (!Array.isArray(entries) || !fromDir || !toDir || fromDir === toDir) {
       return Array.isArray(entries) ? entries : [];
     }
@@ -146,9 +235,15 @@ export const createSettingsRuntime = (deps) => {
     });
   };
 
-  const mergeProjectConfigData = ({ oldConfig, newConfig, oldStorageDir, newStorageDir, projectPath }) => {
-    const oldValue = oldConfig && typeof oldConfig === 'object' ? oldConfig : {};
-    const newValue = newConfig && typeof newConfig === 'object' ? newConfig : {};
+  const mergeProjectConfigData = ({ oldConfig, newConfig, oldStorageDir, newStorageDir, projectPath }: {
+    oldConfig: ProjectConfigData | null | undefined;
+    newConfig: ProjectConfigData | null | undefined;
+    oldStorageDir: string;
+    newStorageDir: string;
+    projectPath: unknown;
+  }) => {
+    const oldValue: ProjectConfigData = oldConfig && typeof oldConfig === 'object' ? oldConfig : {};
+    const newValue: ProjectConfigData = newConfig && typeof newConfig === 'object' ? newConfig : {};
     const oldPlanFiles = remapPlanPaths(oldValue.projectPlanFiles, oldStorageDir, newStorageDir);
     const newPlanFiles = remapPlanPaths(newValue.projectPlanFiles, oldStorageDir, newStorageDir);
     const oldNotes = typeof oldValue.projectNotes === 'string' ? oldValue.projectNotes : '';
@@ -182,7 +277,7 @@ export const createSettingsRuntime = (deps) => {
     };
   };
 
-  const moveDirectoryContents = async (fromDir, toDir) => {
+  const moveDirectoryContents = async (fromDir: string, toDir: string): Promise<void> => {
     try {
       const entries = await fsPromises.readdir(fromDir, { withFileTypes: true });
       await fsPromises.mkdir(toDir, { recursive: true });
@@ -203,13 +298,13 @@ export const createSettingsRuntime = (deps) => {
 
       await fsPromises.rm(fromDir, { recursive: true, force: true });
     } catch (error) {
-      if (!(error && typeof error === 'object' && error.code === 'ENOENT')) {
+      if (!(error && typeof error === 'object' && (error as NodeJS.ErrnoException).code === 'ENOENT')) {
         throw error;
       }
     }
   };
 
-  const migrateProjectIconFiles = async ({ oldId, newId }) => {
+  const migrateProjectIconFiles = async ({ oldId, newId }: { oldId: string; newId: string }) => {
     if (!oldId || !newId || oldId === newId) {
       return;
     }
@@ -225,7 +320,7 @@ export const createSettingsRuntime = (deps) => {
       try {
         await fsPromises.access(oldPath);
       } catch (error) {
-        if (error && typeof error === 'object' && error.code === 'ENOENT') {
+        if (error && typeof error === 'object' && (error as NodeJS.ErrnoException).code === 'ENOENT') {
           continue;
         }
         throw error;
@@ -255,13 +350,13 @@ export const createSettingsRuntime = (deps) => {
    * here: `project-context` converts it on read, and converting in two places
    * would mean two definitions of the same migration.
    */
-  const mergeProjectContextFiles = async (oldStorageDir, newStorageDir) => {
+  const mergeProjectContextFiles = async (oldStorageDir: string, newStorageDir: string) => {
     const oldContextPath = path.join(oldStorageDir, 'context.json');
     const newContextPath = path.join(newStorageDir, 'context.json');
 
     const [oldContext, newContext] = await Promise.all([
-      readJsonFile(oldContextPath).catch(() => null),
-      readJsonFile(newContextPath).catch(() => null),
+      readJsonFile<ProjectContextData>(oldContextPath).catch(() => null),
+      readJsonFile<ProjectContextData>(newContextPath).catch(() => null),
     ]);
 
     if (!oldContext || !newContext) {
@@ -292,7 +387,7 @@ export const createSettingsRuntime = (deps) => {
     await fsPromises.rm(oldContextPath, { force: true });
   };
 
-  const migrateProjectScopedStorage = async ({ oldId, newId, projectPath }) => {
+  const migrateProjectScopedStorage = async ({ oldId, newId, projectPath }: { oldId: string; newId: string; projectPath: string }) => {
     if (!oldId || !newId || oldId === newId) {
       return;
     }
@@ -324,14 +419,14 @@ export const createSettingsRuntime = (deps) => {
    * notes, plans, and memory are moved over once. A raw name the filesystem
    * cannot hold (ENAMETOOLONG) means no such folder ever existed.
    */
-  const migrateRawIdStorageFolder = async (projectId) => {
+  const migrateRawIdStorageFolder = async (projectId: string) => {
     const stem = projectConfigFileStemOf(projectId);
     if (stem === projectId) return;
     const rawStorageDir = path.join(PROJECTS_ROOT_DIR, projectId);
     try {
       await fsPromises.stat(rawStorageDir);
     } catch (error) {
-      if (error?.code === 'ENOENT' || error?.code === 'ENAMETOOLONG') return;
+      if ((error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT' || (error as NodeJS.ErrnoException | undefined)?.code === 'ENAMETOOLONG') return;
       throw error;
     }
     const boundedStorageDir = path.join(PROJECTS_ROOT_DIR, stem);
@@ -339,16 +434,16 @@ export const createSettingsRuntime = (deps) => {
     await moveDirectoryContents(rawStorageDir, boundedStorageDir);
   };
 
-  const migrateSettingsToDeterministicProjectIds = async (current) => {
-    const settings = current && typeof current === 'object' ? current : {};
+  const migrateSettingsToDeterministicProjectIds = async (current: Settings | null | undefined) => {
+    const settings: Settings = current && typeof current === 'object' ? current : {};
     const projects = sanitizeProjects(settings.projects) || [];
     if (projects.length === 0) {
       return { settings, changed: false };
     }
 
     let changed = false;
-    const projectIdMap = new Map();
-    const nextProjects = [];
+    const projectIdMap = new Map<string, string>();
+    const nextProjects: SanitizedProject[] = [];
 
     for (const project of projects) {
       const canonicalId = createProjectIdFromPath(project.path);
@@ -394,12 +489,12 @@ export const createSettingsRuntime = (deps) => {
   // For each canonical project whose current config is empty (lost during the
   // earlier id churn), try to find a single orphan whose setup-worktree command
   // patterns uniquely match the project's basename and merge it in.
-  const recoverOrphanProjectFiles = async (canonicalProjects) => {
-    let entries;
+  const recoverOrphanProjectFiles = async (canonicalProjects: SanitizedProject[]) => {
+    let entries: Dirent[];
     try {
       entries = await fsPromises.readdir(PROJECTS_ROOT_DIR, { withFileTypes: true });
     } catch (error) {
-      if (error && typeof error === 'object' && error.code === 'ENOENT') return;
+      if (error && typeof error === 'object' && (error as NodeJS.ErrnoException).code === 'ENOENT') return;
       throw error;
     }
 
@@ -413,7 +508,7 @@ export const createSettingsRuntime = (deps) => {
 
     console.warn(`[projects] Found ${orphanFiles.length} orphan project config(s) without projectPath.`);
 
-    const orphans = [];
+    const orphans: Orphan[] = [];
     for (const orphanId of orphanFiles) {
       const filePath = path.join(PROJECTS_ROOT_DIR, `${orphanId}.json`);
       const content = await readJsonFile(filePath);
@@ -431,30 +526,30 @@ export const createSettingsRuntime = (deps) => {
 
     if (orphans.length === 0) return;
 
-    const basenameOf = (projectPath) => {
+    const basenameOf = (projectPath: unknown) => {
       if (typeof projectPath !== 'string') return '';
       const normalized = projectPath.replace(/\\/g, '/').replace(/\/+$/g, '');
       const idx = normalized.lastIndexOf('/');
       return (idx >= 0 ? normalized.slice(idx + 1) : normalized).toLowerCase();
     };
 
-    const extractRootRelPaths = (orphan) => {
+    const extractRootRelPaths = (orphan: Orphan) => {
       const commands = [
         ...(Array.isArray(orphan.content['setup-worktree']) ? orphan.content['setup-worktree'] : []),
         ...(Array.isArray(orphan.content.projectActions) ? orphan.content.projectActions.map((a) => typeof a?.command === 'string' ? a.command : '') : []),
-      ].filter((s) => typeof s === 'string');
-      const results = new Set();
+      ].filter((s): s is string => typeof s === 'string');
+      const results = new Set<string>();
       const re = /\$(?:\{)?ROOT_(?:PROJECT|WORKTREE)_PATH\}?\/([A-Za-z0-9._/-]+)/g;
       for (const cmd of commands) {
-        let match;
+        let match: RegExpExecArray | null;
         while ((match = re.exec(cmd)) !== null) {
-          results.add(match[1]);
+          results.add(match[1]!);
         }
       }
       return Array.from(results);
     };
 
-    const fileExistsInProject = async (projectPath, relPath) => {
+    const fileExistsInProject = async (projectPath: string, relPath: string) => {
       try {
         await fsPromises.access(path.join(projectPath, relPath));
         return true;
@@ -463,7 +558,7 @@ export const createSettingsRuntime = (deps) => {
       }
     };
 
-    const orphanMatchesProject = async (orphan, project) => {
+    const orphanMatchesProject = async (orphan: Orphan, project: SanitizedProject) => {
       if (typeof project.path !== 'string' || !project.path.trim()) return false;
       const rels = extractRootRelPaths(orphan);
       for (const rel of rels) {
@@ -480,23 +575,23 @@ export const createSettingsRuntime = (deps) => {
       return haystacks.includes(name);
     };
 
-    const matches = new Map();
+    const matches = new Map<string, Orphan[]>();
     for (const orphan of orphans) {
-      const matchedProjects = [];
+      const matchedProjects: SanitizedProject[] = [];
       for (const project of canonicalProjects) {
         if (await orphanMatchesProject(orphan, project)) {
           matchedProjects.push(project);
         }
       }
       if (matchedProjects.length === 1) {
-        const project = matchedProjects[0];
+        const project = matchedProjects[0]!;
         const list = matches.get(project.id) || [];
         list.push(orphan);
         matches.set(project.id, list);
       }
     }
 
-    const orphansConsumed = new Set();
+    const orphansConsumed = new Set<string>();
     for (const [projectId, orphansForProject] of matches.entries()) {
       const project = canonicalProjects.find((p) => p.id === projectId);
       if (!project) continue;
@@ -529,16 +624,16 @@ export const createSettingsRuntime = (deps) => {
     }
   };
 
-  const readInstanceSettingsFromDisk = async () => {
+  const readInstanceSettingsFromDisk = async (): Promise<Settings> => {
     try {
       const raw = await fsPromises.readFile(SETTINGS_FILE_PATH, 'utf8');
-      const parsed = JSON.parse(raw);
+      const parsed: unknown = JSON.parse(raw);
       if (parsed && typeof parsed === 'object') {
-        return parsed;
+        return parsed as Settings;
       }
       return {};
     } catch (error) {
-      if (error && typeof error === 'object' && error.code === 'ENOENT') {
+      if (error && typeof error === 'object' && (error as NodeJS.ErrnoException).code === 'ENOENT') {
         return {};
       }
       console.warn('Failed to read settings file:', error);
@@ -551,12 +646,12 @@ export const createSettingsRuntime = (deps) => {
    * fields }` when it parsed, `{ status: 'failed' }` for anything else. Only
    * "missing" may be seeded; "failed" must leave the file alone.
    */
-  const readPreferenceFields = async () => {
-    let raw;
+  const readPreferenceFields = async (): Promise<PreferenceFieldsResult> => {
+    let raw: string;
     try {
       raw = await fsPromises.readFile(PREFERENCES_FILE_PATH, 'utf8');
     } catch (error) {
-      if (error && typeof error === 'object' && error.code === 'ENOENT') {
+      if (error && typeof error === 'object' && (error as NodeJS.ErrnoException).code === 'ENOENT') {
         return { status: 'missing' };
       }
       if (!preferencesFailureLogged) {
@@ -577,7 +672,7 @@ export const createSettingsRuntime = (deps) => {
     return { status: 'ok', fields: parsed.fields };
   };
 
-  const writePreferencesToDisk = async (fields) => {
+  const writePreferencesToDisk = async (fields: PreferenceFields) => {
     await writeJsonFileAtomic(PREFERENCES_FILE_PATH, serializePreferencesDocument(fields));
   };
 
@@ -587,7 +682,7 @@ export const createSettingsRuntime = (deps) => {
   // seed preferences.json. settings.json keeps a copy of the profile's base
   // values on every write too, so an older build (which reads only that file)
   // still finds everything where it used to be.
-  const readSettingsFromDisk = async ({ surface = null } = {}) => {
+  const readSettingsFromDisk = async ({ surface = null }: SurfaceOptions = {}): Promise<Settings> => {
     const instance = await readInstanceSettingsFromDisk();
     const preferences = await readPreferenceFields();
     if (preferences.status === 'failed') {
@@ -614,35 +709,35 @@ export const createSettingsRuntime = (deps) => {
   // every paired device and push binding, and overwrite the settings file with
   // the empty spread. Here only a genuinely missing file means "no settings";
   // any other failure (including a non-object payload) throws.
-  const readSettingsFromDiskStrict = async () => {
-    let raw;
+  const readSettingsFromDiskStrict = async (): Promise<Settings> => {
+    let raw: string;
     try {
       raw = await fsPromises.readFile(SETTINGS_FILE_PATH, 'utf8');
     } catch (error) {
-      if (error && typeof error === 'object' && error.code === 'ENOENT') {
+      if (error && typeof error === 'object' && (error as NodeJS.ErrnoException).code === 'ENOENT') {
         return {};
       }
       throw error;
     }
-    const parsed = JSON.parse(raw);
+    const parsed: unknown = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object') {
       throw new Error('Settings file is malformed (non-object payload)');
     }
-    return parsed;
+    return parsed as Settings;
   };
 
-  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-  const isTransientWindowsReplaceError = (error) => {
+  const isTransientWindowsReplaceError = (error: unknown) => {
     if (process.platform !== 'win32' || !error || typeof error !== 'object') {
       return false;
     }
-    return error.code === 'EPERM' || error.code === 'EACCES' || error.code === 'EBUSY';
+    return (error as NodeJS.ErrnoException).code === 'EPERM' || (error as NodeJS.ErrnoException).code === 'EACCES' || (error as NodeJS.ErrnoException).code === 'EBUSY';
   };
 
-  const replaceFile = async (tmp, target) => {
+  const replaceFile = async (tmp: string, target: string) => {
     const maxAttempts = process.platform === 'win32' ? 6 : 1;
-    let lastError = null;
+    let lastError: unknown = null;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       try {
@@ -672,7 +767,7 @@ export const createSettingsRuntime = (deps) => {
     }
   };
 
-  const cleanupOrphanedSettingsTempFiles = async (directory) => {
+  const cleanupOrphanedSettingsTempFiles = async (directory: string) => {
     try {
       const entries = await fsPromises.readdir(directory, { withFileTypes: true });
       const cleanupTasks = entries
@@ -684,7 +779,7 @@ export const createSettingsRuntime = (deps) => {
     }
   };
 
-  const writeJsonFileAtomic = async (filePath, text) => {
+  const writeJsonFileAtomic = async (filePath: string, text: string) => {
     const directory = path.dirname(filePath);
     await fsPromises.mkdir(directory, { recursive: true, mode: 0o700 });
     if (process.platform !== 'win32') await fsPromises.chmod(directory, 0o700);
@@ -710,8 +805,8 @@ export const createSettingsRuntime = (deps) => {
    * when their value changed), everything else to settings.json. While
    * preferences.json is unreadable its part is skipped rather than replaced.
    */
-  const writeSettingsToDisk = async (settings, { surface = null, changedKeys = null } = {}) => {
-    const current = preferencesUnavailable ? { status: 'failed' } : await readPreferenceFields();
+  const writeSettingsToDisk = async (settings: Settings, { surface = null, changedKeys = null }: SurfaceOptions & { changedKeys?: string[] | null } = {}) => {
+    const current: PreferenceFieldsResult = preferencesUnavailable ? { status: 'failed' } : await readPreferenceFields();
     if (current.status === 'failed') {
       // The profile part is not saved; settings.json keeps whatever legacy
       // profile copy it already holds rather than losing it too.
@@ -732,7 +827,7 @@ export const createSettingsRuntime = (deps) => {
     await writePreferencesToDisk(nextFields);
   };
 
-  const validateProjectEntries = async (projects) => {
+  const validateProjectEntries = async (projects: SanitizedProject[] | undefined) => {
     if (!Array.isArray(projects)) {
       return [];
     }
@@ -750,7 +845,7 @@ export const createSettingsRuntime = (deps) => {
         }
         return project;
       } catch (error) {
-        if (error && typeof error === 'object' && error.code === 'ENOENT') {
+        if (error && typeof error === 'object' && (error as NodeJS.ErrnoException).code === 'ENOENT') {
           console.warn(`[validateProjectEntries] Dropping project — directory no longer exists: ${project.path}`);
           return null;
         }
@@ -760,11 +855,11 @@ export const createSettingsRuntime = (deps) => {
       }
     });
 
-    return (await Promise.all(validations)).filter((p) => p !== null);
+    return (await Promise.all(validations)).filter((p): p is SanitizedProject => p !== null);
   };
 
-  const migrateSettingsFromLegacyLastDirectory = async (current) => {
-    const settings = current && typeof current === 'object' ? current : {};
+  const migrateSettingsFromLegacyLastDirectory = async (current: Settings | null | undefined) => {
+    const settings: Settings = current && typeof current === 'object' ? current : {};
     const now = Date.now();
 
     const sanitizedProjects = sanitizeProjects(settings.projects) || [];
@@ -803,7 +898,7 @@ export const createSettingsRuntime = (deps) => {
     if (nextProjects.length > 0) {
       const active = nextProjects.find((project) => project.id === nextActiveProjectId) || null;
       if (!active) {
-        nextActiveProjectId = nextProjects[0].id;
+        nextActiveProjectId = nextProjects[0]!.id;
         changed = true;
       }
     } else if (nextActiveProjectId) {
@@ -824,8 +919,8 @@ export const createSettingsRuntime = (deps) => {
     return { settings: merged, changed: true };
   };
 
-  const migrateSettingsFromLegacyThemePreferences = async (current) => {
-    const settings = current && typeof current === 'object' ? current : {};
+  const migrateSettingsFromLegacyThemePreferences = async (current: Settings | null | undefined) => {
+    const settings: Settings = current && typeof current === 'object' ? current : {};
 
     const themeId = typeof settings.themeId === 'string' ? settings.themeId.trim() : '';
     const themeVariant = typeof settings.themeVariant === 'string' ? settings.themeVariant.trim() : '';
@@ -868,8 +963,8 @@ export const createSettingsRuntime = (deps) => {
     return { settings: merged, changed: true };
   };
 
-  const migrateSettingsFromLegacyCollapsedProjects = async (current) => {
-    const settings = current && typeof current === 'object' ? current : {};
+  const migrateSettingsFromLegacyCollapsedProjects = async (current: Settings | null | undefined) => {
+    const settings: Settings = current && typeof current === 'object' ? current : {};
     const collapsed = Array.isArray(settings.collapsedProjects)
       ? normalizeStringArray(settings.collapsedProjects)
       : [];
@@ -905,13 +1000,13 @@ export const createSettingsRuntime = (deps) => {
       return { settings, changed: false };
     }
 
-    const next = { ...settings, projects: nextProjects };
+    const next: Settings = { ...settings, projects: nextProjects };
     delete next.collapsedProjects;
     return { settings: next, changed: true };
   };
 
-  const migrateSettingsNotificationDefaults = async (current) => {
-    const settings = current && typeof current === 'object' ? current : {};
+  const migrateSettingsNotificationDefaults = async (current: Settings | null | undefined) => {
+    const settings: Settings = current && typeof current === 'object' ? current : {};
     let changed = false;
     const next = { ...settings };
 
@@ -941,8 +1036,8 @@ export const createSettingsRuntime = (deps) => {
     return { settings: changed ? next : settings, changed };
   };
 
-  const migrateSettingsFromLegacyNamedTunnelKeys = async (current) => {
-    const settings = current && typeof current === 'object' ? current : {};
+  const migrateSettingsFromLegacyNamedTunnelKeys = async (current: Settings | null | undefined) => {
+    const settings: Settings = current && typeof current === 'object' ? current : {};
     const next = { ...settings };
     let changed = false;
 
@@ -1005,8 +1100,8 @@ export const createSettingsRuntime = (deps) => {
   // `approvedDirectories` was a write-only registry: every project path and
   // visited directory was appended forever, but nothing ever read it. Strip
   // the stale key from persisted settings on upgrade.
-  const migrateSettingsRemoveApprovedDirectories = (current) => {
-    const settings = current && typeof current === 'object' ? current : {};
+  const migrateSettingsRemoveApprovedDirectories = (current: Settings | null | undefined) => {
+    const settings: Settings = current && typeof current === 'object' ? current : {};
     if (!Object.prototype.hasOwnProperty.call(settings, 'approvedDirectories')) {
       return { settings, changed: false };
     }
@@ -1017,7 +1112,7 @@ export const createSettingsRuntime = (deps) => {
 
   let hasCleanedOrphanedTempFiles = false;
 
-  const readSettingsFromDiskMigrated = async ({ surface = null } = {}) => {
+  const readSettingsFromDiskMigrated = async ({ surface = null }: SurfaceOptions = {}) => {
     if (!hasCleanedOrphanedTempFiles) {
       hasCleanedOrphanedTempFiles = true;
       await cleanupOrphanedSettingsTempFiles(path.dirname(SETTINGS_FILE_PATH));
@@ -1039,7 +1134,7 @@ export const createSettingsRuntime = (deps) => {
     return normalizeSettingsSurface(surface) ? readSettingsFromDisk({ surface }) : migration8.settings;
   };
 
-  const persistSettings = async (changes, { surface = null } = {}) => {
+  const persistSettings = async (changes: unknown, { surface = null }: SurfaceOptions = {}) => {
     persistSettingsLock = persistSettingsLock.then(async () => {
       // Log field names only — changes can carry credentials (UI password,
       // client tokens, tunnel tokens) that must never reach the log file.
@@ -1085,8 +1180,8 @@ export const createSettingsRuntime = (deps) => {
         const activeId = typeof next.activeProjectId === 'string' ? next.activeProjectId : '';
         const active = next.projects.find((project) => project.id === activeId) || null;
         if (!active) {
-          console.log(`[persistSettings] Active project ID ${activeId} not found, switching to ${next.projects[0].id}`);
-          next = { ...next, activeProjectId: next.projects[0].id };
+          console.log(`[persistSettings] Active project ID ${activeId} not found, switching to ${next.projects[0]!.id}`);
+          next = { ...next, activeProjectId: next.projects[0]!.id };
         }
       } else if (next.activeProjectId) {
         console.log(`[persistSettings] No projects found, clearing activeProjectId ${next.activeProjectId}`);
@@ -1098,7 +1193,7 @@ export const createSettingsRuntime = (deps) => {
       }
 
       if (Object.prototype.hasOwnProperty.call(sanitized, 'managedRemoteTunnelPresetTokens') && sanitized.managedRemoteTunnelPresetTokens) {
-        const presetsById = new Map((next.managedRemoteTunnelPresets || []).map((entry) => [entry.id, entry]));
+        const presetsById = new Map<string, ManagedRemoteTunnelPreset>((next.managedRemoteTunnelPresets || []).map((entry) => [entry.id, entry]));
         const updates = Object.entries(sanitized.managedRemoteTunnelPresetTokens)
           .map(([presetId, token]) => {
             const preset = presetsById.get(presetId);
@@ -1112,7 +1207,7 @@ export const createSettingsRuntime = (deps) => {
               token: token.trim(),
             };
           })
-          .filter(Boolean);
+          .filter(Boolean) as ManagedRemoteTunnelTokenInput[];
 
         for (const update of updates) {
           await upsertManagedRemoteTunnelToken(update);
@@ -1125,8 +1220,8 @@ export const createSettingsRuntime = (deps) => {
       // watches, so flipping one of these switches takes effect in the running
       // process instead of waiting for a restart.
       if (changedKeys.some((key) => MANAGED_PLUGIN_SETTINGS_KEYS.has(key))) {
-        await Promise.resolve(onManagedPluginSettingsChanged(next)).catch((error) => {
-          console.warn('Failed to refresh the managed OpenCode config:', error?.message ?? error);
+        await Promise.resolve(onManagedPluginSettingsChanged(next)).catch((error: unknown) => {
+          console.warn('Failed to refresh the managed OpenCode config:', (error as Error | undefined)?.message ?? error);
         });
       }
       return formatSettingsResponse(next);

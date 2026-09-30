@@ -1,4 +1,35 @@
+import type { PlatformPath } from 'node:path';
+
 import { appendManagedPlugin } from './managed-plugin-config.js';
+
+interface ManagedToolSelection {
+  includeControl: boolean;
+  includeWeb: boolean;
+  includeMemory: boolean;
+  includeNotify: boolean;
+}
+
+interface AgentToolRuntime {
+  materializePlugin: (selection: ManagedToolSelection) => Promise<string>;
+  createChildEnv: () => Record<string, string>;
+}
+
+interface ManagedToolSettings {
+  agentControlToolEnabled?: unknown;
+  agentWebToolEnabled?: unknown;
+  agentMemoryToolEnabled?: unknown;
+  agentNotifyToolEnabled?: unknown;
+}
+
+export interface ManagedConfigDependencies {
+  fsPromises: typeof import('node:fs/promises');
+  path: PlatformPath;
+  dataDir: string;
+  env?: NodeJS.ProcessEnv | undefined;
+  agentToolRuntime?: AgentToolRuntime | null | undefined;
+  readSettings: () => Promise<ManagedToolSettings | null> | ManagedToolSettings | null;
+  isAgentMemoryAvailable: () => boolean;
+}
 
 export const MANAGED_CONFIG_FILE_NAME = 'opencode.managed.json';
 
@@ -50,13 +81,13 @@ export const createManagedConfigRuntime = ({
   agentToolRuntime = null,
   readSettings,
   isAgentMemoryAvailable,
-}) => {
+}: ManagedConfigDependencies) => {
   const filePath = path.join(dataDir, MANAGED_CONFIG_FILE_NAME);
 
   /** The user owns `OPENCODE_CONFIG` when their environment already set it. */
   const ownsConfigFile = () => (env.OPENCODE_CONFIG ?? '').trim().length === 0;
 
-  const writeConfigFile = async (pluginDirectories) => {
+  const writeConfigFile = async (pluginDirectories: string[]) => {
     await fsPromises.mkdir(dataDir, { recursive: true });
     const text = `${JSON.stringify({ plugins: [...DISABLED_BUILTIN_PLUGINS, ...pluginDirectories] }, null, 2)}\n`;
     // Temp + rename: OpenCode reacts to the write immediately, and a partial
@@ -83,7 +114,7 @@ export const createManagedConfigRuntime = ({
     const includeMemory = isAgentMemoryAvailable() && settings?.agentMemoryToolEnabled === true;
     const includeNotify = settings?.agentNotifyToolEnabled === true;
 
-    const directories = [];
+    const directories: string[] = [];
     if (agentToolRuntime && (includeControl || includeWeb || includeMemory || includeNotify)) {
       directories.push(await agentToolRuntime.materializePlugin({ includeControl, includeWeb, includeMemory, includeNotify }));
     }

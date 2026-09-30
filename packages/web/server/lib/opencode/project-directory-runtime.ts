@@ -1,14 +1,47 @@
+import type { PlatformPath } from 'node:path';
+import type { Request } from 'express';
+
 import { createRealpathCache } from '../path-realpath-cache.js';
+import type { LooseRecord, SanitizedProject } from './settings-normalization-runtime.js';
+
+type ReadSettings = () => Promise<LooseRecord>;
+
+export interface ProjectDirectoryRuntimeDependencies {
+  fsPromises: typeof import('node:fs/promises');
+  path: PlatformPath;
+  normalizeDirectoryPath: (value: string) => string;
+  readSettingsFromDiskMigrated: ReadSettings;
+  getReadSettingsFromDiskMigrated?: (() => ReadSettings) | undefined;
+  sanitizeProjects: (input: unknown) => SanitizedProject[] | undefined;
+  refuseDirectory?: ((candidate: string) => string | null) | undefined;
+}
+
+interface DirectoryValidationFailure {
+  ok: false;
+  error: string;
+}
+
+interface DirectoryValidationSuccess {
+  ok: true;
+  directory: string;
+  requestedDirectory: string;
+}
+
+export interface ProjectDirectoryResolution {
+  directory: string | null;
+  requestedDirectory: string | null;
+  error: string | null;
+}
 
 // Browser transport percent-encodes directory hints and marks them explicitly.
 // Only marked values are decoded so literal percent sequences from direct API
 // clients are preserved.
-const safeDecodeMarkedURIComponent = (value, encoding) => {
+const safeDecodeMarkedURIComponent = (value: string, encoding: string | null | undefined) => {
   if (encoding !== 'uri') return value;
   try { return decodeURIComponent(value); } catch { return value; }
 };
 
-export const createProjectDirectoryRuntime = (dependencies) => {
+export const createProjectDirectoryRuntime = (dependencies: ProjectDirectoryRuntimeDependencies) => {
   const {
     fsPromises,
     path,
@@ -23,9 +56,9 @@ export const createProjectDirectoryRuntime = (dependencies) => {
   } = dependencies;
   const realpathCache = createRealpathCache({
     realpath: fsPromises.realpath.bind(fsPromises),
-  });
+  } as Parameters<typeof createRealpathCache>[0]);
 
-  const resolveDirectoryCandidate = (value) => {
+  const resolveDirectoryCandidate = (value: unknown): string | null => {
     if (typeof value !== 'string') {
       return null;
     }
@@ -37,7 +70,7 @@ export const createProjectDirectoryRuntime = (dependencies) => {
     return path.resolve(normalized);
   };
 
-  const validateDirectoryPath = async (candidate) => {
+  const validateDirectoryPath = async (candidate: unknown): Promise<DirectoryValidationSuccess | DirectoryValidationFailure> => {
     const resolved = resolveDirectoryCandidate(candidate);
     if (!resolved) {
       return { ok: false, error: 'Directory parameter is required' };
@@ -51,7 +84,7 @@ export const createProjectDirectoryRuntime = (dependencies) => {
       if (!stats.isDirectory()) {
         return { ok: false, error: 'Specified path is not a directory' };
       }
-      const realPath = await realpathCache.resolve(resolved);
+      const realPath = await realpathCache.resolve(resolved) as string;
       // `requestedDirectory` is the pre-realpath candidate the caller asked
       // for. Callers that address files in the user-visible path space (the
       // file tree, the read-family FS routes) need it when the project root
@@ -59,7 +92,7 @@ export const createProjectDirectoryRuntime = (dependencies) => {
       // the paths the client sends.
       return { ok: true, directory: realPath, requestedDirectory: resolved };
     } catch (error) {
-      const err = error;
+      const err = error as NodeJS.ErrnoException | null | undefined;
       if (err && typeof err === 'object' && err.code === 'ENOENT') {
         return { ok: false, error: 'Directory not found' };
       }
@@ -70,7 +103,7 @@ export const createProjectDirectoryRuntime = (dependencies) => {
     }
   };
 
-  const resolveProjectDirectory = async (req) => {
+  const resolveProjectDirectory = async (req: Request): Promise<ProjectDirectoryResolution> => {
     const rawHeaderDirectory = typeof req.get === 'function' ? req.get('x-opencode-directory') : null;
     const headerEncoding = typeof req.get === 'function' ? req.get('x-opencode-directory-encoding') : null;
     const headerDirectory = rawHeaderDirectory ? safeDecodeMarkedURIComponent(rawHeaderDirectory, headerEncoding) : null;
@@ -80,7 +113,7 @@ export const createProjectDirectoryRuntime = (dependencies) => {
     const requested = [headerDirectory, queryDirectory].filter(Boolean);
 
     if (requested.length > 0) {
-      let lastError = null;
+      let lastError: string | null = null;
       for (const candidate of requested) {
         const validated = await validateDirectoryPath(candidate);
         if (validated.ok) {
@@ -129,7 +162,7 @@ export const createProjectDirectoryRuntime = (dependencies) => {
     return { directory: validated.directory, requestedDirectory: validated.requestedDirectory, error: null };
   };
 
-  const resolveOptionalProjectDirectory = async (req) => {
+  const resolveOptionalProjectDirectory = async (req: Request): Promise<ProjectDirectoryResolution> => {
     const rawHeaderDirectory = typeof req.get === 'function' ? req.get('x-opencode-directory') : null;
     const headerEncoding = typeof req.get === 'function' ? req.get('x-opencode-directory-encoding') : null;
     const headerDirectory = rawHeaderDirectory ? safeDecodeMarkedURIComponent(rawHeaderDirectory, headerEncoding) : null;
@@ -142,7 +175,7 @@ export const createProjectDirectoryRuntime = (dependencies) => {
       return { directory: null, requestedDirectory: null, error: null };
     }
 
-    let lastError = null;
+    let lastError: string | null = null;
     for (const candidate of requested) {
       const validated = await validateDirectoryPath(candidate);
       if (validated.ok) {

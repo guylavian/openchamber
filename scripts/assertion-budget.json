@@ -397,11 +397,33 @@
     "error as { _tag?: unknown } | null | undefined": 1,
     "unmigrated.get(id)!": 4
   },
+  "packages/web/server/lib/opencode/claude-cli-auth.test.ts": {
+    "invocation.options.env!": 1,
+    "invocations[1]!": 1,
+    "null as never": 1
+  },
   "packages/web/server/lib/opencode/claude-cli-auth.ts": {
     "JSON.parse(output) as ClaudeAuthStatusPayload | null": 1
   },
   "packages/web/server/lib/opencode/cli-options.ts": {
     "args[i]!": 1
+  },
+  "packages/web/server/lib/opencode/compatibility.test.ts": {
+    "fetchImpl as typeof fetch": 2
+  },
+  "packages/web/server/lib/opencode/config-entity-routes.ts": {
+    "error as Error": 36
+  },
+  "packages/web/server/lib/opencode/config-v2.test.ts": {
+    "entries.get('only') as McpLookup": 1,
+    "entries.get('shared') as McpLookup": 1,
+    "readLayeredMcpEntries([project, user]).get('shared') as McpLookup": 1,
+    "toMcpEntity({ type: 'local', command: ['a'], protocol: 'auto' }) as McpEntityWithProtocol": 1,
+    "toMcpEntity({ type: 'local', command: ['a'], protocol: 'legacy' }) as McpEntityWithProtocol": 1,
+    "toMcpEntity({ type: 'remote', url: 'https://mcp.example.com', protocol: '2026-07-28', }) as McpEntityWithProtocol": 1,
+    "toProviderEntity({ models: { m: { compatibility: {} } } }).models!": 1,
+    "toProviderEntity({ models: { m: { id: 'real-model-id', name: 'M', tool_call: false, modalities: { input: ['text'], output: ['text'] }, status: 'deprecated', cost: { input: 1, output: 2, cache_read: 0.1, cache_write: 0.2 }, variants: { high: { reasoningEffort: 'high' } }, }, }, }).models!": 1,
+    "toProviderEntity({ models: { text: { interleaved: 'reasoning_text' }, field: { interleaved: { field: 'reasoning' } }, flag: { interleaved: true }, }, }).models!": 1
   },
   "packages/web/server/lib/opencode/credential-db.test.ts": {
     "createRequire(import.meta.url)('node:sqlite') as typeof import('node:sqlite')": 1,
@@ -416,10 +438,23 @@
   "packages/web/server/lib/opencode/input-history-scope.ts": {
     "value as number": 2
   },
+  "packages/web/server/lib/opencode/npm-registry.ts": {
+    "JSON.parse(fs.readFileSync(_getPackageJsonPath(), 'utf8')) as { version?: unknown }": 1,
+    "await response.json() as { 'dist-tags'?: unknown; versions?: unknown } | null": 1,
+    "error as ThrownValue | null | undefined": 1
+  },
   "packages/web/server/lib/opencode/openchamber-routes.ts": {
     "JSON.parse(content) as StoredLaunchOptions": 1,
     "await import('../package-manager.js') as PackageManagerModule": 2,
     "error as ThrownValue": 3
+  },
+  "packages/web/server/lib/opencode/path-utils.test.ts": {
+    "42 as never": 1
+  },
+  "packages/web/server/lib/opencode/project-directory-runtime.ts": {
+    "await realpathCache.resolve(resolved) as string": 1,
+    "error as NodeJS.ErrnoException | null | undefined": 1,
+    "{ realpath: fsPromises.realpath.bind(fsPromises), } as Parameters<typeof createRealpathCache>[0]": 1
   },
   "packages/web/server/lib/opencode/project-icon-routes.test.ts": {
     "app as Express": 1,
@@ -433,6 +468,13 @@
     "match[2]!": 1,
     "themeVariant!": 1
   },
+  "packages/web/server/lib/opencode/pwa-manifest-routes.test.ts": {
+    "JSON.parse(res.body) as { shortcuts: unknown }": 2,
+    "app as Express": 2,
+    "handler!": 2,
+    "{ ok: true, json: async () => ({ data: sessions, cursor: {} }), } as Response": 1,
+    "{ ok: true, json: async () => [ { id: 'root-child', title: 'Root child', directory: '/workspace/app', time: { updated: 2 }, }, ], } as Response": 1
+  },
   "packages/web/server/lib/opencode/pwa-manifest-routes.ts": {
     "await response.json().catch(() => null) as SessionListEntry[] | { data?: SessionListEntry[] } | null": 1
   },
@@ -445,6 +487,12 @@
   "packages/web/server/lib/opencode/session-activity.ts": {
     "await openCodeGet('/api/session', { limit: String(CHILDREN_PAGE_SIZE), ...(cursor ? { cursor } : { parentID: sessionId }), }).catch(() => null) as SessionPage | null": 1
   },
+  "packages/web/server/lib/opencode/session-runtime.test.ts": {
+    "event.properties as { phase: unknown }": 1,
+    "event.properties as { sessionID: unknown }": 1,
+    "expect.objectContaining({ status: 'idle' }) as Record<string, unknown>": 3,
+    "expect.objectContaining<Record<string, unknown>>({ status: 'idle', metadata: expect.objectContaining({ message: 'Interrupted by OpenCode restart', reason: 'opencode-restart', }), }) as Record<string, unknown>": 1
+  },
   "packages/web/server/lib/opencode/session-runtime.ts": {
     "sessionStates.get(sessionId)!": 1
   },
@@ -452,11 +500,40 @@
     "createRequire(import.meta.url)('./settings-registry.json') as SettingsRegistry": 1,
     "value as number": 1
   },
+  "packages/web/server/lib/opencode/settings-helpers.test.ts": {
+    "JSON.parse(JSON.stringify(saved)) as SettingsDocument": 2,
+    "JSON.parse(readFileSync(registryPath, 'utf8')) as SettingsRegistry": 1,
+    "args[args.length - 1]!": 1,
+    "await import( pathToFileURL(join(extractDir, 'package', 'dist-node', 'server', 'lib', 'opencode', 'settings-helpers.js')).href ) as { createSettingsHelpers: typeof createSettingsHelpers }": 1,
+    "helpers.formatSettingsResponse(next) as Record<string, unknown>": 2,
+    "helpers.sanitizeSettingsUpdate({ workStatusHiddenSections: [] }) as SettingsDocument": 1,
+    "helpers.sanitizeSettingsUpdate({ workStatusHiddenSections: [], workStatusHiddenSectionsExplicit: true }) as SettingsDocument": 1,
+    "helpers.sanitizeSettingsUpdate({ workStatusPanelEnabled: false }) as SettingsDocument": 2,
+    "helpers.sanitizeSettingsUpdate({ workStatusSectionOrder: ['mcp', 'session', 'mcp', null, ''] }) as SettingsDocument": 1,
+    "reloaded as SettingsDocument": 2,
+    "tarballName!": 1,
+    "{ normalizePathForPersistence: (value) => value, normalizeDirectoryPath: (value) => value, normalizeTunnelBootstrapTtlMs: (value) => value, normalizeTunnelSessionTtlMs: (value) => value, normalizeTunnelProvider: (value) => value, normalizeTunnelMode: (value) => value, normalizeOptionalPath: (value) => value, normalizeManagedRemoteTunnelHostname: (value) => value, normalizeManagedRemoteTunnelPresets: () => undefined, normalizeManagedRemoteTunnelPresetTokens: () => undefined, sanitizeTypographySizesPartial: () => undefined, normalizeStringArray: (input) => input, sanitizeModelRefs: () => undefined, sanitizeSkillCatalogs: () => undefined, sanitizeProjects: () => undefined, } as SettingsHelpersDependencies": 2,
+    "{ normalizePathForPersistence: (value) => value, normalizeDirectoryPath: (value) => value, normalizeTunnelBootstrapTtlMs: (value) => value, normalizeTunnelSessionTtlMs: (value) => value, normalizeTunnelProvider: (value) => value, normalizeTunnelMode: (value) => value, normalizeOptionalPath: (value) => value, normalizeManagedRemoteTunnelHostname: (value) => value, normalizeManagedRemoteTunnelPresets: () => undefined, normalizeManagedRemoteTunnelPresetTokens: () => undefined, sanitizeTypographySizesPartial: () => undefined, normalizeStringArray: runtime.normalizeStringArray, sanitizeModelRefs: runtime.sanitizeModelRefs, sanitizeSkillCatalogs: () => undefined, sanitizeProjects: () => undefined, } as SettingsHelpersDependencies": 1,
+    "{ normalizePathForPersistence: (value) => value, normalizeDirectoryPath: (value) => value, normalizeTunnelBootstrapTtlMs: (value) => value, normalizeTunnelSessionTtlMs: (value) => value, normalizeTunnelProvider: (value) => value, normalizeTunnelMode: (value) => value, normalizeOptionalPath: (value) => value, normalizeManagedRemoteTunnelHostname: (value) => value, normalizeManagedRemoteTunnelPresets: (value) => value, normalizeManagedRemoteTunnelPresetTokens: (value) => value, normalizeStringArray: (input) => input, sanitizeModelRefs: (value) => value, sanitizeSkillCatalogs: (value) => value, sanitizeProjects: (value) => value, } as SettingsHelpersDependencies": 1,
+    "{ os: { homedir: () => '/home/testuser' }, path: { resolve: (...args: string[]) => args[args.length - 1]!, sep: '/', dirname: (p: string) => p.split('/').slice(0, -1).join('/') || '/', } as PlatformPath, processLike: { platform: 'linux', env: {} }, realpathSync: (p: string) => p, tunnelBootstrapTtlDefaultMs: 600000, tunnelBootstrapTtlMinMs: 60000, tunnelBootstrapTtlMaxMs: 3600000, tunnelSessionTtlDefaultMs: 86400000, tunnelSessionTtlMinMs: 3600000, tunnelSessionTtlMaxMs: 604800000, } as SettingsNormalizationDependencies": 1,
+    "{ resolve: (...args: string[]) => args[args.length - 1]!, sep: '/', dirname: (p: string) => p.split('/').slice(0, -1).join('/') || '/', } as PlatformPath": 1
+  },
   "packages/web/server/lib/opencode/settings-helpers.ts": {
     "candidate.permissionAutoAccept.revision as number": 1,
     "candidate.usageModelGroups as Record<string, UsageModelGroupsInput>": 1,
     "config.customGroups .filter((g) => g && typeof g.id === 'string' && typeof g.label === 'string') as CustomModelGroupInput[]": 1,
     "createRequire(import.meta.url)('./settings-registry.json') as SettingsRegistry": 1
+  },
+  "packages/web/server/lib/opencode/settings-normalization-runtime.test.ts": {
+    "args[args.length - 1]!": 1,
+    "result[0]!": 5,
+    "result[1]!": 1,
+    "runtime.sanitizeProjects([ { id: 'proj1', path: '/a', defaultAgent: 'plan' }, ])!": 1,
+    "runtime.sanitizeProjects(projects)!": 4,
+    "{ ...defaults, ...overrides } as SettingsNormalizationDependencies": 1,
+    "{ resolve: (...args: string[]) => args[args.length - 1]!, sep: '/', dirname: (p: string) => p.split('/').slice(0, -1).join('/') || '/', } as PlatformPath": 1,
+    "{ resolve: (p) => '/resolved' + p, sep: '/', dirname: (p) => p.split('/').slice(0, -1).join('/') || '/' } as PlatformPath": 1,
+    "{ resolve: (p) => p, sep: '/', dirname: (p) => p.split('/').slice(0, -1).join('/') || '/' } as PlatformPath": 3
   },
   "packages/web/server/lib/opencode/settings-normalization-runtime.ts": {
     "addedAt!": 1,
@@ -464,6 +541,33 @@
     "lastOpenedAt!": 1,
     "value as LooseEntry[]": 1,
     "value as number": 2
+  },
+  "packages/web/server/lib/opencode/settings-runtime.ts": {
+    "DEFAULT_NOTIFICATION_TEMPLATES[event]!": 1,
+    "Object.entries(sanitized.managedRemoteTunnelPresetTokens) .map(([presetId, token]) => { const preset = presetsById.get(presetId); if (!preset || typeof token !== 'string' || token.trim().length === 0) { return null; } return { id: preset.id, name: preset.name, hostname: preset.hostname, token: token.trim(), }; }) .filter(Boolean) as ManagedRemoteTunnelTokenInput[]": 1,
+    "error as Error | undefined": 1,
+    "error as NodeJS.ErrnoException": 11,
+    "error as NodeJS.ErrnoException | undefined": 2,
+    "match[1]!": 1,
+    "matchedProjects[0]!": 1,
+    "next.projects[0]!": 2,
+    "nextProjects[0]!": 1,
+    "parsed as Settings": 2,
+    "parsed as T": 1,
+    "templates as Record<string, NotificationTemplateInput | null | undefined>": 1
+  },
+  "packages/web/server/lib/opencode/shared.ts": {
+    "candidates[0]!": 1,
+    "entry[2]!": 1,
+    "error as ErrorWithCode": 1,
+    "match[1]!": 3,
+    "match[2]!": 1,
+    "parsed as ConfigObject": 1,
+    "yaml.parse(match[1]!) as ConfigObject": 1,
+    "yaml.parse(sanitizeFrontmatter(match[1]!)) as ConfigObject": 1
+  },
+  "packages/web/server/lib/opencode/shutdown-runtime.test.ts": {
+    "server.address() as AddressInfo": 3
   },
   "packages/web/server/lib/opencode/startup-performance.ts": {
     "value!": 2

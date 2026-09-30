@@ -4,12 +4,16 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import type { PlatformPath } from 'node:path';
 
 import {
   DEFAULT_INPUT_HISTORY_LIMIT,
 } from './input-history-scope.js';
 import { createSettingsHelpers } from './settings-helpers.js';
+import type { SettingsHelpersDependencies } from './settings-helpers.js';
+import type { SettingsRegistry } from './settings-files.js';
 import { createSettingsNormalizationRuntime } from './settings-normalization-runtime.js';
+import type { SettingsDocument, SettingsNormalizationDependencies } from './settings-normalization-runtime.js';
 
 const testFilePath = fileURLToPath(import.meta.url);
 const packagesWebDir = join(dirname(testFilePath), '..', '..', '..');
@@ -30,25 +34,25 @@ const createTestHelpers = () => createSettingsHelpers({
   sanitizeModelRefs: () => undefined,
   sanitizeSkillCatalogs: () => undefined,
   sanitizeProjects: () => undefined,
-});
+} as SettingsHelpersDependencies);
 
 const createTestHelpersWithRealSanitizers = () => {
   const runtime = createSettingsNormalizationRuntime({
     os: { homedir: () => '/home/testuser' },
     path: {
-      resolve: (...args) => args[args.length - 1],
+      resolve: (...args: string[]) => args[args.length - 1]!,
       sep: '/',
-      dirname: (p) => p.split('/').slice(0, -1).join('/') || '/',
-    },
+      dirname: (p: string) => p.split('/').slice(0, -1).join('/') || '/',
+    } as PlatformPath,
     processLike: { platform: 'linux', env: {} },
-    realpathSync: (p) => p,
+    realpathSync: (p: string) => p,
     tunnelBootstrapTtlDefaultMs: 600000,
     tunnelBootstrapTtlMinMs: 60000,
     tunnelBootstrapTtlMaxMs: 3600000,
     tunnelSessionTtlDefaultMs: 86400000,
     tunnelSessionTtlMinMs: 3600000,
     tunnelSessionTtlMaxMs: 604800000,
-  });
+  } as SettingsNormalizationDependencies);
   return createSettingsHelpers({
     normalizePathForPersistence: (value) => value,
     normalizeDirectoryPath: (value) => value,
@@ -65,33 +69,33 @@ const createTestHelpersWithRealSanitizers = () => {
     sanitizeModelRefs: runtime.sanitizeModelRefs,
     sanitizeSkillCatalogs: () => undefined,
     sanitizeProjects: () => undefined,
-  });
+  } as SettingsHelpersDependencies);
 };
 
 describe('settings helpers', () => {
   it('round-trips section order and preserves it across unrelated writes', () => {
     const helpers = createTestHelpers();
-    const changes = helpers.sanitizeSettingsUpdate({ workStatusSectionOrder: ['mcp', 'session', 'mcp', null, ''] });
+    const changes = helpers.sanitizeSettingsUpdate({ workStatusSectionOrder: ['mcp', 'session', 'mcp', null, ''] }) as SettingsDocument;
     expect(changes.workStatusSectionOrder).toEqual(['mcp', 'session']);
     const saved = helpers.mergePersistedSettings({}, changes);
-    const reloaded = helpers.formatSettingsResponse(JSON.parse(JSON.stringify(saved)));
+    const reloaded: Record<string, unknown> = helpers.formatSettingsResponse(JSON.parse(JSON.stringify(saved)) as SettingsDocument);
     expect(reloaded.workStatusSectionOrder).toEqual(['mcp', 'session']);
-    const next = helpers.mergePersistedSettings(reloaded, helpers.sanitizeSettingsUpdate({ workStatusPanelEnabled: false }));
-    expect(helpers.formatSettingsResponse(next).workStatusSectionOrder).toEqual(['mcp', 'session']);
+    const next = helpers.mergePersistedSettings(reloaded as SettingsDocument, helpers.sanitizeSettingsUpdate({ workStatusPanelEnabled: false }) as SettingsDocument);
+    expect((helpers.formatSettingsResponse(next) as Record<string, unknown>).workStatusSectionOrder).toEqual(['mcp', 'session']);
     expect(helpers.sanitizeSettingsUpdate({ workStatusSectionOrder: 'bad' }).workStatusSectionOrder).toBeUndefined();
     expect(helpers.sanitizeSettingsUpdate({ workStatusSectionOrder: [] }).workStatusSectionOrder).toEqual([]);
   });
   it('round-trips telemetry opt-in with the hidden list and preserves it across unrelated writes', () => {
     const helpers = createTestHelpers();
-    const legacy = helpers.sanitizeSettingsUpdate({ workStatusHiddenSections: [] });
+    const legacy = helpers.sanitizeSettingsUpdate({ workStatusHiddenSections: [] }) as SettingsDocument;
     expect(legacy.workStatusHiddenSectionsExplicit).toBeUndefined();
-    const changes = helpers.sanitizeSettingsUpdate({ workStatusHiddenSections: [], workStatusHiddenSectionsExplicit: true });
+    const changes = helpers.sanitizeSettingsUpdate({ workStatusHiddenSections: [], workStatusHiddenSectionsExplicit: true }) as SettingsDocument;
     const saved = helpers.mergePersistedSettings(legacy, changes);
-    const reloaded = helpers.formatSettingsResponse(JSON.parse(JSON.stringify(saved)));
+    const reloaded: Record<string, unknown> = helpers.formatSettingsResponse(JSON.parse(JSON.stringify(saved)) as SettingsDocument);
     expect(reloaded.workStatusHiddenSections).toEqual([]);
     expect(reloaded.workStatusHiddenSectionsExplicit).toBe(true);
-    const next = helpers.mergePersistedSettings(reloaded, helpers.sanitizeSettingsUpdate({ workStatusPanelEnabled: false }));
-    expect(helpers.formatSettingsResponse(next).workStatusHiddenSectionsExplicit).toBe(true);
+    const next = helpers.mergePersistedSettings(reloaded as SettingsDocument, helpers.sanitizeSettingsUpdate({ workStatusPanelEnabled: false }) as SettingsDocument);
+    expect((helpers.formatSettingsResponse(next) as Record<string, unknown>).workStatusHiddenSectionsExplicit).toBe(true);
     expect(helpers.sanitizeSettingsUpdate({ workStatusHiddenSectionsExplicit: 'true' }).workStatusHiddenSectionsExplicit).toBeUndefined();
   });
   it('imports from the packed @openchamber/web tarball without escaping the published package', async () => {
@@ -110,13 +114,13 @@ describe('settings helpers', () => {
       const tarballName = readdirSync(packDir).find((entry) => entry.endsWith('.tgz'));
       expect(tarballName).toBeTruthy();
 
-      execFileSync('tar', ['-xzf', join(packDir, tarballName), '-C', extractDir], {
+      execFileSync('tar', ['-xzf', join(packDir, tarballName!), '-C', extractDir], {
         stdio: 'pipe',
       });
 
       const extractedModule = await import(
         pathToFileURL(join(extractDir, 'package', 'dist-node', 'server', 'lib', 'opencode', 'settings-helpers.js')).href
-      );
+      ) as { createSettingsHelpers: typeof createSettingsHelpers };
 
       const helpers = extractedModule.createSettingsHelpers({
         normalizePathForPersistence: (value) => value,
@@ -134,7 +138,7 @@ describe('settings helpers', () => {
         sanitizeModelRefs: () => undefined,
         sanitizeSkillCatalogs: () => undefined,
         sanitizeProjects: () => undefined,
-      });
+      } as SettingsHelpersDependencies);
 
       expect(helpers.sanitizeSettingsUpdate({ inputHistoryScope: 'global' })).toEqual({
         inputHistoryScope: 'global',
@@ -753,7 +757,7 @@ describe('settings helpers', () => {
 
 describe('settings registry gate', () => {
   const registryPath = join(dirname(testFilePath), 'settings-registry.json');
-  const registry = JSON.parse(readFileSync(registryPath, 'utf8'));
+  const registry = JSON.parse(readFileSync(registryPath, 'utf8')) as SettingsRegistry;
   const persistableKeys = Object.entries(registry.fields)
     .filter(([, field]) => !field.computed && !field.local && field.owner !== 'desktop-shell')
     .map(([key]) => key);
@@ -762,7 +766,7 @@ describe('settings registry gate', () => {
   // key is added to the registry without a line here, and when the sanitizer
   // stops accepting a key the registry still lists — that is the drift the
   // registry exists to end.
-  const validValues = {
+  const validValues: Record<string, unknown> = {
     themeId: 'openchamber-dark', useSystemTheme: true, themeVariant: 'dark', lightThemeId: 'openchamber-light', darkThemeId: 'openchamber-dark',
     splashBgLight: '#fff', splashFgLight: '#000', splashBgDark: '#000', splashFgDark: '#fff',
     lastDirectory: '/home/testuser/project', homeDirectory: '/home/testuser', opencodeBinary: '/usr/local/bin/opencode',
@@ -825,7 +829,7 @@ describe('settings registry gate', () => {
       sanitizeModelRefs: (value) => value,
       sanitizeSkillCatalogs: (value) => value,
       sanitizeProjects: (value) => value,
-    });
+    } as SettingsHelpersDependencies);
     const missingFixture = persistableKeys.filter((key) => !(key in validValues));
     expect(missingFixture).toEqual([]);
 

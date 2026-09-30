@@ -3,6 +3,34 @@ import fs from 'fs';
 import { resolveNpmRegistryRequest } from './npm-registry-config.js';
 import { PACKAGE_JSON_PATH } from '../package-root.js';
 
+interface NpmPackagePayload {
+  ok: true;
+  latest: string | null;
+  versions: string[];
+  distTags: Record<string, string>;
+}
+
+interface NpmLookupError {
+  ok: false;
+  status: number | 'network';
+  error: string;
+}
+
+export type NpmLookupResult = NpmPackagePayload | NpmLookupError;
+
+interface NpmInfoOptions {
+  forceRefresh?: boolean | undefined;
+}
+
+interface CacheEntry {
+  fetchedAt: number;
+  payload: NpmLookupResult;
+}
+
+interface ThrownValue {
+  message?: unknown;
+}
+
 const NPM_CACHE_TTL_MS = 3_600_000;
 const NPM_FETCH_TIMEOUT_MS = 5_000;
 
@@ -24,13 +52,13 @@ const NPM_FETCH_TIMEOUT_MS = 5_000;
  */
 
 /** @type {Map<string, CacheEntry>} */
-const _cache = new Map();
+const _cache = new Map<string, CacheEntry>();
 
 /** @type {Map<string, Promise<NpmLookupResult>>} */
-const _inFlight = new Map();
+const _inFlight = new Map<string, Promise<NpmLookupResult>>();
 
 /** @type {string | null} */
-let _userAgent = null;
+let _userAgent: string | null = null;
 
 // The @openchamber/web manifest. Counting `..` from here reached the monorepo
 // root in a checkout and the consumer's own package.json once installed.
@@ -42,7 +70,7 @@ function _getUserAgent() {
   if (_userAgent) return _userAgent;
 
   try {
-    const pkg = JSON.parse(fs.readFileSync(_getPackageJsonPath(), 'utf8'));
+    const pkg = JSON.parse(fs.readFileSync(_getPackageJsonPath(), 'utf8')) as { version?: unknown };
     _userAgent = `openchamber-server/${typeof pkg.version === 'string' ? pkg.version : '0.0.0'}`;
   } catch {
     _userAgent = 'openchamber-server/dev';
@@ -51,7 +79,7 @@ function _getUserAgent() {
   return _userAgent;
 }
 
-function parseDistTags(value) {
+function parseDistTags(value: unknown): Record<string, string> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return {};
   }
@@ -62,7 +90,7 @@ function parseDistTags(value) {
   );
 }
 
-function parseVersions(value) {
+function parseVersions(value: unknown): string[] {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return [];
   }
@@ -70,7 +98,7 @@ function parseVersions(value) {
   return Object.keys(value);
 }
 
-function cacheResult(name, payload) {
+function cacheResult(name: string, payload: NpmLookupResult) {
   if (payload.ok || payload.status === 404) {
     _cache.set(name, { fetchedAt: Date.now(), payload });
   }
@@ -82,7 +110,7 @@ function cacheResult(name, payload) {
  * @param {string} name npm package name
  * @returns {Promise<NpmLookupResult>}
  */
-export async function lookupNpmPackage(name) {
+export async function lookupNpmPackage(name: string): Promise<NpmLookupResult> {
   try {
     const request = resolveNpmRegistryRequest(name);
     const response = await fetch(request.url, {
@@ -95,7 +123,7 @@ export async function lookupNpmPackage(name) {
     });
 
     if (response.ok) {
-      const data = await response.json();
+      const data = await response.json() as { 'dist-tags'?: unknown; versions?: unknown } | null;
       const distTags = parseDistTags(data?.['dist-tags']);
       return {
         ok: true,
@@ -111,7 +139,7 @@ export async function lookupNpmPackage(name) {
 
     return { ok: false, status: response.status, error: `Registry returned ${response.status}` };
   } catch (error) {
-    return { ok: false, status: 'network', error: String(error?.message ?? error) };
+    return { ok: false, status: 'network', error: String((error as ThrownValue | null | undefined)?.message ?? error) };
   }
 }
 
@@ -122,7 +150,7 @@ export async function lookupNpmPackage(name) {
  * @param {NpmInfoOptions} [options]
  * @returns {Promise<NpmLookupResult>}
  */
-export async function getNpmInfo(name, options = {}) {
+export async function getNpmInfo(name: string, options: NpmInfoOptions = {}): Promise<NpmLookupResult> {
   const { forceRefresh = false } = options;
   const cached = _cache.get(name);
   if (cached && !forceRefresh && Date.now() - cached.fetchedAt < NPM_CACHE_TTL_MS) {

@@ -1,34 +1,38 @@
 import { describe, expect, it } from 'vitest';
+import type { Express } from 'express';
 import { registerPwaManifestRoute } from './pwa-manifest-routes.js';
 
 const createResponse = () => ({
-  headers: new Map(),
+  headers: new Map<string, string>(),
   contentType: '',
   body: '',
-  setHeader(name, value) {
+  setHeader(name: string, value: string) {
     this.headers.set(name, value);
     return this;
   },
-  type(value) {
+  type(value: string) {
     this.contentType = value;
     return this;
   },
-  send(value) {
+  send(value: string) {
     this.body = value;
     return this;
   },
 });
 
+type FakeResponse = ReturnType<typeof createResponse>;
+type ManifestHandler = (req: { query: object }, res: FakeResponse) => Promise<void>;
+
 describe('PWA manifest route', () => {
   it('does not fall back to unrelated global session shortcuts for scoped manifests', async () => {
-    const routes = new Map();
+    const routes = new Map<string, ManifestHandler>();
     const app = {
-      get(route, handler) {
+      get(route: string, handler: ManifestHandler) {
         routes.set(route, handler);
       },
     };
     const originalFetch = globalThis.fetch;
-    const fetchCalls = [];
+    const fetchCalls: string[] = [];
     globalThis.fetch = async (url) => {
       fetchCalls.push(String(url));
       const sessions = String(url).includes('?directory=')
@@ -45,11 +49,11 @@ describe('PWA manifest route', () => {
       return {
         ok: true,
         json: async () => ({ data: sessions, cursor: {} }),
-      };
+      } as Response;
     };
 
     try {
-      registerPwaManifestRoute(app, {
+      registerPwaManifestRoute(app as Express, {
         process: { platform: 'darwin' },
         resolveProjectDirectory: async () => ({ directory: '/workspace/app' }),
         buildOpenCodeUrl: (route) => route,
@@ -61,9 +65,9 @@ describe('PWA manifest route', () => {
 
       const handler = routes.get('/manifest.webmanifest');
       const res = createResponse();
-      await handler({ query: {} }, res);
+      await handler!({ query: {} }, res);
 
-      const manifest = JSON.parse(res.body);
+      const manifest = JSON.parse(res.body) as { shortcuts: unknown };
       expect(fetchCalls).toHaveLength(2);
       expect(manifest.shortcuts).toEqual([
         {
@@ -80,14 +84,14 @@ describe('PWA manifest route', () => {
   });
 
   it('includes child session shortcuts for root-scoped manifests', async () => {
-    const routes = new Map();
+    const routes = new Map<string, ManifestHandler>();
     const app = {
-      get(route, handler) {
+      get(route: string, handler: ManifestHandler) {
         routes.set(route, handler);
       },
     };
     const originalFetch = globalThis.fetch;
-    const fetchCalls = [];
+    const fetchCalls: string[] = [];
     globalThis.fetch = async (url) => {
       fetchCalls.push(String(url));
       return {
@@ -100,11 +104,11 @@ describe('PWA manifest route', () => {
             time: { updated: 2 },
           },
         ],
-      };
+      } as Response;
     };
 
     try {
-      registerPwaManifestRoute(app, {
+      registerPwaManifestRoute(app as Express, {
         process: { platform: 'darwin' },
         resolveProjectDirectory: async () => ({ directory: '/' }),
         buildOpenCodeUrl: (route) => route,
@@ -116,9 +120,9 @@ describe('PWA manifest route', () => {
 
       const handler = routes.get('/manifest.webmanifest');
       const res = createResponse();
-      await handler({ query: {} }, res);
+      await handler!({ query: {} }, res);
 
-      const manifest = JSON.parse(res.body);
+      const manifest = JSON.parse(res.body) as { shortcuts: unknown };
       expect(fetchCalls).toEqual(['/api/session?directory=%2F']);
       expect(manifest.shortcuts).toContainEqual({
         name: 'Root child',

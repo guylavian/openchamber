@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { describeOpenCodeCompatibility, readOpenCodeCliVersion, readExternalOpenCodeVersion, readOpenCodeInfo, requireOpenCodeV2, UnsupportedOpenCodeVersionError } from './compatibility.js';
 
-const cli = (output, code = 0) => ({ binary: process.execPath, args: ['-e', `console.log(${JSON.stringify(output)}); process.exit(${code})`, '--'] });
+const cli = (output: string, code = 0) => ({ binary: process.execPath, args: ['-e', `console.log(${JSON.stringify(output)}); process.exit(${code})`, '--'] });
 
 describe('OpenCode compatibility', () => {
   it('recognizes both CLI version formats before launching a server', async () => {
@@ -21,21 +21,21 @@ describe('OpenCode compatibility', () => {
   });
 
   it('identifies external v1 through its legacy health contract', async () => {
-    const requests = [];
-    const fetchImpl = async (url) => {
+    const requests: string[] = [];
+    const fetchImpl = async (url: URL) => {
       requests.push(url.pathname);
       return url.pathname === '/api/info' ? new Response('<html/>') : Response.json({ healthy: true, version: '1.18.32' });
     };
-    expect(await readExternalOpenCodeVersion('http://localhost:4096', {}, fetchImpl)).toBe('1.18.32');
+    expect(await readExternalOpenCodeVersion('http://localhost:4096', {}, fetchImpl as typeof fetch)).toBe('1.18.32');
     expect(requests).toEqual(['/api/info', '/global/health']);
   });
 
   it('still identifies v1 when its /api/info fallback hangs or fails', async () => {
-    const fetchImpl = async (url) => {
+    const fetchImpl = async (url: URL) => {
       if (url.pathname === '/api/info') throw new DOMException('The operation timed out.', 'TimeoutError');
       return Response.json({ healthy: true, version: '1.18.32' });
     };
-    expect(await readExternalOpenCodeVersion('http://localhost:4096', {}, fetchImpl)).toBe('1.18.32');
+    expect(await readExternalOpenCodeVersion('http://localhost:4096', {}, fetchImpl as typeof fetch)).toBe('1.18.32');
   });
 
   it.each([401, 403])('does not call an auth failure v1 (%s)', async (status) => {
@@ -60,7 +60,7 @@ describe('OpenCode compatibility', () => {
   it('only offers installation for a known managed CLI older than the minimum', () => {
     expect(describeOpenCodeCompatibility('1.18.32', 'managed', true)).toMatchObject({ state: 'incompatible', canInstall: true });
     expect(describeOpenCodeCompatibility('2.0.14', 'managed', true)).toMatchObject({ state: 'incompatible', canInstall: true });
-    for (const installation of ['external', 'bundled']) {
+    for (const installation of ['external', 'bundled'] as const) {
       expect(describeOpenCodeCompatibility('1.18.32', installation, true).canInstall).toBe(false);
     }
     for (const version of [null, '2.0.15', '3.0.0']) {

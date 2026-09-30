@@ -1,10 +1,17 @@
 import { describe, expect, test } from 'bun:test';
+import type { SpawnSyncOptionsWithStringEncoding } from 'node:child_process';
 
 import { getClaudeCliAuthStatus } from './claude-cli-auth.js';
 
+interface Invocation {
+  command: string;
+  args: string[];
+  options: SpawnSyncOptionsWithStringEncoding;
+}
+
 describe('getClaudeCliAuthStatus', () => {
   test('reports the authoritative Claude CLI login state', () => {
-    let invocation = null;
+    let invocation: Invocation = null as never;
     const status = getClaudeCliAuthStatus({
       env: {
         PATH: '/usr/bin',
@@ -19,7 +26,7 @@ describe('getClaudeCliAuthStatus', () => {
     expect(status).toEqual({ connected: true, reason: 'logged-in' });
     expect(invocation.command).toBe('claude');
     expect(invocation.args).toEqual(['auth', 'status', '--json']);
-    expect(invocation.options.env.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
+    expect(invocation.options.env!.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
   });
 
   test('ignores a stale OpenCode marker when the CLI is logged out', () => {
@@ -31,7 +38,7 @@ describe('getClaudeCliAuthStatus', () => {
   });
 
   test('finds Claude through a login shell when a desktop PATH cannot', () => {
-    const invocations = [];
+    const invocations: Invocation[] = [];
     const status = getClaudeCliAuthStatus({
       env: { HOME: '/Users/test', PATH: '/usr/bin:/bin', SHELL: '/bin/zsh' },
       platform: 'darwin',
@@ -49,6 +56,6 @@ describe('getClaudeCliAuthStatus', () => {
       '/bin/zsh',
       '/Users/test/.local/bin/claude',
     ]);
-    expect(invocations[1].args).toEqual(['-lic', 'command -v claude']);
+    expect(invocations[1]!.args).toEqual(['-lic', 'command -v claude']);
   });
 });

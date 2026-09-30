@@ -2,10 +2,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import http from 'node:http';
 import net from 'node:net';
 import { once } from 'node:events';
+import type { AddressInfo } from 'node:net';
+import type { Duplex } from 'node:stream';
 
 import { createGracefulShutdownRuntime } from './shutdown-runtime.js';
 
-const createRuntime = (server, overrides = {}) => {
+interface FakeServer {
+  close: (callback: () => void) => void;
+}
+
+const createRuntime = (server: http.Server | FakeServer | null, overrides: Record<string, unknown> = {}) => {
   const runtime = createGracefulShutdownRuntime({
     process: { exit: vi.fn() },
     shutdownTimeoutMs: 1000,
@@ -57,7 +63,7 @@ describe('graceful shutdown runtime', () => {
     vi.useFakeTimers();
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const server = {
-      close: vi.fn((callback) => {
+      close: vi.fn((callback: () => void) => {
         callback();
       }),
     };
@@ -77,10 +83,10 @@ describe('graceful shutdown runtime', () => {
       response.write('data: fixture\n\n');
     });
     const runtime = createRuntime(server);
-    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-    const request = http.get(`http://127.0.0.1:${server.address().port}`);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const request = http.get(`http://127.0.0.1:${(server.address() as AddressInfo).port}`);
     request.on('error', () => {});
-    const response = await new Promise((resolve) => request.once('response', resolve));
+    const response = await new Promise<http.IncomingMessage>((resolve) => request.once('response', resolve));
     response.resume();
     const closed = new Promise((resolve) => response.once('close', resolve));
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -98,7 +104,7 @@ describe('graceful shutdown runtime', () => {
   it.each([false, true])('closes upgraded sockets without the HTTP timeout (handshake completed: %s)', async (completeHandshake) => {
     const server = http.createServer();
     const runtime = createRuntime(server);
-    const sockets = new Set();
+    const sockets = new Set<Duplex>();
     server.on('upgrade', (_request, socket) => {
       sockets.add(socket);
       if (completeHandshake) {
@@ -106,8 +112,8 @@ describe('graceful shutdown runtime', () => {
       }
       // A listener for another WS route can leave the upgrade unanswered.
     });
-    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-    const client = net.connect(server.address().port, '127.0.0.1');
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const client = net.connect((server.address() as AddressInfo).port, '127.0.0.1');
     client.on('error', () => {});
     client.resume();
     const clientClosed = once(client, 'close');
@@ -132,10 +138,10 @@ describe('graceful shutdown runtime', () => {
 
   it('drains processes before closing sockets accepted during cleanup, including after a cleanup failure', async () => {
     const server = http.createServer();
-    const cleanupStarted = Promise.withResolvers();
-    const finishCleanup = Promise.withResolvers();
-    const sockets = new Set();
-    const clients = [];
+    const cleanupStarted: PromiseWithResolvers<void> = Promise.withResolvers();
+    const finishCleanup: PromiseWithResolvers<void> = Promise.withResolvers();
+    const sockets = new Set<Duplex>();
+    const clients: net.Socket[] = [];
     server.on('upgrade', (_request, socket) => sockets.add(socket));
     const terminalShutdown = vi.fn(async () => {
       expect([...sockets].every((socket) => !socket.destroyed)).toBe(true);
@@ -154,15 +160,15 @@ describe('graceful shutdown runtime', () => {
       shouldSkipOpenCodeStop: () => false,
       getOpenCodeProcess: () => ({ close: processClose }),
     });
-    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-    const shutdown = runtime.gracefulShutdown({ exitProcess: false });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const shutdown: unknown = runtime.gracefulShutdown({ exitProcess: false });
     expect(runtime.gracefulShutdown({ exitProcess: false })).toBe(shutdown);
     await cleanupStarted.promise;
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
-      const closed = [];
+      const closed: Promise<unknown[]>[] = [];
       for (let index = 0; index < 8; index += 1) {
-        const client = net.connect(server.address().port, '127.0.0.1');
+        const client = net.connect((server.address() as AddressInfo).port, '127.0.0.1');
         clients.push(client);
         client.resume();
         closed.push(once(client, 'close'));
@@ -189,7 +195,7 @@ describe('graceful shutdown runtime', () => {
 
   it('stops guest services during shutdown', async () => {
     const server = {
-      close: vi.fn((callback) => {
+      close: vi.fn((callback: () => void) => {
         callback();
       }),
     };
@@ -203,7 +209,7 @@ describe('graceful shutdown runtime', () => {
 
   it('continues shutdown when stopping guest services fails', async () => {
     const server = {
-      close: vi.fn((callback) => {
+      close: vi.fn((callback: () => void) => {
         callback();
       }),
     };
@@ -225,8 +231,8 @@ describe('graceful shutdown runtime', () => {
 
   it('closes guest admission synchronously and cleans every runtime once across repeated shutdown calls', async () => {
     vi.useFakeTimers();
-    const order = [];
-    const cleanup = (name) => vi.fn(() => { order.push(name); });
+    const order: string[] = [];
+    const cleanup = (name: string) => vi.fn(() => { order.push(name); });
     const viewers = { stop: cleanup('viewers') };
     const proxy = { stop: cleanup('proxy') };
     const dictation = { stop: cleanup('dictation') };
@@ -244,7 +250,7 @@ describe('graceful shutdown runtime', () => {
       getRelayService: () => relay,
       getRelayReconcileTimer: () => timer,
     });
-    const first = runtime.gracefulShutdown();
+    const first: unknown = runtime.gracefulShutdown();
     expect(gate).toHaveBeenCalledTimes(1);
     expect(runtime.gracefulShutdown()).toBe(first);
     await first;

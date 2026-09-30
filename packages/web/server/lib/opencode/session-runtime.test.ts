@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createSessionRuntime } from './session-runtime.js';
+import type { SessionEventPayload } from './session-runtime.js';
 
 describe('session runtime', () => {
-  const runtimes = [];
+  const runtimes: ReturnType<typeof createSessionRuntime>[] = [];
 
   afterEach(() => {
     for (const runtime of runtimes) {
@@ -42,7 +43,7 @@ describe('session runtime', () => {
       broadcastEvent: () => {},
     });
     runtimes.push(runtime);
-    const ask = (sessionID, id) => runtime.processOpenCodeSsePayload({
+    const ask = (sessionID: string, id: string) => runtime.processOpenCodeSsePayload({
       type: 'permission.asked', properties: { id, sessionID, action: 'edit', resources: [], metadata: {} },
     });
 
@@ -56,7 +57,7 @@ describe('session runtime', () => {
   });
 
   it('broadcasts attention clears through the shared broadcaster', () => {
-    const events = [];
+    const events: SessionEventPayload[] = [];
     const runtime = createSessionRuntime({
       writeSseEvent() {
         throw new Error('SSE fallback should not be used when broadcastEvent is provided');
@@ -89,7 +90,7 @@ describe('session runtime', () => {
     });
     runtime.markSessionViewed('session-1', 'client-1');
 
-    expect(events).toContainEqual({
+    expect(events).toContainEqual<{ type: string; properties: unknown }>({
       type: 'openchamber:session-status',
       properties: expect.objectContaining({
         sessionID: 'session-1',
@@ -97,7 +98,7 @@ describe('session runtime', () => {
         needsAttention: true,
       }),
     });
-    expect(events.at(-1)).toEqual({
+    expect(events.at(-1)).toEqual<{ type: string; properties: Record<string, unknown> }>({
       type: 'openchamber:session-status',
       properties: {
         sessionID: 'session-1',
@@ -110,7 +111,7 @@ describe('session runtime', () => {
   });
 
   it('accepts legacy session.status info.type payloads', () => {
-    const events = [];
+    const events: SessionEventPayload[] = [];
     const runtime = createSessionRuntime({
       writeSseEvent() {
         throw new Error('SSE fallback should not be used when broadcastEvent is provided');
@@ -132,7 +133,7 @@ describe('session runtime', () => {
       },
     });
 
-    expect(events).toContainEqual({
+    expect(events).toContainEqual<{ type: string; properties: unknown }>({
       type: 'openchamber:session-status',
       properties: expect.objectContaining({
         sessionID: 'legacy-session-1',
@@ -143,7 +144,7 @@ describe('session runtime', () => {
 
   it('broadcasts idle activity when cooldown expires', () => {
     vi.useFakeTimers();
-    const events = [];
+    const events: SessionEventPayload[] = [];
     const runtime = createSessionRuntime({
       writeSseEvent() {
         throw new Error('SSE fallback should not be used when broadcastEvent is provided');
@@ -176,7 +177,7 @@ describe('session runtime', () => {
 
       const activityPhases = () => events
         .filter((event) => event.type === 'openchamber:session-activity')
-        .map((event) => event.properties.phase);
+        .map((event) => (event.properties as { phase: unknown }).phase);
 
       expect(activityPhases()).toEqual(['busy', 'cooldown']);
 
@@ -199,7 +200,7 @@ describe('session runtime', () => {
       broadcastEvent() {},
     });
     runtimes.push(runtime);
-    const status = (sessionID, type) => runtime.processOpenCodeSsePayload({
+    const status = (sessionID: string, type: string) => runtime.processOpenCodeSsePayload({
       type: 'session.status',
       properties: { sessionID, status: { type } },
     });
@@ -223,14 +224,14 @@ describe('session runtime', () => {
   });
 
   it('interrupts busy sessions after restart and broadcasts terminal events once', () => {
-    const events = [];
+    const events: SessionEventPayload[] = [];
     const runtime = createSessionRuntime({
       writeSseEvent() {},
       getNotificationClients: () => new Set(),
       broadcastEvent: (event) => events.push(event),
     });
     runtimes.push(runtime);
-    const status = (sessionID, type) => runtime.processOpenCodeSsePayload({
+    const status = (sessionID: string, type: string) => runtime.processOpenCodeSsePayload({
       type: 'session.status',
       properties: { sessionID, status: { type } },
     });
@@ -254,16 +255,16 @@ describe('session runtime', () => {
       'session-idle': { type: 'idle' },
     });
     expect(runtime.getSessionStateSnapshot()).toEqual({
-      'session-busy-1': expect.objectContaining({
+      'session-busy-1': expect.objectContaining<Record<string, unknown>>({
         status: 'idle',
         metadata: expect.objectContaining({
           message: 'Interrupted by OpenCode restart',
           reason: 'opencode-restart',
         }),
-      }),
-      'session-busy-2': expect.objectContaining({ status: 'idle' }),
-      'session-busy-3': expect.objectContaining({ status: 'idle' }),
-      'session-idle': expect.objectContaining({ status: 'idle' }),
+      }) as Record<string, unknown>,
+      'session-busy-2': expect.objectContaining({ status: 'idle' }) as Record<string, unknown>,
+      'session-busy-3': expect.objectContaining({ status: 'idle' }) as Record<string, unknown>,
+      'session-idle': expect.objectContaining({ status: 'idle' }) as Record<string, unknown>,
     });
 
     const terminalEvents = events.filter((event) => (
@@ -271,7 +272,7 @@ describe('session runtime', () => {
     ));
     expect(terminalEvents).toHaveLength(6);
     for (const sessionId of ['session-busy-1', 'session-busy-2', 'session-busy-3']) {
-      expect(terminalEvents).toContainEqual({
+      expect(terminalEvents).toContainEqual<{ type: string; properties: unknown }>({
         type: 'openchamber:session-status',
         properties: expect.objectContaining({
           sessionID: sessionId,
@@ -289,7 +290,7 @@ describe('session runtime', () => {
         },
       });
     }
-    expect(terminalEvents.some((event) => event.properties.sessionID === 'session-idle')).toBe(false);
+    expect(terminalEvents.some((event) => (event.properties as { sessionID: unknown }).sessionID === 'session-idle')).toBe(false);
 
     events.length = 0;
     expect(runtime.interruptBusySessionsAfterRestart()).toEqual({ sessionIds: [] });
@@ -303,7 +304,7 @@ describe('session runtime', () => {
       getNotificationClients: () => new Set(),
       broadcastEvent() {},
     });
-    const status = (type) => runtime.processOpenCodeSsePayload({
+    const status = (type: string) => runtime.processOpenCodeSsePayload({
       type: 'session.status',
       properties: { sessionID: 'session-1', status: { type } },
     });
