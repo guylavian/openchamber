@@ -306,6 +306,14 @@
         "reason": "getGitHubAuthAccounts maps normalized GitHubAuthEntry values whose current is already boolean; removing the JavaScript's own Boolean() would change the emitted code."
       }
     ],
+    "packages/web/server/lib/github/gh-cli-credential.test.ts": [
+      {
+        "rule": "@typescript-eslint/no-floating-promises",
+        "text": "mock.module('child_process', () => ({ execFileSync: execFileSyncMock, }));",
+        "count": 1,
+        "reason": "mock.module is typed void | Promise<void>; awaiting or voiding it would change emitted JS, so parity requires leaving the call as is"
+      }
+    ],
     "packages/web/server/lib/guests/auth-store.ts": [
       {
         "rule": "@typescript-eslint/no-dynamic-delete",

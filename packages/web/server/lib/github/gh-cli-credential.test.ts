@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
-const execFileSyncMock = mock(() => '');
+const execFileSyncMock = mock<() => string>(() => '');
 
 mock.module('child_process', () => ({
   execFileSync: execFileSyncMock,

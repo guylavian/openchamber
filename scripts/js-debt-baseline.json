@@ -162,7 +162,6 @@
   "packages/web/server/lib/git/routes.test.js": 288,
   "packages/web/server/lib/git/service.js": 5920,
   "packages/web/server/lib/git/service.test.js": 2689,
-  "packages/web/server/lib/github/gh-cli-credential.test.js": 43,
   "packages/web/server/lib/github/octokit.js": 84,
   "packages/web/server/lib/github/pr-status.js": 797,
   "packages/web/server/lib/github/pr-status.test.js": 195,
