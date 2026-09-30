@@ -6,16 +6,25 @@ import { createRequire } from 'node:module';
 
 import { projectCredentialValue, readCredentialsFromDb, resolveCredentialDbPath } from './credential-db.js';
 
-const sqlite = (() => {
+const sqlite = ((): typeof import('node:sqlite') | null => {
   try {
-    return createRequire(import.meta.url)('node:sqlite');
+    return createRequire(import.meta.url)('node:sqlite') as typeof import('node:sqlite');
   } catch {
     return null;
   }
 })();
 
-const seed = (dbPath, rows) => {
-  const db = new sqlite.DatabaseSync(dbPath);
+interface SeedRow {
+  id: string;
+  integration: string;
+  label?: string;
+  value: unknown;
+  active?: number;
+  time?: number;
+}
+
+const seed = (dbPath: string, rows: SeedRow[]) => {
+  const db = new sqlite!.DatabaseSync(dbPath);
   db.exec(
     'CREATE TABLE credential (id TEXT PRIMARY KEY, integration_id TEXT, label TEXT NOT NULL, value TEXT NOT NULL, ' +
       'connector_id TEXT, method_id TEXT, active INTEGER, time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL)',
@@ -67,7 +76,7 @@ describe('resolveCredentialDbPath', () => {
 });
 
 describe.skipIf(!sqlite)('readCredentialsFromDb', () => {
-  let dir;
+  let dir: string;
   beforeEach(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-cred-'));
   });
@@ -96,7 +105,7 @@ describe.skipIf(!sqlite)('readCredentialsFromDb', () => {
 
   it('returns null rather than throwing when the schema is not what it expects', () => {
     const dbPath = path.join(dir, 'opencode.db');
-    const db = new sqlite.DatabaseSync(dbPath);
+    const db = new sqlite!.DatabaseSync(dbPath);
     db.exec('CREATE TABLE credential (id TEXT PRIMARY KEY)');
     db.close();
     expect(readCredentialsFromDb({ dbPath, fs })).toBeNull();

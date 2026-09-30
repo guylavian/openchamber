@@ -1,6 +1,18 @@
-import { registerPwaManifestRoute } from './pwa-manifest-routes.js';
+import type { Express } from 'express';
+import type { PlatformPath } from 'node:path';
 
-export const createStaticRoutesRuntime = (dependencies) => {
+import { registerPwaManifestRoute } from './pwa-manifest-routes.js';
+import type { PwaManifestRouteDependencies } from './pwa-manifest-routes.js';
+
+export interface StaticRoutesDependencies extends Omit<PwaManifestRouteDependencies, 'process'> {
+  fs: { existsSync: (path: string) => boolean };
+  path: Pick<PlatformPath, 'join' | 'resolve' | 'sep'>;
+  process: PwaManifestRouteDependencies['process'] & { env: NodeJS.ProcessEnv };
+  packageRoot: string;
+  express: Pick<typeof import('express'), 'static'>;
+}
+
+export const createStaticRoutesRuntime = (dependencies: StaticRoutesDependencies) => {
   const {
     fs,
     path,
@@ -23,7 +35,7 @@ export const createStaticRoutesRuntime = (dependencies) => {
     return path.join(packageRoot, 'dist');
   };
 
-  const registerStaticRoutes = (app) => {
+  const registerStaticRoutes = (app: Express) => {
     const distPath = resolveDistPath();
 
     if (fs.existsSync(distPath)) {
@@ -59,7 +71,7 @@ export const createStaticRoutesRuntime = (dependencies) => {
     });
   };
 
-  const registerApiOnlyFallbackRoutes = (app) => {
+  const registerApiOnlyFallbackRoutes = (app: Express) => {
     app.get(/^(?!\/api|\/auth|\/health|\/linear|.*\.(js|css|svg|png|jpg|jpeg|gif|ico|woff|woff2|ttf|eot|map)).*$/, (req, res) => {
       const command = 'openchamber connect-url --help';
       res.status(200).format({

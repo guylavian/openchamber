@@ -1,6 +1,103 @@
-import { registerNotificationEmitRoutes } from '../notifications/emit-route.js';
+import type { Express, Request } from 'express';
 
-export const createBootstrapRuntime = (dependencies) => {
+import { registerNotificationEmitRoutes } from '../notifications/emit-route.js';
+import type { NotificationEmitRouteDependencies, PluginNotificationEmitter } from '../notifications/emit-route.js';
+import type { OpenChamberRouteDependencies } from './openchamber-routes.js';
+import type { LooseRecord } from './settings-normalization-runtime.js';
+
+interface AgentToolRuntime {
+  authorizeRequest?: (req: Request) => boolean;
+}
+
+interface SessionRuntime {
+  getSessionActivitySnapshot: unknown;
+  getSessionStateSnapshot: unknown;
+  getPendingBlockingRequestsSnapshot: unknown;
+  getSessionAttentionSnapshot: unknown;
+  getSessionState: unknown;
+  getSessionAttentionState: unknown;
+  markSessionViewed: unknown;
+  markSessionUnviewed: unknown;
+  markUserMessageSent: unknown;
+}
+
+interface UiAuthController {
+  enabled?: boolean;
+}
+
+type ExpressModule = NotificationEmitRouteDependencies['express'];
+
+type RouteRegistrar = (app: Express, dependencies: LooseRecord) => unknown;
+
+export interface BootstrapDependencies {
+  createUiAuth: (options: { password: unknown; readSettingsFromDiskMigrated: unknown; clientAuthController: unknown }) => UiAuthController;
+  registerServerStatusRoutes: RouteRegistrar;
+  registerCommonRequestMiddleware: RouteRegistrar;
+  registerAuthAndAccessRoutes: RouteRegistrar;
+  registerTtsRoutes: RouteRegistrar;
+  registerNotificationRoutes: RouteRegistrar;
+  registerOpenChamberRoutes: (app: Express, dependencies: OpenChamberRouteDependencies & { os: typeof import('node:os') }) => unknown;
+  registerAgentToolRoutes?: (app: Express, options: { express: ExpressModule; agentToolRuntime: AgentToolRuntime | undefined }) => unknown;
+  express: ExpressModule;
+}
+
+export interface BootstrapOptions {
+  openchamberVersion: unknown;
+  runtimeName: unknown;
+  serverStartedAt: unknown;
+  gracefulShutdown: unknown;
+  getHealthSnapshot: unknown;
+  getServerPort: unknown;
+  getTunnelUrl: unknown;
+  verboseRequestLogs: unknown;
+  uiPassword: unknown;
+  tunnelAuthController: unknown;
+  remoteClientAuthRuntime: unknown;
+  clientPairingRuntime: unknown;
+  getRelayPairingCandidate: unknown;
+  reconcileRelay: unknown;
+  getPairingTransports: unknown;
+  getDirectCandidateUrls: unknown;
+  getServerId: unknown;
+  getServerLabel: unknown;
+  readSettingsFromDiskMigrated: unknown;
+  normalizeTunnelSessionTtlMs: unknown;
+  sayTTSCapability: unknown;
+  ensurePushInitialized: unknown;
+  ensureGlobalWatcherStarted: unknown;
+  getOrCreateVapidKeys: unknown;
+  getUiSessionTokenFromRequest: unknown;
+  writeSettingsToDisk: unknown;
+  addOrUpdatePushSubscription: unknown;
+  removePushSubscription: unknown;
+  addOrUpdateApnsToken: unknown;
+  removeApnsToken: unknown;
+  updateUiVisibility: unknown;
+  clearPendingPushBadge: unknown;
+  isUiVisible: unknown;
+  getUiNotificationClients: unknown;
+  writeSseEvent: unknown;
+  setPushInitialized: unknown;
+  setAutoAcceptSession: unknown;
+  skipBodyParsing: unknown;
+  process: OpenChamberRouteDependencies['process'];
+  fs: OpenChamberRouteDependencies['fs'];
+  os: typeof import('node:os');
+  path: OpenChamberRouteDependencies['path'];
+  server: OpenChamberRouteDependencies['server'];
+  __dirname: string;
+  openchamberDataDir: string;
+  modelsDevApiUrl: string;
+  modelsMetadataCacheTtl: number;
+  fetchFreeZenModels: OpenChamberRouteDependencies['fetchFreeZenModels'];
+  getCachedZenModels: OpenChamberRouteDependencies['getCachedZenModels'];
+  desktopUpdater: OpenChamberRouteDependencies['desktopUpdater'];
+  pluginNotificationEmitter: PluginNotificationEmitter;
+  agentToolRuntime: AgentToolRuntime | undefined;
+  sessionRuntime: SessionRuntime;
+}
+
+export const createBootstrapRuntime = (dependencies: BootstrapDependencies) => {
   const {
     createUiAuth,
     registerServerStatusRoutes,
@@ -13,7 +110,7 @@ export const createBootstrapRuntime = (dependencies) => {
     express,
   } = dependencies;
 
-  const setupBaseRoutes = (app, options) => {
+  const setupBaseRoutes = (app: Express, options: BootstrapOptions) => {
     const {
       process,
       openchamberVersion,
@@ -100,7 +197,7 @@ export const createBootstrapRuntime = (dependencies) => {
 
     const notificationEmitRoutes = registerNotificationEmitRoutes(app, {
       express,
-      isAgentToolRequestAuthorized: (req) => agentToolRuntime?.authorizeRequest?.(req) === true,
+      isAgentToolRequestAuthorized: (req: Request) => agentToolRuntime?.authorizeRequest?.(req) === true,
       emitter: pluginNotificationEmitter,
     });
     notificationEmitRoutes.registerPluginRoute();

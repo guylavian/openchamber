@@ -324,6 +324,10 @@
   "packages/web/server/lib/opencode/cli-options.ts": {
     "args[i]!": 1
   },
+  "packages/web/server/lib/opencode/credential-db.test.ts": {
+    "createRequire(import.meta.url)('node:sqlite') as typeof import('node:sqlite')": 1,
+    "sqlite!": 2
+  },
   "packages/web/server/lib/opencode/credential-db.ts": {
     "JSON.parse(raw) as StoredCredentialValue | null": 1,
     "raw as StoredCredentialValue | null | undefined": 1,
@@ -337,6 +341,13 @@
     "JSON.parse(content) as StoredLaunchOptions": 1,
     "await import('../package-manager.js') as PackageManagerModule": 2,
     "error as ThrownValue": 3
+  },
+  "packages/web/server/lib/opencode/project-icon-routes.test.ts": {
+    "app as Express": 1,
+    "getRoute('GET', '/api/projects/:projectId/icon')!": 1,
+    "projects as SanitizedProject[]": 1,
+    "vi.fn(async (iconPath: string): Promise<Buffer | string> => { if (iconPath.endsWith('.jpg')) { return jpgBytes; } throw enoent; }) as typeof import('node:fs/promises').readFile": 1,
+    "{ readFile: vi.fn(async (iconPath: string): Promise<Buffer | string> => { if (iconPath.endsWith('.jpg')) { return jpgBytes; } throw enoent; }) as typeof import('node:fs/promises').readFile, } as typeof import('node:fs/promises')": 1
   },
   "packages/web/server/lib/opencode/project-icon-routes.ts": {
     "error as NodeJS.ErrnoException": 2,
