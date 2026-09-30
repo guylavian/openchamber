@@ -134,7 +134,6 @@
   "packages/web/server/lib/browser-control/provider.js": 217,
   "packages/web/server/lib/browser-control/provider.test.js": 251,
   "packages/web/server/lib/client-auth/pairing.test.js": 146,
-  "packages/web/server/lib/client-auth/remote-clients.test.js": 175,
   "packages/web/server/lib/context-obligatory/runtime.test.js": 91,
   "packages/web/server/lib/dev-servers/parse.test.js": 174,
   "packages/web/server/lib/dev-servers/routes.js": 135,

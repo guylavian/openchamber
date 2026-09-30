@@ -68,6 +68,12 @@
     "error as NodeJS.ErrnoException | null": 1,
     "value.map(normalizeClientKind).filter(Boolean) as string[]": 1
   },
+  "packages/web/server/lib/client-auth/remote-clients.test.ts": {
+    "JSON.parse(await fs.readFile(storePath, 'utf8')) as { clients: [{ lastTransport: string }] }": 1,
+    "afterUse[0]!": 1,
+    "clients[0]!": 1,
+    "listed[0]!": 6
+  },
   "packages/web/server/lib/client-auth/remote-clients.ts": {
     "JSON.parse(raw) as { clients?: unknown } | null": 1,
     "error as NodeJS.ErrnoException | null": 1

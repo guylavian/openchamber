@@ -26,15 +26,15 @@ describe('remote client auth runtime', () => {
 
       const listed = await runtime.listClients();
       expect(listed).toHaveLength(1);
-      expect(listed[0].id).toBe(created.client.id);
-      expect('tokenHash' in listed[0]).toBe(false);
+      expect(listed[0]!.id).toBe(created.client.id);
+      expect('tokenHash' in listed[0]!).toBe(false);
 
       const authenticated = await runtime.authenticateBearerToken(created.token);
       expect(authenticated?.ok).toBe(true);
       expect(authenticated?.clientId).toBe(created.client.id);
 
       const afterUse = await runtime.listClients();
-      expect(typeof afterUse[0].lastUsedAt).toBe('string');
+      expect(typeof afterUse[0]!.lastUsedAt).toBe('string');
 
       const revoked = await runtime.revokeClient(created.client.id);
       expect(revoked.revoked).toBe(true);
@@ -76,8 +76,8 @@ describe('remote client auth runtime', () => {
 
       const listed = await runtime.listClients();
       expect(listed).toHaveLength(1);
-      expect(listed[0].id).toBe(second.client.id);
-      expect(listed[0].clientKind).toBe('desktop-local');
+      expect(listed[0]!.id).toBe(second.client.id);
+      expect(listed[0]!.clientKind).toBe('desktop-local');
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }
@@ -130,8 +130,8 @@ describe('remote client auth runtime', () => {
       // Sticky: a later direct request must not clear relay demand.
       await runtime.authenticateBearerToken(created.token, { headers: {} });
       const listed = await runtime.listClients();
-      expect(listed[0].usesRelay).toBe(true);
-      expect(listed[0].lastTransport).toBe('direct');
+      expect(listed[0]!.usesRelay).toBe(true);
+      expect(listed[0]!.lastTransport).toBe('direct');
       expect(await runtime.hasActiveRelayClients()).toBe(true);
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
@@ -145,7 +145,7 @@ describe('remote client auth runtime', () => {
       // Simulate a store written by a build that tracked lastTransport but not
       // the healed usesRelay flag.
       const storePath = path.join(dir, 'remote-clients.json');
-      const store = JSON.parse(await fs.readFile(storePath, 'utf8'));
+      const store = JSON.parse(await fs.readFile(storePath, 'utf8')) as { clients: [{ lastTransport: string }] };
       store.clients[0].lastTransport = 'relay';
       await fs.writeFile(storePath, JSON.stringify(store));
       expect(created.client.usesRelay).toBe(false);
@@ -167,7 +167,7 @@ describe('remote client auth runtime', () => {
       expect(await runtime.authenticateBearerToken(created.token)).toBe(null);
       const clients = await runtime.listClients();
       expect(clients).toHaveLength(1);
-      expect(typeof clients[0].revokedAt).toBe('string');
+      expect(typeof clients[0]!.revokedAt).toBe('string');
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }
