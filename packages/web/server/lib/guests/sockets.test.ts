@@ -6,9 +6,10 @@ import {
   expandHomePath,
   resolveServiceSocketEnv,
   resolveSocketBinding,
+  type SocketBindingInput,
 } from './sockets.js';
 
-const dockerBinding = {
+const dockerBinding: SocketBindingInput = {
   id: 'docker',
   candidatesByPlatform: {
     linux: ['/var/run/docker.sock', '/run/user/1000/docker.sock'],
@@ -40,10 +41,10 @@ describe('resolveSocketBinding', () => {
   });
 
   test('picks the first existing candidate for the platform', async () => {
-    const seen = [];
+    const seen: string[] = [];
     const resolved = await resolveSocketBinding(dockerBinding, {
       platform: 'linux',
-      access: async (candidate) => {
+      access: async (candidate: string) => {
         seen.push(candidate);
         if (candidate !== '/run/user/1000/docker.sock') {
           throw Object.assign(new Error('missing'), { code: 'ENOENT' });
@@ -96,7 +97,7 @@ describe('resolveServiceSocketEnv', () => {
       {},
       {
         platform: 'linux',
-        access: async (candidate) => {
+        access: async (candidate: string) => {
           if (candidate !== '/var/run/docker.sock') {
             throw Object.assign(new Error('missing'), { code: 'ENOENT' });
           }

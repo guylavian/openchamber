@@ -6,22 +6,27 @@ import path from 'node:path';
 
 import { extractZipBuffer, unwrapGuestRoot } from './extract-zip.js';
 
-const u16 = (value) => {
+interface ZipFileEntry {
+  name: string;
+  data: string | Buffer;
+}
+
+const u16 = (value: number): Buffer => {
   const buffer = Buffer.alloc(2);
   buffer.writeUInt16LE(value);
   return buffer;
 };
 
-const u32 = (value) => {
+const u32 = (value: number): Buffer => {
   const buffer = Buffer.alloc(4);
   buffer.writeUInt32LE(value);
   return buffer;
 };
 
 /** Store-only zip. Used by install tests too. */
-export const buildStoreZip = (files) => {
-  const locals = [];
-  const centrals = [];
+export const buildStoreZip = (files: ZipFileEntry[]): Buffer => {
+  const locals: Buffer[] = [];
+  const centrals: Buffer[] = [];
   let offset = 0;
   for (const file of files) {
     const name = Buffer.from(file.name, 'utf8');

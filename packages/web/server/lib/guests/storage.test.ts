@@ -2,16 +2,25 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import type { GuestStorageRequest } from '@openchamber/sdk';
 import { runGuestStorage, removeGuestStorage } from './storage.js';
 
-const roots = [];
+const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true }))); });
-const fixture = async () => {
+
+interface Fixture {
+  root: string;
+  persistPath: string;
+  run: (request: GuestStorageRequest, id?: string) => ReturnType<typeof runGuestStorage>;
+}
+
+const fixture = async (): Promise<Fixture> => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'oc-storage-'));
   roots.push(root);
   const persistPath = path.join(root, 'extensions.json');
-  return { root, persistPath, run: (request, id = 'board') => runGuestStorage(persistPath, id, request, async () => {}) };
+  return { root, persistPath, run: (request: GuestStorageRequest, id: string = 'board') => runGuestStorage(persistPath, id, request, async () => {}) };
 };
+
 describe('extension storage', () => {
   test('concurrent keys survive, namespaces are isolated, and null is present', async () => {
     const { run, persistPath } = await fixture();
