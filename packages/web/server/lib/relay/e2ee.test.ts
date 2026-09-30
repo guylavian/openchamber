@@ -12,15 +12,21 @@ import {
   generateHandshakeNonce,
   RELAY_PROTOCOL_VERSION,
 } from './e2ee.js';
+import type { HostHandshakeResult } from './e2ee.js';
+import type { webcrypto } from 'node:crypto';
+
+type Established = Extract<HostHandshakeResult, { type: 'established' }>;
+type SendText = Extract<HostHandshakeResult, { type: 'send-text' }>;
+type Failed = Extract<HostHandshakeResult, { type: 'fail' }>;
 
 const subtle = globalThis.crypto.subtle;
 
 // A minimal client-side initiator so the host handshake can be exercised
 // end-to-end without importing the browser TS modules.
-const createClientHandshake = async (hostEncPubJwk) => {
+const createClientHandshake = async (hostEncPubJwk: Awaited<ReturnType<typeof exportPublicKeyJwk>>) => {
   const hostPublicKey = await subtle.importKey(
     'jwk',
-    { kty: hostEncPubJwk.kty, crv: hostEncPubJwk.crv, x: hostEncPubJwk.x, y: hostEncPubJwk.y, ext: true },
+    { kty: hostEncPubJwk.kty, crv: hostEncPubJwk.crv, x: hostEncPubJwk.x, y: hostEncPubJwk.y, ext: true } as webcrypto.JsonWebKey,
     { name: 'ECDH', namedCurve: 'P-256' },
     true,
     [],
@@ -52,7 +58,7 @@ describe('relay e2ee', () => {
 
     const action = await host.handleText(client.helloText);
     expect(action.type).toBe('established');
-    const hostChannel = action.channel;
+    const hostChannel = (action as Established).channel;
     const clientChannel = await client.deriveChannel();
 
     const c2h = new TextEncoder().encode('client-to-host payload');
@@ -71,7 +77,7 @@ describe('relay e2ee', () => {
     const enc = createFrameEncryptor(key);
     const dec = createFrameDecryptor(key);
     const frame = await enc.encrypt(new Uint8Array([1, 2, 3]));
-    frame[frame.length - 1] ^= 0xff;
+    frame[frame.length - 1]! ^= 0xff;
     await expect(dec.decrypt(frame)).rejects.toThrow();
   });
 
@@ -98,12 +104,12 @@ describe('relay e2ee', () => {
 
     const repeat = await host.handleText(client.helloText);
     expect(repeat.type).toBe('send-text');
-    expect(repeat.text).toBe(first.replyText);
+    expect((repeat as SendText).text).toBe((first as Established).replyText);
 
     const other = await createClientHandshake(hostPubJwk);
     const rekey = await host.handleText(other.helloText);
     expect(rekey.type).toBe('fail');
-    expect(rekey.closeCode).toBe(1008);
+    expect((rekey as Failed).closeCode).toBe(1008);
   });
 
   it('fails closed on plaintext after ready', async () => {
@@ -114,7 +120,7 @@ describe('relay e2ee', () => {
     await host.handleText(client.helloText);
     const action = await host.handleText(JSON.stringify({ hello: 'not a handshake' }));
     expect(action.type).toBe('fail');
-    expect(action.closeCode).toBe(1011);
+    expect((action as Failed).closeCode).toBe(1011);
   });
 
   it('base64url helpers round-trip', () => {

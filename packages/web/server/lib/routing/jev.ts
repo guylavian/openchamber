@@ -9,9 +9,21 @@ import {
   SAFETY_INSTRUCTIONS,
   SAFETY_KINDS,
 } from './defaults.js';
+import type { ClassifierEndpoint } from './classifier.js';
 
-export const buildRoutingRequest = ({ categories, history, request }) => {
-  const criteria = {};
+interface RoutingCategoryPrompt {
+  id: string;
+  description: string;
+}
+
+interface PermissionReport {
+  permission: unknown;
+  patterns?: unknown;
+  metadata?: unknown;
+}
+
+export const buildRoutingRequest = ({ categories, history, request }: { categories: RoutingCategoryPrompt[]; history: unknown; request: unknown }) => {
+  const criteria: Record<string, string> = {};
   for (const category of categories) criteria[category.id] = category.description;
   return {
     state: { history, request },
@@ -20,7 +32,7 @@ export const buildRoutingRequest = ({ categories, history, request }) => {
 };
 
 /** `permission` is what OpenCode reported: the tool kind, its patterns and its metadata. */
-export const buildPermissionRequest = (permission) => ({
+export const buildPermissionRequest = (permission: PermissionReport) => ({
   state: {
     permission: {
       type: permission.permission,
@@ -45,7 +57,7 @@ const permissionAnswersSchema = z.object({
  * Maps a Jev answer onto the category to use. Anything short of a confident,
  * known, enabled category is the fallback; the reason says which.
  */
-export const decideRouting = (answer, { categories, minConfidence }) => {
+export const decideRouting = <Category extends { id: string }>(answer: unknown, { categories, minConfidence }: { categories: Category[]; minConfidence: number }) => {
   const parsed = choiceAnswerSchema.safeParse(answer);
   if (!parsed.success) return { category: null, reason: 'unknown-category', confidence: 0 };
   const category = categories.find((c) => c.id === parsed.data.choice) ?? null;
@@ -54,7 +66,7 @@ export const decideRouting = (answer, { categories, minConfidence }) => {
   return { category, reason: 'routed', confidence: parsed.data.confidence };
 };
 
-export const decidePermission = (answers, { threshold }) => {
+export const decidePermission = (answers: unknown, { threshold }: { threshold: number }) => {
   const parsed = permissionAnswersSchema.safeParse(answers);
   if (!parsed.success) throw new Error('Jev answer is missing the ask score');
   const score = parsed.data.ask.noul;
@@ -63,12 +75,12 @@ export const decidePermission = (answers, { threshold }) => {
 
 const responseSchema = z.object({ answers: z.record(z.string(), z.unknown()) });
 
-export const createJevClient = ({ fetchImpl = fetch, timeoutMs = JEV_TIMEOUT_MS } = {}) => ({
+export const createJevClient = ({ fetchImpl = fetch, timeoutMs = JEV_TIMEOUT_MS }: { fetchImpl?: typeof fetch | undefined; timeoutMs?: number | undefined } = {}) => ({
   /**
    * `endpoint` comes from `classifierEndpoint`. Resolves to the parsed answers;
    * throws with `status` on an HTTP error and `code: 'timeout'` on abort.
    */
-  ask: async (request, endpoint) => {
+  ask: async (request: object, endpoint: ClassifierEndpoint) => {
     const abort = new AbortController();
     const timer = setTimeout(() => abort.abort(), timeoutMs);
     const started = Date.now();
@@ -87,7 +99,7 @@ export const createJevClient = ({ fetchImpl = fetch, timeoutMs = JEV_TIMEOUT_MS 
       if (!body.success) throw new Error('Jev response has no answers');
       return { answers: body.data.answers, ms: Date.now() - started };
     } catch (error) {
-      if (error?.name === 'AbortError') throw Object.assign(new Error(`Jev timed out after ${timeoutMs}ms`), { code: 'timeout' });
+      if ((error as Error | undefined)?.name === 'AbortError') throw Object.assign(new Error(`Jev timed out after ${timeoutMs}ms`), { code: 'timeout' });
       throw error;
     } finally {
       clearTimeout(timer);

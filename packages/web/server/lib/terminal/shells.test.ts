@@ -4,14 +4,21 @@ import * as shells from './shells.js';
 
 const { createTerminalShellResolver, getTerminalShellLoginArgs } = shells;
 
-const createResolver = ({ platform = 'linux', env = {}, augmentedPath = '/augmented/bin', executables = [] } = {}) => {
+interface ResolverOptions {
+  platform?: NodeJS.Platform;
+  env?: NodeJS.ProcessEnv;
+  augmentedPath?: string;
+  executables?: string[];
+}
+
+const createResolver = ({ platform = 'linux', env = {}, augmentedPath = '/augmented/bin', executables = [] }: ResolverOptions = {}) => {
   const available = new Set(executables);
   const path = {
     delimiter: platform === 'win32' ? ';' : ':',
-    extname: (value) => /\.[^./\\]+$/.exec(value)?.[0] ?? '',
-    join: (...parts) => parts.join(platform === 'win32' ? '\\' : '/'),
+    extname: (value: string) => /\.[^./\\]+$/.exec(value)?.[0] ?? '',
+    join: (...parts: string[]) => parts.join(platform === 'win32' ? '\\' : '/'),
   };
-  const searches = [];
+  const searches: [string, string][] = [];
   return {
     searches,
     resolver: createTerminalShellResolver({

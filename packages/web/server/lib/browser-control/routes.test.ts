@@ -4,6 +4,12 @@ import request from 'supertest';
 
 import { createBrowserControlBroker } from './broker.js';
 import { registerBrowserControlRoutes } from './routes.js';
+import type { BrowserControlRequest } from './broker.js';
+
+interface SnapshotResult {
+  text: string;
+  elements: unknown[];
+}
 
 /**
  * These run against a real Express app on purpose. This server attaches body
@@ -11,8 +17,8 @@ import { registerBrowserControlRoutes } from './routes.js';
  * fails when a client posts to it — which surfaces to the agent as an
  * unexplained timeout, nowhere near the cause.
  */
-const createApp = ({ listeners = 1 } = {}) => {
-  const emitted = [];
+const createApp = ({ listeners = 1 }: { listeners?: number } = {}) => {
+  const emitted: BrowserControlRequest[] = [];
   let sequence = 0;
   const broker = createBrowserControlBroker({
     emitRequest: (payload) => {
@@ -37,7 +43,7 @@ describe('browser control result route', () => {
 
     await request(app)
       .post('/api/browser-control/result')
-      .send({ requestId: emitted[0].requestId, ok: true, data: { url: 'http://localhost:3000/' } })
+      .send({ requestId: emitted[0]!.requestId, ok: true, data: { url: 'http://localhost:3000/' } })
       .expect(200, { matched: true });
 
     expect(await inflight).toEqual({ url: 'http://localhost:3000/' });
@@ -58,10 +64,10 @@ describe('browser control result route', () => {
 
     await request(app)
       .post('/api/browser-control/result')
-      .send({ requestId: emitted[0].requestId, ok: true, data })
+      .send({ requestId: emitted[0]!.requestId, ok: true, data })
       .expect(200, { matched: true });
 
-    const result = await inflight;
+    const result = await inflight as SnapshotResult;
     expect(result.text).toHaveLength(200_000);
     expect(result.elements).toHaveLength(120);
   });
@@ -71,14 +77,14 @@ describe('browser control result route', () => {
     // Capture the outcome before posting: the rejection lands while the POST is
     // still in flight, and an unattached handler surfaces as an unhandled one.
     const outcome = broker.request('browser.click', { selector: '#nope' })
-      .then(() => null, (error) => error);
+      .then(() => null, (error: unknown) => error);
 
     await request(app)
       .post('/api/browser-control/result')
-      .send({ requestId: emitted[0].requestId, ok: false, error: 'No element matches #nope' })
+      .send({ requestId: emitted[0]!.requestId, ok: false, error: 'No element matches #nope' })
       .expect(200, { matched: true });
 
-    expect((await outcome)?.message).toBe('No element matches #nope');
+    expect((await outcome as Error | null)?.message).toBe('No element matches #nope');
   });
 
   it('reports matched: false for a response that arrived after the timeout', async () => {

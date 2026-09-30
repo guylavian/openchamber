@@ -43,8 +43,19 @@
   "packages/web/server/lib/agent-memory/routes.ts": {
     "body.type as MemoryType": 1
   },
+  "packages/web/server/lib/browser-control/broker.test.ts": {
+    "1 as never": 2,
+    "emitted[0]!": 6,
+    "error as BrowserControlError": 4,
+    "fire!": 2
+  },
   "packages/web/server/lib/browser-control/broker.ts": {
     "onAbort!": 1
+  },
+  "packages/web/server/lib/browser-control/routes.test.ts": {
+    "await inflight as SnapshotResult": 1,
+    "await outcome as Error | null": 1,
+    "emitted[0]!": 3
   },
   "packages/web/server/lib/client-auth/pairing.ts": {
     "JSON.parse(raw) as { sessions?: unknown } | null": 1,
@@ -54,6 +65,9 @@
   "packages/web/server/lib/client-auth/remote-clients.ts": {
     "JSON.parse(raw) as { clients?: unknown } | null": 1,
     "error as NodeJS.ErrnoException | null": 1
+  },
+  "packages/web/server/lib/cloudflare-tunnel.ts": {
+    "yaml.parse(raw) as CloudflaredConfigDocument | null | undefined": 1
   },
   "packages/web/server/lib/context-obligatory/runtime.ts": {
     "error as Thrown": 1,
@@ -80,11 +94,48 @@
   "packages/web/server/lib/dictation/local/sherpa-loader.ts": {
     "error as ErrorLike": 2
   },
+  "packages/web/server/lib/event-stream/delta-coalescer.test.ts": {
+    "emitted[1]!": 5,
+    "event as TestEvent": 1,
+    "fragments[4]!": 2,
+    "merged[1]!": 1,
+    "timerSeq as never": 1
+  },
+  "packages/web/server/lib/event-stream/protocol.test.ts": {
+    "JSON.parse(p) as ParsedFrame": 1,
+    "JSON.parse(sentPayloads[1]!) as ParsedFrame": 2,
+    "envelope.payload as ParsedFrame": 1,
+    "parseSseEventEnvelope( 'data: {\"id\":\"evt_1\",\"type\":\"session.renamed\",\"location\":{\"directory\":\"/tmp/project\"},\"data\":{\"sessionID\":\"s1\"}}\\n' )!": 1,
+    "rawPayload!": 1,
+    "sentPayloads[1]!": 2,
+    "sentPayloads[2]!": 1,
+    "{ readyState: 1, bufferedAmount: MESSAGE_STREAM_WS_BACKPRESSURE_WARN_BYTES + 1, send(payload) { sentPayloads.push(payload); }, } as MessageStreamSocket": 3,
+    "{ readyState: 1, send(payload) { rawPayload = payload; }, } as MessageStreamSocket": 2
+  },
   "packages/web/server/lib/event-stream/protocol.ts": {
     "JSON.parse(payloadText) as SseJson": 1
   },
+  "packages/web/server/lib/event-stream/translate-v2.test.ts": {
+    "ended!": 2,
+    "ended!.properties.info as { time: { completed: unknown } }": 1,
+    "event!": 10,
+    "event!.properties.info as { parts: unknown }": 1,
+    "events[1]!": 3,
+    "events[1]!.properties.error as { name: unknown }": 1,
+    "failed!": 2,
+    "failed!.properties.info as { error: { name: unknown } }": 1,
+    "replied!": 1,
+    "started!": 1,
+    "succeeded[0]!": 1,
+    "translateWireEvent(wire('mcp.status.changed', { server: 'linear' }))[0]!": 1,
+    "translateWireEvent(wire('server.connected', {}))[0]!": 1,
+    "translateWireEvent(wire('vcs.branch.updated', { branch: 'main' }))[0]!": 1
+  },
   "packages/web/server/lib/event-stream/translate-v2.ts": {
     "payload.location as WireLocation | null | undefined": 1
+  },
+  "packages/web/server/lib/event-stream/upstream-reader.ts": {
+    "response.body.getReader() as ReadableStreamDefaultReader<Uint8Array>": 1
   },
   "packages/web/server/lib/foreman/execution.test.ts": {
     "'ses_1' as SessionId": 2,
@@ -382,6 +433,15 @@
   "packages/web/server/lib/quota/utils/transformers.ts": {
     "value as Record<string, unknown>": 1
   },
+  "packages/web/server/lib/relay/e2ee.test.ts": {
+    "action as Established": 1,
+    "action as Failed": 1,
+    "first as Established": 1,
+    "frame[frame.length - 1]!": 1,
+    "rekey as Failed": 1,
+    "repeat as SendText": 1,
+    "{ kty: hostEncPubJwk.kty, crv: hostEncPubJwk.crv, x: hostEncPubJwk.x, y: hostEncPubJwk.y, ext: true } as webcrypto.JsonWebKey": 1
+  },
   "packages/web/server/lib/relay/e2ee.ts": {
     "BASE64URL_ALPHABET[((b0 & 0x03) << 4) | ((b1 ?? 0) >> 4)]!": 1,
     "BASE64URL_ALPHABET[((b1 & 0x0f) << 2) | ((b2 ?? 0) >> 6)]!": 1,
@@ -391,10 +451,18 @@
     "bytes[i]!": 1,
     "source[offset + i]!": 1
   },
+  "packages/web/server/lib/relay/host-lock.test.ts": {
+    "JSON.parse(fs.peek(LOCK)!) as { pid: number }": 1,
+    "files.get(p)!": 1,
+    "fs.peek(LOCK)!": 1
+  },
   "packages/web/server/lib/relay/host-lock.ts": {
     "JSON.parse(raw) as ClaimFileJson | null": 1,
     "error as Error | undefined": 1,
     "error as NodeJS.ErrnoException | undefined": 1
+  },
+  "packages/web/server/lib/routing/jev.ts": {
+    "error as Error | undefined": 1
   },
   "packages/web/server/lib/security/bind-host.ts": {
     "match[1]!": 1
@@ -461,6 +529,12 @@
     "since[0]!": 1,
     "space.read() as Buffer | null": 2,
     "space.read(16 * 1024) as Buffer | null": 1
+  },
+  "packages/web/server/lib/terminal/shutdown.test.ts": {
+    "JSON.parse(line) as ShutdownEvent": 1,
+    "child.pid!": 3,
+    "error as NodeJS.ErrnoException": 1,
+    "signal as NodeJS.Signals | undefined": 2
   },
   "packages/web/server/lib/terminal/shutdown.ts": {
     "error as Error": 1,

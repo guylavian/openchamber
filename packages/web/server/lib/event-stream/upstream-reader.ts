@@ -1,20 +1,53 @@
 import { parseSseEventEnvelope } from './protocol.js';
+import type { SseEventEnvelope } from './protocol.js';
+import type { ReadableStreamDefaultReader } from 'node:stream/web';
+
+type TimeoutSource = number | (() => number);
+
+/** One parsed event the reader hands to `onEvent`. */
+export interface UpstreamSseEvent {
+  block: string;
+  envelope: SseEventEnvelope;
+  payload: SseEventEnvelope['payload'];
+  eventId: string | null;
+  directory: string | null;
+}
+
+/** Why a connection attempt failed: no usable response, or the stream broke. */
+export type UpstreamSseError =
+  | { type: 'upstream_unavailable'; status: number; response: Response }
+  | { type: 'stream_error'; error: unknown };
+
+export interface UpstreamSseReaderOptions {
+  buildUrl: () => URL;
+  getHeaders?: (() => unknown) | undefined;
+  fetchImpl?: typeof fetch | undefined;
+  parseBlock?: ((block: string) => SseEventEnvelope | null) | undefined;
+  initialLastEventId?: unknown;
+  signal?: AbortSignal | undefined;
+  stallTimeoutMs?: TimeoutSource | undefined;
+  reconnectDelayMs?: TimeoutSource | undefined;
+  onEvent?: ((event: UpstreamSseEvent) => void) | undefined;
+  onConnect?: ((info: { response: Response; lastEventId: string }) => void) | undefined;
+  onDisconnect?: ((info: { reason: string }) => void) | undefined;
+  onError?: ((error: UpstreamSseError) => void) | undefined;
+}
 
 export const DEFAULT_UPSTREAM_STALL_TIMEOUT_MS = 20_000;
 export const UPSTREAM_STALL_TIMEOUT_CONCURRENT_MS = DEFAULT_UPSTREAM_STALL_TIMEOUT_MS * 3;
 export const DEFAULT_UPSTREAM_RECONNECT_DELAY_MS = 250;
 
-function resolveTimeoutMs(value, fallback) {
+function resolveTimeoutMs(value: TimeoutSource, fallback: number) {
   const resolved = typeof value === 'function' ? value() : value;
   return Number.isFinite(resolved) ? resolved : fallback;
 }
 
-function waitForReconnectDelay(ms, signal) {
+function waitForReconnectDelay(ms: number, signal: AbortSignal | undefined) {
   if (signal?.aborted) {
     return Promise.resolve();
   }
 
-  return new Promise((resolve) => {
+  return new Promise<void>((resolve) => {
     let settled = false;
     const finish = () => {
       if (settled) return;
@@ -31,7 +64,7 @@ function waitForReconnectDelay(ms, signal) {
   });
 }
 
-function normalizeHeaders(headers) {
+function normalizeHeaders(headers: unknown): Record<string, string> {
   if (!headers || typeof headers !== 'object') {
     return {};
   }
@@ -39,7 +72,7 @@ function normalizeHeaders(headers) {
   return { ...headers };
 }
 
-async function cancelResponseBody(response) {
+async function cancelResponseBody(response: Response) {
   if (response?.body && typeof response.body.cancel === 'function') {
     await response.body.cancel().catch(() => {});
   }
@@ -58,10 +91,10 @@ export function createUpstreamSseReader({
   onConnect,
   onDisconnect,
   onError,
-}) {
-  let running = null;
+}: UpstreamSseReaderOptions) {
+  let running: Promise<void> | null = null;
   let stopped = false;
-  let activeController = null;
+  let activeController: AbortController | null = null;
   let lastEventId = typeof initialLastEventId === 'string' ? initialLastEventId : '';
   let stopListenerAttached = false;
 
@@ -99,8 +132,8 @@ export function createUpstreamSseReader({
         const abortActive = () => controller.abort();
         signal?.addEventListener('abort', abortActive, { once: true });
 
-        let abortReason = null;
-        let stallTimer = null;
+        let abortReason: string | null = null;
+        let stallTimer: ReturnType<typeof setTimeout> | null = null;
         const clearStallTimer = () => {
           if (stallTimer) {
             clearTimeout(stallTimer);
@@ -122,7 +155,7 @@ export function createUpstreamSseReader({
 
         try {
           const url = buildUrl();
-          const headers = {
+          const headers: Record<string, string> = {
             Accept: 'text/event-stream',
             'Cache-Control': 'no-cache',
             Connection: 'keep-alive',
@@ -151,7 +184,7 @@ export function createUpstreamSseReader({
           onConnect?.({ response, lastEventId });
 
           const decoder = new TextDecoder();
-          const reader = response.body.getReader();
+          const reader = response.body.getReader() as ReadableStreamDefaultReader<Uint8Array>;
           let buffer = '';
 
           resetStallTimer();

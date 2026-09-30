@@ -20,14 +20,33 @@ import {
   ZEN_JEV_PAID_MODEL,
 } from './defaults.js';
 
-export const CLASSIFIER_SOURCES = ['zen-promo', 'zen-key', 'typesafe'];
-const FALLBACK_ORDER = ['typesafe', 'zen-key', 'zen-promo'];
+export const CLASSIFIER_SOURCES = ['zen-promo', 'zen-key', 'typesafe'] as const;
+type ClassifierSource = (typeof CLASSIFIER_SOURCES)[number];
+const FALLBACK_ORDER: ClassifierSource[] = ['typesafe', 'zen-key', 'zen-promo'];
+
+interface ClassifierChoice {
+  selected: ClassifierSource | null;
+  typesafeKey: string | null | undefined;
+  zenKey: string | null | undefined;
+  zenPromotionActive: boolean;
+}
+
+interface ClassifierKeys {
+  typesafeKey?: string | null | undefined;
+  zenKey?: string | null | undefined;
+}
+
+export interface ClassifierEndpoint {
+  url: string;
+  model: string;
+  headers: Record<string, string>;
+}
 
 /**
  * `selected` is the stored pick or null. Before the pick existed a saved
  * TypeSafe key always won, so that stays the default when one is present.
  */
-export const resolveClassifier = ({ selected, typesafeKey, zenKey, zenPromotionActive }) => {
+export const resolveClassifier = ({ selected, typesafeKey, zenKey, zenPromotionActive }: ClassifierChoice) => {
   const usable = {
     'zen-promo': Boolean(zenPromotionActive),
     'zen-key': Boolean(zenKey),
@@ -43,7 +62,7 @@ export const resolveClassifier = ({ selected, typesafeKey, zenKey, zenPromotionA
 };
 
 /** The request target for a usable source. */
-export const classifierEndpoint = (source, { typesafeKey, zenKey }) => {
+export const classifierEndpoint = (source: ClassifierSource, { typesafeKey, zenKey }: ClassifierKeys): ClassifierEndpoint => {
   if (source === 'typesafe') {
     return { url: JEV_API_URL, model: JEV_MODEL, headers: { authorization: `Bearer ${typesafeKey}` } };
   }

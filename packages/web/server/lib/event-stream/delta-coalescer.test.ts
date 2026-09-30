@@ -1,27 +1,63 @@
 import { describe, expect, it } from 'vitest';
 
 import { createDeltaCoalescer, DELTA_COALESCE_WINDOW_MS, resolveDeltaCoalesceWindowMs } from './delta-coalescer.js';
+import type { DeltaCoalescerOptions } from './delta-coalescer.js';
+
+type DeltaData = {
+  sessionID: string;
+  assistantMessageID: string;
+  delta: string;
+  ordinal?: number;
+  id?: string;
+};
+
+interface TestPayload<Data> {
+  id: string;
+  type: string;
+  location: { directory: string };
+  data: Data;
+}
+
+interface TestEvent<Data = Record<string, unknown>> {
+  envelope: { eventId: string; directory: string; payload: TestPayload<Data> };
+  payload: TestPayload<Data>;
+}
+
+type DeltaEvent = TestEvent<DeltaData>;
+
+interface DeltaOptions {
+  messageID?: string;
+  type?: string;
+  directory?: string;
+  sessionID?: string;
+}
+
+interface FakeTimer {
+  id: number | ReturnType<typeof setTimeout>;
+  at: number;
+  callback: () => void;
+}
 
 let nextId = 0;
 
 // v2 wire shape: `{ type, id, data, location }`. Text and reasoning fragments
 // are addressed by `ordinal`, tool-input fragments by the tool call `id`.
-const delta = (ordinal, text, {
+const delta = (ordinal: number, text: string, {
   messageID = 'msg_1',
   type = 'session.text.delta',
   directory = '/repo',
   sessionID = 'ses_1',
-} = {}) => {
+}: DeltaOptions = {}): DeltaEvent => {
   nextId += 1;
   const id = String(nextId).padStart(6, '0');
-  const data = { sessionID, assistantMessageID: messageID, delta: text };
+  const data: DeltaData = { sessionID, assistantMessageID: messageID, delta: text };
   if (type === 'session.tool.input.delta') data.id = String(ordinal);
   else data.ordinal = ordinal;
   const payload = { id, type, location: { directory }, data };
   return { envelope: { eventId: id, directory, payload }, payload };
 };
 
-const other = (type, data = {}) => {
+const other = (type: string, data: Record<string, unknown> = {}): TestEvent => {
   nextId += 1;
   const id = String(nextId).padStart(6, '0');
   const payload = { id, type, location: { directory: '/repo' }, data };
@@ -30,25 +66,25 @@ const other = (type, data = {}) => {
 
 // A clock and timer queue the test advances by hand, so every assertion about
 // the window is exact instead of racing a real timeout.
-const createHarness = (options = {}) => {
+const createHarness = (options: Partial<DeltaCoalescerOptions> = {}) => {
   let time = 1_000_000;
-  let timers = [];
+  let timers: FakeTimer[] = [];
   let timerSeq = 0;
-  const emitted = [];
+  const emitted: TestEvent[] = [];
   const coalescer = createDeltaCoalescer({
-    emit: (event) => emitted.push(event),
+    emit: (event) => emitted.push(event as TestEvent),
     now: () => time,
     setTimer: (callback, delay) => {
       timerSeq += 1;
       timers.push({ id: timerSeq, at: time + delay, callback });
-      return timerSeq;
+      return timerSeq as never;
     },
     clearTimer: (id) => {
       timers = timers.filter((timer) => timer.id !== id);
     },
     ...options,
   });
-  const advance = (ms) => {
+  const advance = (ms: number) => {
     const target = time + ms;
     for (;;) {
       const due = timers.filter((timer) => timer.at <= target).sort((left, right) => left.at - right.at)[0];
@@ -63,11 +99,11 @@ const createHarness = (options = {}) => {
 };
 
 const DELTA_TYPES = new Set(['session.text.delta', 'session.reasoning.delta', 'session.tool.input.delta']);
-const isDelta = (event) => DELTA_TYPES.has(event.payload.type);
-const keyOf = (event) => `${event.payload.data.assistantMessageID}:${event.payload.type}:${event.payload.data.ordinal ?? event.payload.data.id}`;
+const isDelta = (event: TestEvent): event is DeltaEvent => DELTA_TYPES.has(event.payload.type);
+const keyOf = (event: DeltaEvent) => `${event.payload.data.assistantMessageID}:${event.payload.type}:${event.payload.data.ordinal ?? event.payload.data.id}`;
 
-const textByKey = (events) => {
-  const text = new Map();
+const textByKey = (events: TestEvent[]) => {
+  const text = new Map<string, string>();
   for (const event of events) {
     if (!isDelta(event)) continue;
     text.set(keyOf(event), (text.get(keyOf(event)) ?? '') + event.payload.data.delta);
@@ -95,10 +131,10 @@ describe('delta coalescer', () => {
     advance(50);
 
     expect(emitted).toHaveLength(2);
-    expect(emitted[1].payload.data).toEqual({ sessionID: 'ses_1', assistantMessageID: 'msg_1', ordinal: 1, delta: 'llo, world' });
-    expect(emitted[1].envelope.eventId).toBe(fragments[4].envelope.eventId);
-    expect(emitted[1].payload.id).toBe(fragments[4].payload.id);
-    expect(emitted[1].envelope.payload).toBe(emitted[1].payload);
+    expect(emitted[1]!.payload.data).toEqual({ sessionID: 'ses_1', assistantMessageID: 'msg_1', ordinal: 1, delta: 'llo, world' });
+    expect(emitted[1]!.envelope.eventId).toBe(fragments[4]!.envelope.eventId);
+    expect(emitted[1]!.payload.id).toBe(fragments[4]!.payload.id);
+    expect(emitted[1]!.envelope.payload).toBe(emitted[1]!.payload);
     expect(pendingTimers()).toBe(0);
     // Upstream objects are never mutated: other hub subscribers may hold them.
     expect(fragments.map((fragment) => fragment.payload.data.delta)).toEqual(['He', 'll', 'o,', ' wor', 'ld']);
@@ -145,7 +181,7 @@ describe('delta coalescer', () => {
 
     const merged = emitted.slice(1);
     expect(merged.map((event) => event.payload.data.delta)).toEqual(['a1a2', 'b1b2']);
-    expect(merged[1].envelope.eventId).toBe(lastB.envelope.eventId);
+    expect(merged[1]!.envelope.eventId).toBe(lastB.envelope.eventId);
     const ids = emitted.map((event) => event.envelope.eventId);
     expect(ids).toEqual([...ids].sort());
   });
@@ -230,11 +266,11 @@ describe('delta coalescer', () => {
 
     for (let round = 0; round < 40; round += 1) {
       const { coalescer, emitted, advance } = createHarness({ maxPendingChars: 200, maxPendingKeys: 4 });
-      const raw = [];
+      const raw: TestEvent[] = [];
       const partCount = 1 + Math.floor(random() * 6);
       for (let index = 0; index < 600; index += 1) {
         const roll = random();
-        let event;
+        let event: TestEvent;
         if (roll < 0.9) {
           const part = Math.floor(random() * partCount);
           event = delta(part, `${index}|`.repeat(1 + Math.floor(random() * 3)), { messageID: `msg_${part % 2}` });
@@ -295,7 +331,7 @@ describe('resolveDeltaCoalesceWindowMs', () => {
 
   it('keeps the default and says so for anything that is not 0-1000 whole milliseconds', () => {
     for (const value of ['-1', '1001', '12.5', 'fast', 'NaN', '1e9']) {
-      const warnings = [];
+      const warnings: string[] = [];
       expect(resolveDeltaCoalesceWindowMs({ OPENCHAMBER_EVENT_DELTA_COALESCE_MS: value }, (message) => warnings.push(message))).toBe(DELTA_COALESCE_WINDOW_MS);
       expect(warnings).toHaveLength(1);
     }

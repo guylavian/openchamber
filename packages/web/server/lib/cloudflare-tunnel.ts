@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from 'child_process';
+import type { ChildProcess } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -8,6 +9,33 @@ import {
   createExecutableSearchEnv,
   resolveExecutableLaunchTarget,
 } from './tunnels/executable-search.js';
+
+type CloudflaredAvailability =
+  | { available: true; path: string; version: string }
+  | { available: false; path: null; version: null };
+
+interface CloudflareApiReachability {
+  reachable: boolean;
+  status: number | null;
+  error: string | null;
+}
+
+interface CloudflaredConfigRule {
+  hostname?: unknown;
+}
+
+interface CloudflaredConfigDocument {
+  ingress?: (CloudflaredConfigRule | null)[];
+}
+
+interface CloudflaredConfigHostname {
+  hostname: string | null;
+  parseError: Error | null;
+}
+
+type ManagedLocalCloudflareConfigInspection =
+  | { ok: true; effectiveConfigPath: string; resolvedHostname: string; error: null }
+  | { ok: false; effectiveConfigPath: string; resolvedHostname: null; error: string };
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -21,7 +49,7 @@ const TUNNEL_MODE_QUICK = 'quick';
 const TUNNEL_MODE_MANAGED_REMOTE = 'managed-remote';
 const TUNNEL_MODE_MANAGED_LOCAL = 'managed-local';
 
-export async function checkCloudflaredAvailable() {
+export async function checkCloudflaredAvailable(): Promise<CloudflaredAvailability> {
   const target = resolveExecutableLaunchTarget('cloudflared');
   if (target) {
     try {
@@ -68,7 +96,7 @@ Or visit: https://developers.cloudflare.com/cloudflare-one/networks/connectors/c
 `);
 }
 
-const spawnCloudflared = (args, envOverrides = {}, resolvedBinaryPath = 'cloudflared') => spawn(resolvedBinaryPath, args, {
+const spawnCloudflared = (args: string[], envOverrides: NodeJS.ProcessEnv = {}, resolvedBinaryPath = 'cloudflared') => spawn(resolvedBinaryPath, args, {
   stdio: ['ignore', 'pipe', 'pipe'],
   windowsHide: true,
   env: {
@@ -79,7 +107,7 @@ const spawnCloudflared = (args, envOverrides = {}, resolvedBinaryPath = 'cloudfl
   killSignal: 'SIGINT',
 });
 
-const normalizeHostname = (value) => {
+const normalizeHostname = (value: unknown): string | null => {
   if (typeof value !== 'string') {
     return null;
   }
@@ -99,11 +127,11 @@ const normalizeHostname = (value) => {
   }
 };
 
-export function normalizeCloudflareTunnelHostname(value) {
+export function normalizeCloudflareTunnelHostname(value: unknown) {
   return normalizeHostname(value);
 }
 
-export async function checkCloudflareApiReachability({ fetchImpl = globalThis.fetch, timeoutMs = 5000 } = {}) {
+export async function checkCloudflareApiReachability({ fetchImpl = globalThis.fetch, timeoutMs = 5000 }: { fetchImpl?: typeof fetch; timeoutMs?: number } = {}): Promise<CloudflareApiReachability> {
   if (typeof fetchImpl !== 'function') {
     return {
       reachable: false,
@@ -155,21 +183,21 @@ const FATAL_LOG_PATTERNS = [
   /provided tunnel credentials are invalid/i,
 ];
 
-function isCloudflaredReadyLogLine(line) {
+function isCloudflaredReadyLogLine(line: string) {
   if (!line) {
     return false;
   }
   return READY_LOG_PATTERNS.some((pattern) => pattern.test(line));
 }
 
-function isCloudflaredFatalLogLine(line) {
+function isCloudflaredFatalLogLine(line: string) {
   if (!line) {
     return false;
   }
   return FATAL_LOG_PATTERNS.some((pattern) => pattern.test(line));
 }
 
-function assertReadableFile(filePath, contextLabel) {
+function assertReadableFile(filePath: string, contextLabel: string) {
   let stats;
   try {
     stats = fs.statSync(filePath);
@@ -200,7 +228,7 @@ function assertReadableFile(filePath, contextLabel) {
   }
 }
 
-function extractHostnameFromCloudflaredConfigDetailed(configPath) {
+function extractHostnameFromCloudflaredConfigDetailed(configPath: unknown): CloudflaredConfigHostname {
   if (typeof configPath !== 'string' || configPath.trim().length === 0) {
     return { hostname: null, parseError: null };
   }
@@ -215,9 +243,9 @@ function extractHostnameFromCloudflaredConfigDetailed(configPath) {
     };
   }
 
-  let parsed;
+  let parsed: CloudflaredConfigDocument | null | undefined;
   try {
-    parsed = yaml.parse(raw);
+    parsed = yaml.parse(raw) as CloudflaredConfigDocument | null | undefined;
   } catch {
     return {
       hostname: null,
@@ -236,13 +264,13 @@ function extractHostnameFromCloudflaredConfigDetailed(configPath) {
   return { hostname: null, parseError: null };
 }
 
-const extractHostnameFromCloudflaredConfig = (configPath) => {
+const extractHostnameFromCloudflaredConfig = (configPath: unknown) => {
   return extractHostnameFromCloudflaredConfigDetailed(configPath).hostname;
 };
 
 const getDefaultCloudflaredConfigPath = () => path.join(os.homedir(), '.cloudflared', 'config.yml');
 
-export function inspectManagedLocalCloudflareConfig({ configPath, hostname } = {}) {
+export function inspectManagedLocalCloudflareConfig({ configPath, hostname }: { configPath?: unknown; hostname?: unknown } = {}): ManagedLocalCloudflareConfigInspection {
   const requestedPath = typeof configPath === 'string' ? configPath.trim() : '';
   const effectiveConfigPath = requestedPath || getDefaultCloudflaredConfigPath();
 
@@ -289,12 +317,12 @@ export function inspectManagedLocalCloudflareConfig({ configPath, hostname } = {
   };
 }
 
-async function waitForManagedTunnelReady(child, { modeLabel }) {
-  await new Promise((resolve, reject) => {
+async function waitForManagedTunnelReady(child: ChildProcess, { modeLabel }: { modeLabel: string }) {
+  await new Promise<null>((resolve, reject) => {
     let settled = false;
     let sawOutput = false;
 
-    const finish = (handler, value) => {
+    const finish = <T>(handler: (value: T) => void, value: T) => {
       if (settled) {
         return;
       }
@@ -307,7 +335,7 @@ async function waitForManagedTunnelReady(child, { modeLabel }) {
       handler(value);
     };
 
-    const inspectChunk = (chunk) => {
+    const inspectChunk = (chunk: Buffer) => {
       const text = chunk.toString('utf8');
       if (text.trim().length > 0) {
         sawOutput = true;
@@ -325,15 +353,15 @@ async function waitForManagedTunnelReady(child, { modeLabel }) {
       }
     };
 
-    const onStdout = (chunk) => {
+    const onStdout = (chunk: Buffer) => {
       inspectChunk(chunk);
     };
 
-    const onStderr = (chunk) => {
+    const onStderr = (chunk: Buffer) => {
       inspectChunk(chunk);
     };
 
-    const onExit = (code) => {
+    const onExit = (code: number | null) => {
       finish(reject, new Error(`Cloudflared exited while starting ${modeLabel} (code ${code ?? 'unknown'})`));
     };
 
@@ -353,7 +381,7 @@ async function waitForManagedTunnelReady(child, { modeLabel }) {
   });
 }
 
-export async function startCloudflareQuickTunnel({ originUrl }) {
+export async function startCloudflareQuickTunnel({ originUrl }: { originUrl: string }) {
   const cfCheck = await checkCloudflaredAvailable();
 
   if (!cfCheck.available) {
@@ -367,10 +395,10 @@ export async function startCloudflareQuickTunnel({ originUrl }) {
 
   const child = spawnCloudflared(['tunnel', '--url', originUrl], { HOME: tempDir }, cfCheck.path);
 
-  let publicUrl = null;
+  let publicUrl: string | null = null;
   let tunnelReady = false;
 
-  const onData = (chunk, isStderr) => {
+  const onData = (chunk: Buffer, isStderr: boolean) => {
     const text = chunk.toString('utf8');
 
     if (!tunnelReady) {
@@ -384,8 +412,8 @@ export async function startCloudflareQuickTunnel({ originUrl }) {
     process.stderr.write(isStderr ? text : '');
   };
 
-  child.stdout.on('data', (chunk) => onData(chunk, false));
-  child.stderr.on('data', (chunk) => onData(chunk, true));
+  child.stdout.on('data', (chunk: Buffer) => onData(chunk, false));
+  child.stderr.on('data', (chunk: Buffer) => onData(chunk, true));
 
   child.on('error', (error) => {
     console.error(`Cloudflared error: ${error.message}`);
@@ -402,7 +430,7 @@ export async function startCloudflareQuickTunnel({ originUrl }) {
     }
   };
 
-  await new Promise((resolve, reject) => {
+  await new Promise<null>((resolve, reject) => {
     const timeout = setTimeout(() => {
       if (!publicUrl) {
         try { child.kill('SIGINT'); } catch { /* ignore */ }
@@ -443,7 +471,7 @@ export async function startCloudflareQuickTunnel({ originUrl }) {
   };
 }
 
-export async function startCloudflareManagedRemoteTunnel({ token, hostname, tokenFilePath }) {
+export async function startCloudflareManagedRemoteTunnel({ token, hostname, tokenFilePath }: { token?: unknown; hostname?: unknown; tokenFilePath?: unknown }) {
   const cfCheck = await checkCloudflaredAvailable();
 
   if (!cfCheck.available) {
@@ -462,7 +490,7 @@ export async function startCloudflareManagedRemoteTunnel({ token, hostname, toke
   }
 
   let effectiveTokenFilePath = typeof tokenFilePath === 'string' ? tokenFilePath : null;
-  let tempTokenFile = null;
+  let tempTokenFile: { dir: string; path: string } | null = null;
 
   if (!effectiveTokenFilePath) {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-cf-token-'));
@@ -478,7 +506,7 @@ export async function startCloudflareManagedRemoteTunnel({ token, hostname, toke
     // Keep stream drained, but avoid logging potentially sensitive output.
   });
 
-  child.stderr.on('data', (chunk) => {
+  child.stderr.on('data', (chunk: Buffer) => {
     const text = chunk.toString('utf8');
     process.stderr.write(text);
   });
@@ -527,7 +555,7 @@ export async function startCloudflareManagedRemoteTunnel({ token, hostname, toke
   };
 }
 
-export async function startCloudflareManagedLocalTunnel({ configPath, hostname }) {
+export async function startCloudflareManagedLocalTunnel({ configPath, hostname }: { configPath?: unknown; hostname?: unknown }) {
   const cfCheck = await checkCloudflaredAvailable();
 
   if (!cfCheck.available) {
@@ -568,7 +596,7 @@ export async function startCloudflareManagedLocalTunnel({ configPath, hostname }
     // Keep stream drained, but avoid logging potentially sensitive output.
   });
 
-  child.stderr.on('data', (chunk) => {
+  child.stderr.on('data', (chunk: Buffer) => {
     const text = chunk.toString('utf8');
     process.stderr.write(text);
   });
@@ -600,7 +628,7 @@ export async function startCloudflareManagedLocalTunnel({ configPath, hostname }
   };
 }
 
-async function startCloudflareTunnel({ originUrl, port }) {
+async function startCloudflareTunnel({ originUrl, port }: { originUrl: string; port?: number }) {
   void port;
   return startCloudflareQuickTunnel({ originUrl });
 }

@@ -6,6 +6,7 @@ import {
   getExecutableSearchDirectories,
   resolveExecutableLaunchTarget,
 } from './executable-search.js';
+import type { ExecutableSearchFs } from './executable-search.js';
 
 describe('getExecutableSearchDirectories', () => {
   it('adds the WindowsApps app-alias directory on Windows', () => {
@@ -37,7 +38,7 @@ describe('getExecutableSearchDirectories', () => {
 describe('findExecutableOnPath', () => {
   it('finds Windows Store app execution aliases even when PATH omits WindowsApps', () => {
     const aliasPath = 'C:\\Users\\Ada\\AppData\\Local\\Microsoft\\WindowsApps\\ngrok.exe';
-    const fsLike = {
+    const fsLike: ExecutableSearchFs = {
       statSync: (candidate) => {
         if (candidate === aliasPath) {
           return { isFile: () => true };

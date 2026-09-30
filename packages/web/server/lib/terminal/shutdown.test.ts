@@ -4,9 +4,27 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'vitest';
+import type { TestContext } from 'vitest';
 import { shutdownTerminalProcesses } from './shutdown.js';
+import type { TerminalToShutDown } from './shutdown.js';
 
-const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+interface ShutdownEvent {
+  pid: number;
+  event: string;
+}
+
+interface ExitInfo {
+  code: number | null;
+  signal: NodeJS.Signals | null;
+}
+
+interface Fixture {
+  terminal: TerminalToShutDown;
+  events: () => Promise<ShutdownEvent[]>;
+  exit: Promise<ExitInfo>;
+}
+
+const delay: (ms: number) => Promise<void> = ms => new Promise<void>(resolve => setTimeout(resolve, ms));
 const script = `
 const fs = require('node:fs');
 const [file, mode] = process.argv.slice(1);
@@ -22,15 +40,15 @@ record('ready');
 setInterval(() => {}, 1000);
 `;
 
-async function fixture(t, mode) {
+async function fixture(t: TestContext, mode: string): Promise<Fixture> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'terminal-shutdown-'));
   const file = path.join(dir, 'events.jsonl');
   const source = script + (mode === 'parent' ? `require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(script)}, file, 'worker'], { detached: true, stdio: 'ignore' }).unref();` : '');
   const child = spawn(process.execPath, ['-e', source, file, mode], { detached: true, stdio: 'ignore' });
-  const exit = new Promise(resolve => child.once('exit', (code, signal) => resolve({ code, signal })));
-  const events = async () => { try { return (await fs.readFile(file, 'utf8')).trim().split('\n').map(line => JSON.parse(line)); } catch (error) { if (error.code === 'ENOENT') return []; throw error; } };
+  const exit = new Promise<ExitInfo>(resolve => child.once('exit', (code, signal) => resolve({ code, signal })));
+  const events = async () => { try { return (await fs.readFile(file, 'utf8')).trim().split('\n').map(line => JSON.parse(line) as ShutdownEvent); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []; throw error; } };
   t.onTestFinished(async () => {
-    for (const pid of new Set([child.pid, ...(await events()).map(event => event.pid)])) {
+    for (const pid of new Set([child.pid!, ...(await events()).map(event => event.pid)])) {
       try { process.kill(pid, 'SIGKILL'); } catch { /* already exited */ }
     }
     await exit;
@@ -39,7 +57,7 @@ async function fixture(t, mode) {
   const count = mode === 'parent' ? 2 : 1;
   for (let i = 0; i < 100 && (await events()).filter(event => event.event === 'ready').length < count; i++) await delay(20);
   assert.equal((await events()).filter(event => event.event === 'ready').length, count);
-  return { terminal: { process: { pid: child.pid, kill: signal => child.kill(signal) }, shellExecutable: '/bin/sh' }, events, exit };
+  return { terminal: { process: { pid: child.pid!, kill: signal => child.kill(signal as NodeJS.Signals | undefined) }, shellExecutable: '/bin/sh' }, events, exit };
 }
 
 test('graceful shutdown lets concurrent exec workloads finish without SIGHUP or SIGKILL', { skip: process.platform === 'win32' }, async t => {
@@ -74,11 +92,11 @@ test('an idle shell closes promptly and shutdown waits for its exit', { skip: pr
   const child = spawn('/bin/sh', ['-i'], { detached: true, stdio: 'pipe' });
   child.stdout.resume();
   child.stderr.resume();
-  const exit = new Promise(resolve => child.once('exit', (code, signal) => resolve({ code, signal })));
+  const exit = new Promise<ExitInfo>(resolve => child.once('exit', (code, signal) => resolve({ code, signal })));
   t.onTestFinished(async () => { child.kill('SIGKILL'); await exit; });
   await delay(100);
   const start = Date.now();
-  await shutdownTerminalProcesses([{ process: { pid: child.pid, kill: signal => child.kill(signal) }, shellExecutable: '/bin/sh' }]);
+  await shutdownTerminalProcesses([{ process: { pid: child.pid!, kill: signal => child.kill(signal as NodeJS.Signals | undefined) }, shellExecutable: '/bin/sh' }]);
   assert.ok(Date.now() - start < 3000);
   assert.equal((await exit).signal, 'SIGHUP');
 });

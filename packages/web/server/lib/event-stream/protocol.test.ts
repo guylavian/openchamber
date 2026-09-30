@@ -9,6 +9,18 @@ import {
   sendMessageStreamWsEvent,
   sendMessageStreamWsFrame,
 } from './protocol.js';
+import type { MessageStreamSocket } from './protocol.js';
+
+interface ParsedFrame {
+  type?: string;
+  bufferedBytes?: number;
+  maxBytes?: number;
+}
+
+interface CloseCall {
+  code: number;
+  reason: string;
+}
 
 describe('event stream protocol helpers', () => {
   it('exports stable websocket paths', () => {
@@ -21,11 +33,11 @@ describe('event stream protocol helpers', () => {
     // directory is `payload.location.directory`.
     const envelope = parseSseEventEnvelope(
       'data: {"id":"evt_1","type":"session.renamed","location":{"directory":"/tmp/project"},"data":{"sessionID":"s1"}}\n'
-    );
+    )!;
 
     expect(envelope.eventId).toBe('evt_1');
     expect(envelope.directory).toBe('/tmp/project');
-    expect(envelope.payload.type).toBe('session.renamed');
+    expect((envelope.payload as ParsedFrame).type).toBe('session.renamed');
   });
 
   it('parses a wrapped payload, preferring the wrapper directory', () => {
@@ -62,13 +74,13 @@ describe('event stream protocol helpers', () => {
   });
 
   it('serializes generic websocket frames', () => {
-    let rawPayload = null;
+    let rawPayload: string | null = null;
     const socket = {
       readyState: 1,
       send(payload) {
         rawPayload = payload;
       },
-    };
+    } as MessageStreamSocket;
 
     const sent = sendMessageStreamWsFrame(socket, { type: 'ready' });
 
@@ -77,9 +89,9 @@ describe('event stream protocol helpers', () => {
   });
 
   it('closes slow websocket clients instead of adding more buffered data', () => {
-    let closeCall = null;
+    let closeCall: CloseCall | null = null;
     let sendCalls = 0;
-    const socket = {
+    const socket: MessageStreamSocket = {
       readyState: 1,
       bufferedAmount: MESSAGE_STREAM_WS_MAX_BUFFERED_BYTES + 1,
       send() {
@@ -101,54 +113,54 @@ describe('event stream protocol helpers', () => {
   });
 
   it('emits a backpressure warning when buffer exceeds the warn threshold', () => {
-    const sentPayloads = [];
+    const sentPayloads: string[] = [];
     const socket = {
       readyState: 1,
       bufferedAmount: MESSAGE_STREAM_WS_BACKPRESSURE_WARN_BYTES + 1,
       send(payload) {
         sentPayloads.push(payload);
       },
-    };
+    } as MessageStreamSocket;
 
     const sent = sendMessageStreamWsFrame(socket, { type: 'test' });
 
     expect(sent).toBe(true);
     expect(sentPayloads).toHaveLength(2);
 
-    const warning = JSON.parse(sentPayloads[1]);
+    const warning = JSON.parse(sentPayloads[1]!) as ParsedFrame;
     expect(warning.type).toBe('backpressure');
     expect(warning.bufferedBytes).toBeGreaterThan(0);
     expect(warning.maxBytes).toBe(MESSAGE_STREAM_WS_MAX_BUFFERED_BYTES);
   });
 
   it('does not repeat backpressure warnings while still above threshold', () => {
-    const sentPayloads = [];
+    const sentPayloads: string[] = [];
     const socket = {
       readyState: 1,
       bufferedAmount: MESSAGE_STREAM_WS_BACKPRESSURE_WARN_BYTES + 1,
       send(payload) {
         sentPayloads.push(payload);
       },
-    };
+    } as MessageStreamSocket;
 
     sendMessageStreamWsFrame(socket, { type: 'test1' });
     sendMessageStreamWsFrame(socket, { type: 'test2' });
 
     // First call: data + warning = 2 sends.  Second call: data only = 1 send.
     expect(sentPayloads).toHaveLength(3);
-    expect(JSON.parse(sentPayloads[1]).type).toBe('backpressure');
-    expect(JSON.parse(sentPayloads[2])).toEqual({ type: 'test2' });
+    expect((JSON.parse(sentPayloads[1]!) as ParsedFrame).type).toBe('backpressure');
+    expect(JSON.parse(sentPayloads[2]!)).toEqual({ type: 'test2' });
   });
 
   it('resets backpressure warning flag when buffer drains', () => {
-    const sentPayloads = [];
+    const sentPayloads: string[] = [];
     const socket = {
       readyState: 1,
       bufferedAmount: MESSAGE_STREAM_WS_BACKPRESSURE_WARN_BYTES + 1,
       send(payload) {
         sentPayloads.push(payload);
       },
-    };
+    } as MessageStreamSocket;
 
     sendMessageStreamWsFrame(socket, { type: 'first' });
     expect(socket._ocBackpressureWarned).toBe(true);
@@ -162,19 +174,19 @@ describe('event stream protocol helpers', () => {
     socket.bufferedAmount = MESSAGE_STREAM_WS_BACKPRESSURE_WARN_BYTES + 1;
     sendMessageStreamWsFrame(socket, { type: 'again' });
     const backpressureFrames = sentPayloads
-      .map((p) => JSON.parse(p))
+      .map((p) => JSON.parse(p) as ParsedFrame)
       .filter((p) => p.type === 'backpressure');
     expect(backpressureFrames).toHaveLength(2);
   });
 
   it('serializes event frames with routing metadata', () => {
-    let rawPayload = null;
+    let rawPayload: string | null = null;
     const socket = {
       readyState: 1,
       send(payload) {
         rawPayload = payload;
       },
-    };
+    } as MessageStreamSocket;
 
     const sent = sendMessageStreamWsEvent(
       socket,
@@ -183,7 +195,7 @@ describe('event stream protocol helpers', () => {
     );
 
     expect(sent).toBe(true);
-    expect(JSON.parse(rawPayload)).toEqual({
+    expect(JSON.parse(rawPayload!)).toEqual({
       type: 'event',
       payload: { type: 'openchamber:heartbeat', timestamp: 1 },
       eventId: 'evt-2',

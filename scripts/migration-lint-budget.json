@@ -48,6 +48,62 @@
     "prefer-spread": "Replacing the JavaScript's .apply() call changes the emitted code."
   },
   "entries": {
+    "packages/web/server/lib/browser-control/broker.test.ts": [
+      {
+        "rule": "@typescript-eslint/await-thenable",
+        "text": "await expect(broker.request('browser.click', { selector: '#a' })).rejects.toThrow('desktop application');",
+        "count": 1,
+        "reason": "expect(...).rejects/resolves returns a value the JavaScript awaits (bun:test typing); removing await changes the test timing."
+      },
+      {
+        "rule": "@typescript-eslint/await-thenable",
+        "text": "await expect(broker.request('browser.open', { url: 'http://a/' })).rejects.toThrow(BrowserControlError);",
+        "count": 1,
+        "reason": "expect(...).rejects/resolves returns a value the JavaScript awaits (bun:test typing); removing await changes the test timing."
+      },
+      {
+        "rule": "@typescript-eslint/await-thenable",
+        "text": "await expect(broker.request('browser.snapshot', {}, { signal: controller.signal })).rejects.toThrow('cancelled');",
+        "count": 1,
+        "reason": "expect(...).rejects/resolves returns a value the JavaScript awaits (bun:test typing); removing await changes the test timing."
+      },
+      {
+        "rule": "@typescript-eslint/await-thenable",
+        "text": "await expect(inflight).rejects.toThrow('cancelled');",
+        "count": 1,
+        "reason": "expect(...).rejects/resolves returns a value the JavaScript awaits (bun:test typing); removing await changes the test timing."
+      },
+      {
+        "rule": "@typescript-eslint/await-thenable",
+        "text": "await expect(inflight).rejects.toThrow('did not respond within 5s');",
+        "count": 1,
+        "reason": "expect(...).rejects/resolves returns a value the JavaScript awaits (bun:test typing); removing await changes the test timing."
+      },
+      {
+        "rule": "@typescript-eslint/await-thenable",
+        "text": "await expect(inflight).rejects.toThrow('disconnected');",
+        "count": 1,
+        "reason": "expect(...).rejects/resolves returns a value the JavaScript awaits (bun:test typing); removing await changes the test timing."
+      },
+      {
+        "rule": "@typescript-eslint/await-thenable",
+        "text": "await expect(inflight).rejects.toThrow('No element matches #missing');",
+        "count": 1,
+        "reason": "expect(...).rejects/resolves returns a value the JavaScript awaits (bun:test typing); removing await changes the test timing."
+      },
+      {
+        "rule": "@typescript-eslint/await-thenable",
+        "text": "await expect(inflight).rejects.toThrow();",
+        "count": 1,
+        "reason": "expect(...).rejects/resolves returns a value the JavaScript awaits (bun:test typing); removing await changes the test timing."
+      },
+      {
+        "rule": "@typescript-eslint/await-thenable",
+        "text": "await expect(pending).resolves.toEqual({ clicked: true });",
+        "count": 1,
+        "reason": "expect(...).rejects/resolves returns a value the JavaScript awaits (bun:test typing); removing await changes the test timing."
+      }
+    ],
     "packages/web/server/lib/changelog/update-notes.ts": [
       {
         "rule": "@typescript-eslint/no-base-to-string",
@@ -88,6 +144,38 @@
         "text": "usesRelay: client.usesRelay === true,",
         "count": 1,
         "reason": "The JavaScript's own === true / !== true comparison; usesRelay is typed boolean, so lint calls the comparison unnecessary. Kept for exact runtime parity: a value that is not exactly true (including one read back from an older store) must keep counting as false."
+      }
+    ],
+    "packages/web/server/lib/cloudflare-tunnel.ts": [
+      {
+        "rule": "@typescript-eslint/no-meaningless-void-operator",
+        "text": "void port;",
+        "count": 1,
+        "reason": "The JavaScript uses void port to mark the parameter as used; removing changes emitted code."
+      },
+      {
+        "rule": "@typescript-eslint/no-unused-vars",
+        "text": "async function startCloudflareTunnel({ originUrl, port }: { originUrl: string; port?: number }) {",
+        "count": 1,
+        "reason": "The JavaScript declares this binding or parameter and does not use it; removing it changes emitted code."
+      },
+      {
+        "rule": "@typescript-eslint/no-unused-vars",
+        "text": "const __dirname = path.dirname(__filename);",
+        "count": 1,
+        "reason": "The JavaScript declares this binding or parameter and does not use it; removing it changes emitted code."
+      },
+      {
+        "rule": "@typescript-eslint/no-unused-vars",
+        "text": "const extractHostnameFromCloudflaredConfig = (configPath: unknown) => {",
+        "count": 1,
+        "reason": "The JavaScript declares this binding or parameter and does not use it; removing it changes emitted code."
+      },
+      {
+        "rule": "@typescript-eslint/no-unused-vars",
+        "text": "installCmd = 'Download from https://github.com/cloudflare/cloudflared/releases';",
+        "count": 1,
+        "reason": "The JavaScript declares this binding or parameter and does not use it; removing it changes emitted code."
       }
     ],
     "packages/web/server/lib/dev-servers/parse.ts": [
@@ -320,6 +408,28 @@
         "text": "const { icon: _emptyIcon, ...rest } = action;",
         "count": 1,
         "reason": "The JavaScript's own rest-destructuring that removes a key from a copy; the discarded binding is the point of the expression, and dropping it would change the emitted JavaScript."
+      }
+    ],
+    "packages/web/server/lib/relay/e2ee.test.ts": [
+      {
+        "rule": "@typescript-eslint/await-thenable",
+        "text": "await expect(dec.decrypt(first)).rejects.toThrow('frame counter regression');",
+        "count": 1,
+        "reason": "expect(...).rejects/resolves returns a value the JavaScript awaits (bun:test typing); removing await changes the test timing."
+      },
+      {
+        "rule": "@typescript-eslint/await-thenable",
+        "text": "await expect(dec.decrypt(frame)).rejects.toThrow();",
+        "count": 1,
+        "reason": "expect(...).rejects/resolves returns a value the JavaScript awaits (bun:test typing); removing await changes the test timing."
+      }
+    ],
+    "packages/web/server/lib/routing/classifier.ts": [
+      {
+        "rule": "@typescript-eslint/no-unnecessary-type-conversion",
+        "text": "'zen-promo': Boolean(zenPromotionActive),",
+        "count": 1,
+        "reason": "The JavaScript own Boolean(x) conversion; removing it changes emitted code."
       }
     ],
     "packages/web/server/lib/session-goal/objectives.ts": [

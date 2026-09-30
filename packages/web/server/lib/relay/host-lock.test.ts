@@ -4,32 +4,32 @@ import { createRelayHostLock } from './host-lock.js';
 
 // In-memory fs standing in for the shared data dir.
 const makeFakeFs = () => {
-  const files = new Map();
+  const files = new Map<string, string>();
   return {
-    readFileSync: (p) => {
+    readFileSync: (p: string) => {
       if (!files.has(p)) {
-        const error = new Error('ENOENT');
+        const error: NodeJS.ErrnoException = new Error('ENOENT');
         error.code = 'ENOENT';
         throw error;
       }
-      return files.get(p);
+      return files.get(p)!;
     },
-    writeFileSync: (p, data) => {
+    writeFileSync: (p: string, data: string) => {
       files.set(p, data);
     },
-    unlinkSync: (p) => {
+    unlinkSync: (p: string) => {
       files.delete(p);
     },
-    peek: (p) => files.get(p),
+    peek: (p: string) => files.get(p),
   };
 };
 
 // Fake process: `alive` is the set of pids that respond to kill(pid, 0).
-const makeFakeProcess = (pid, alive = new Set([pid])) => ({
+const makeFakeProcess = (pid: number, alive: Set<number> = new Set([pid])): Pick<NodeJS.Process, 'pid' | 'kill'> => ({
   pid,
   kill: (target) => {
     if (!alive.has(target)) {
-      const error = new Error('ESRCH');
+      const error: NodeJS.ErrnoException = new Error('ESRCH');
       error.code = 'ESRCH';
       throw error;
     }
@@ -47,7 +47,7 @@ describe('relay host lock', () => {
 
     expect(lock.tryClaim()).toBe(true);
     expect(lock.holdsClaim()).toBe(true);
-    expect(JSON.parse(fs.peek(LOCK)).pid).toBe(100);
+    expect((JSON.parse(fs.peek(LOCK)!) as { pid: number }).pid).toBe(100);
   });
 
   it('refuses to claim while another LIVE process holds it', () => {
@@ -116,7 +116,7 @@ describe('relay host lock', () => {
     const proc = {
       pid: 200,
       kill: () => {
-        const error = new Error('EPERM');
+        const error: NodeJS.ErrnoException = new Error('EPERM');
         error.code = 'EPERM';
         throw error;
       },

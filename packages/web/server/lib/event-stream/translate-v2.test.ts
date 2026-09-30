@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { forwardTranslatedWireEvent, translateWireEvent, wireEventDirectory } from './translate-v2.js';
 
-const wire = (type, data, extra = {}) => ({
+const wire = (type: string, data: unknown, extra: Record<string, unknown> = {}) => ({
   id: 'evt_1',
   created: 1000,
   type,
@@ -19,13 +19,13 @@ describe('translateWireEvent', () => {
 
   test('tags every event with its source id and directory', () => {
     const [event] = translateWireEvent(wire('session.idle', { sessionID: 's1' }));
-    expect(event.id).toBe('evt_1');
-    expect(event.created).toBe(1000);
-    expect(event.properties.directory).toBe('/repo');
+    expect(event!.id).toBe('evt_1');
+    expect(event!.created).toBe(1000);
+    expect(event!.properties.directory).toBe('/repo');
   });
 
   test('server.connected and update availability pass through', () => {
-    expect(translateWireEvent(wire('server.connected', {}))[0].type).toBe('server.connected');
+    expect(translateWireEvent(wire('server.connected', {}))[0]!.type).toBe('server.connected');
     const [update] = translateWireEvent(wire('installation.update-available', { version: '2.1.0' }));
     expect(update).toMatchObject({ type: 'installation.update-available', properties: { version: '2.1.0' } });
   });
@@ -39,8 +39,8 @@ describe('translateWireEvent', () => {
       agent: 'build',
       location: { directory: '/other' },
     }));
-    expect(event.type).toBe('session.created');
-    expect(event.properties.info).toMatchObject({
+    expect(event!.type).toBe('session.created');
+    expect(event!.properties.info).toMatchObject({
       id: 's1',
       parentID: 's0',
       projectID: 'p1',
@@ -70,14 +70,14 @@ describe('translateWireEvent', () => {
 
     const succeeded = translateWireEvent(wire('session.execution.succeeded', { sessionID: 's1' }));
     expect(succeeded.map((entry) => entry.type)).toEqual(['session.status', 'session.idle']);
-    expect(succeeded[0].properties.status).toEqual({ type: 'idle' });
+    expect(succeeded[0]!.properties.status).toEqual({ type: 'idle' });
   });
 
   test('an interruption ends the turn without reporting a failure', () => {
     const events = translateWireEvent(wire('session.execution.interrupted', { sessionID: 's1', reason: 'user' }));
     expect(events.map((entry) => entry.type)).toEqual(['session.status', 'session.idle']);
-    expect(events[1].properties).toMatchObject({ aborted: true, reason: 'user' });
-    expect(events[1].properties.error.name).toBe('MessageAbortedError');
+    expect(events[1]!.properties).toMatchObject({ aborted: true, reason: 'user' });
+    expect((events[1]!.properties.error as { name: unknown }).name).toBe('MessageAbortedError');
     expect(events.some((entry) => entry.type === 'session.error')).toBe(false);
   });
 
@@ -93,7 +93,7 @@ describe('translateWireEvent', () => {
       error: { type: 'ProviderAuthError', message: 'bad key', status: 401 },
     }));
     expect(events.map((entry) => entry.type)).toEqual(['session.status', 'session.error']);
-    expect(events[1].properties.error).toEqual({
+    expect(events[1]!.properties.error).toEqual({
       name: 'ProviderAuthError',
       type: 'ProviderAuthError',
       message: 'bad key',
@@ -103,7 +103,7 @@ describe('translateWireEvent', () => {
 
   test('a passed-through session.status is kept as is', () => {
     const [event] = translateWireEvent(wire('session.status', { sessionID: 's1', status: { type: 'retry', attempt: 2 } }));
-    expect(event.properties.status).toEqual({ type: 'retry', attempt: 2 });
+    expect(event!.properties.status).toEqual({ type: 'retry', attempt: 2 });
   });
 
   test('an enqueued user prompt becomes a user message with text parts', () => {
@@ -112,9 +112,9 @@ describe('translateWireEvent', () => {
       inboxID: 'msg_1',
       item: { type: 'user', payload: { text: 'hello' } },
     }));
-    expect(event.type).toBe('message.updated');
-    expect(event.properties.info).toMatchObject({ id: 'msg_1', sessionID: 's1', role: 'user', text: 'hello' });
-    expect(event.properties.info.parts).toEqual([{ type: 'text', text: 'hello' }]);
+    expect(event!.type).toBe('message.updated');
+    expect(event!.properties.info).toMatchObject({ id: 'msg_1', sessionID: 's1', role: 'user', text: 'hello' });
+    expect((event!.properties.info as { parts: unknown }).parts).toEqual([{ type: 'text', text: 'hello' }]);
   });
 
   test('non-user inbox items are not messages', () => {
@@ -132,21 +132,21 @@ describe('translateWireEvent', () => {
       agent: 'build',
       model: { id: 'gpt-5.6-luna', providerID: 'openai' },
     }));
-    expect(started.properties.info).toMatchObject({
+    expect(started!.properties.info).toMatchObject({
       id: 'msg_2', role: 'assistant', agent: 'build', providerID: 'openai', modelID: 'gpt-5.6-luna',
     });
 
     const [ended] = translateWireEvent(wire('session.step.ended', {
       sessionID: 's1', assistantMessageID: 'msg_2', finish: 'stop', cost: 1, tokens: { input: 2 },
     }));
-    expect(ended.properties.info).toMatchObject({ id: 'msg_2', role: 'assistant', finish: 'stop' });
-    expect(ended.properties.info.time.completed).toBe(1000);
+    expect(ended!.properties.info).toMatchObject({ id: 'msg_2', role: 'assistant', finish: 'stop' });
+    expect((ended!.properties.info as { time: { completed: unknown } }).time.completed).toBe(1000);
 
     const [failed] = translateWireEvent(wire('session.step.failed', {
       sessionID: 's1', assistantMessageID: 'msg_2', error: { type: 'Overloaded', message: 'busy' },
     }));
-    expect(failed.properties.info).toMatchObject({ finish: 'error' });
-    expect(failed.properties.info.error.name).toBe('Overloaded');
+    expect(failed!.properties.info).toMatchObject({ finish: 'error' });
+    expect((failed!.properties.info as { error: { name: unknown } }).error.name).toBe('Overloaded');
   });
 
   test('permission requests keep the v2 action and resources', () => {
@@ -157,12 +157,12 @@ describe('translateWireEvent', () => {
       resources: ['rm -rf /'],
       source: { type: 'tool', messageID: 'msg_1', id: 'call_1' },
     }));
-    expect(event.properties).toMatchObject({
+    expect(event!.properties).toMatchObject({
       id: 'per_1', sessionID: 's1', action: 'bash', resources: ['rm -rf /'],
     });
 
     const [replied] = translateWireEvent(wire('permission.replied', { sessionID: 's1', requestID: 'per_1', reply: 'once' }));
-    expect(replied.properties).toMatchObject({ sessionID: 's1', requestID: 'per_1' });
+    expect(replied!.properties).toMatchObject({ sessionID: 's1', requestID: 'per_1' });
   });
 
   test('forms replace questions', () => {
@@ -177,8 +177,8 @@ describe('translateWireEvent', () => {
   });
 
   test('branch and mcp notices pass through', () => {
-    expect(translateWireEvent(wire('vcs.branch.updated', { branch: 'main' }))[0].properties.branch).toBe('main');
-    expect(translateWireEvent(wire('mcp.status.changed', { server: 'linear' }))[0].properties.server).toBe('linear');
+    expect(translateWireEvent(wire('vcs.branch.updated', { branch: 'main' }))[0]!.properties.branch).toBe('main');
+    expect(translateWireEvent(wire('mcp.status.changed', { server: 'linear' }))[0]!.properties.server).toBe('linear');
   });
 
   test('events without a session id are dropped rather than half-translated', () => {
@@ -198,7 +198,7 @@ describe('wireEventDirectory', () => {
 
 describe('forwardTranslatedWireEvent', () => {
   test('forwards every translated event in order', () => {
-    const seen = [];
+    const seen: string[] = [];
     forwardTranslatedWireEvent(wire('session.execution.succeeded', { sessionID: 's1' }), (event) => seen.push(event.type));
     expect(seen).toEqual(['session.status', 'session.idle']);
   });
