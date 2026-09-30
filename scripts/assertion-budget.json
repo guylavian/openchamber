@@ -40,6 +40,9 @@
   "packages/web/server/lib/agent-memory/actions.ts": {
     "title!": 1
   },
+  "packages/web/server/lib/agent-memory/project-resolution.test.ts": {
+    "null as never": 1
+  },
   "packages/web/server/lib/agent-memory/routes.ts": {
     "body.type as MemoryType": 1
   },
@@ -80,6 +83,9 @@
   },
   "packages/web/server/lib/cloudflare-tunnel.ts": {
     "yaml.parse(raw) as CloudflaredConfigDocument | null | undefined": 1
+  },
+  "packages/web/server/lib/context-obligatory/runtime.test.ts": {
+    "runtimes.pop()!": 1
   },
   "packages/web/server/lib/context-obligatory/runtime.ts": {
     "error as Thrown": 1,
@@ -336,6 +342,9 @@
   "packages/web/server/lib/openchamber-control/file-open.ts": {
     "error as NodeJS.ErrnoException | null | undefined": 1
   },
+  "packages/web/server/lib/openchamber-control/routes.test.ts": {
+    "expect.any(AbortSignal) as AbortSignal": 1
+  },
   "packages/web/server/lib/openchamber-control/routes.ts": {
     "error as Parameters<typeof asControlError>[0]": 1
   },
@@ -536,6 +545,9 @@
     "new Map<unknown, QuotedField>([ ['code-comment', 'code'], ['file-quote', 'quote'], ['chat-quote', 'quote'], ['browser-annotation', 'prompt'], ['pr-comment', 'body'], ['pr-check', 'output'], ['terminal', 'output'], ]) as QuoteFields": 1,
     "turns.at(-1)!": 1,
     "turns.at(-1)!.assistant!": 1
+  },
+  "packages/web/server/lib/session-assist/prompt.ts": {
+    "kept[0]!": 1
   },
   "packages/web/server/lib/session-folders/routes.ts": {
     "body.updatedAt as number": 1,

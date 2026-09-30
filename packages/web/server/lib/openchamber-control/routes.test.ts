@@ -6,7 +6,9 @@ import { BrowserControlError } from '../browser-control/broker.js';
 import { OpenChamberControlError } from './error.js';
 import { registerOpenChamberControlRoutes } from './routes.js';
 
-const createApp = (execute) => {
+type Execute = Parameters<typeof registerOpenChamberControlRoutes>[1]['controlService']['execute'];
+
+const createApp = (execute: Execute) => {
   const app = express();
   registerOpenChamberControlRoutes(app, { controlService: { execute } });
   return app;
@@ -20,7 +22,7 @@ describe('OpenChamber control route', () => {
       .send({ action: 'projects.list', input: {}, contextDirectory: '/repo' })
       .expect(200);
     expect(response.body).toEqual({ projects: [] });
-    expect(execute).toHaveBeenCalledWith('projects.list', {}, '/repo', expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(execute).toHaveBeenCalledWith('projects.list', {}, '/repo', expect.objectContaining({ signal: expect.any(AbortSignal) as AbortSignal }));
   });
 
   it('preserves service status and partial-result details', async () => {

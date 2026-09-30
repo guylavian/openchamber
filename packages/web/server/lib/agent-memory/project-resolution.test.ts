@@ -3,12 +3,14 @@ import { describe, expect, test } from 'bun:test';
 import { createMemoryProjectResolver } from './project-resolution.js';
 import { createProjectIdFromPath } from '../projects/project-id.js';
 
+type ResolverDeps = Parameters<typeof createMemoryProjectResolver>[0];
+
 const PROJECT = '/Users/x/projects/openchamber';
 const WORKTREE = '/Users/x/.local/share/opencode/worktree/abc/jammy-koala';
 
-const createResolver = (overrides = {}) => createMemoryProjectResolver({
+const createResolver = (overrides: Partial<ResolverDeps> = {}) => createMemoryProjectResolver({
   listProjectPaths: async () => [PROJECT],
-  resolvePrimaryWorktreeRoot: async (directory) => (
+  resolvePrimaryWorktreeRoot: async (directory: string) => (
     directory === WORKTREE ? { root: PROJECT } : { root: directory }
   ),
   ...overrides,
@@ -64,7 +66,7 @@ describe('resolving a session directory to its project', () => {
     const resolve = createResolver();
 
     expect(await resolve('')).toBe('');
-    expect(await resolve(null)).toBe('');
+    expect(await resolve(null as never)).toBe('');
   });
 
   test('trailing slashes and relative segments do not fork the store', async () => {

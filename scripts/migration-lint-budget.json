@@ -178,6 +178,20 @@
         "reason": "The JavaScript declares this binding or parameter and does not use it; removing it changes emitted code."
       }
     ],
+    "packages/web/server/lib/context-obligatory/runtime.test.ts": [
+      {
+        "rule": "@typescript-eslint/no-floating-promises",
+        "text": "runtime.processPayload({ type: 'session.compacted', properties: { sessionID: 'ses_1' } });",
+        "count": 2,
+        "reason": "Test intentionally calls the async processPayload without awaiting to assert synchronous behaviour (log once / ignored after stop); adding void or await would change runtime behaviour."
+      },
+      {
+        "rule": "@typescript-eslint/no-floating-promises",
+        "text": "runtime.processPayload({ type: 'session.idle', properties: { sessionID: 'ses_2' } });",
+        "count": 1,
+        "reason": "Test intentionally calls the async processPayload without awaiting to assert synchronous behaviour (log once / ignored after stop); adding void or await would change runtime behaviour."
+      }
+    ],
     "packages/web/server/lib/dev-servers/parse.ts": [
       {
         "rule": "@typescript-eslint/no-unnecessary-type-conversion",

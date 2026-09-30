@@ -1,10 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import { applyForkInheritance, sourceOwnedLinksPatch } from './fork-inheritance.js';
 
-const goal = (objectiveFile) => ({ id: 'goal_1', objective: objectiveFile ? '' : 'Ship it', objectiveFile, status: 'paused' });
+type ForkOptions = Parameters<typeof applyForkInheritance>[0];
+type ForkDeps = Pick<ForkOptions, 'readObjective' | 'writeObjective' | 'writeMetadata'>;
 
-const harness = (metadata, overrides = {}) => {
-  const deps = {
+const goal = (objectiveFile: boolean) => ({ id: 'goal_1', objective: objectiveFile ? '' : 'Ship it', objectiveFile, status: 'paused' });
+
+const harness = (metadata: unknown, overrides: Partial<ForkDeps> = {}) => {
+  const deps: ForkDeps = {
     readObjective: vi.fn(async () => 'Objective from file'),
     writeObjective: vi.fn(async () => undefined),
     writeMetadata: vi.fn(async () => undefined),

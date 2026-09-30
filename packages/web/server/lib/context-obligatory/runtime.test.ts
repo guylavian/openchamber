@@ -2,6 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createContextObligatoryRuntime } from './runtime.js';
 
+type Runtime = ReturnType<typeof createContextObligatoryRuntime>;
+type RuntimeOptions = Parameters<typeof createContextObligatoryRuntime>[0];
+
 /**
  * Pinned messages and the compaction cursor live in OpenChamber's own session
  * metadata store, because OpenCode 2.x accepts session metadata only at create
@@ -15,10 +18,10 @@ import { createContextObligatoryRuntime } from './runtime.js';
  * because every shape it asserted on belongs to v1.
  */
 
-const runtimes = [];
+const runtimes: Runtime[] = [];
 
-const makeRuntime = (overrides = {}) => {
-  const buildOpenCodeUrl = vi.fn((fetchPath) => `http://opencode.test${fetchPath}`);
+const makeRuntime = (overrides: Partial<RuntimeOptions> = {}) => {
+  const buildOpenCodeUrl = vi.fn((fetchPath: string) => `http://opencode.test${fetchPath}`);
   const runtime = createContextObligatoryRuntime({
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders: () => ({}),
@@ -29,7 +32,7 @@ const makeRuntime = (overrides = {}) => {
 };
 
 afterEach(() => {
-  while (runtimes.length > 0) runtimes.pop().stop();
+  while (runtimes.length > 0) runtimes.pop()!.stop();
   vi.restoreAllMocks();
 });
 
