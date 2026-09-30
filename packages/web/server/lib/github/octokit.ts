@@ -2,6 +2,16 @@ import { Octokit } from '@octokit/rest';
 import { getGitHubAuth, isGhCliActive, isGhCliDisabled } from './auth.js';
 import { getGhCliToken } from './gh-cli-credential.js';
 
+interface FetchOptions extends RequestInit {
+  headers?: Record<string, string>;
+}
+
+interface CachedEtagEntry {
+  etag: string;
+  body: ArrayBuffer;
+  headers: Headers;
+}
+
 // Per-request timeout for every GitHub call. Octokit v22 uses native fetch,
 // which has no built-in timeout — without this, a stuck connection hangs until
 // some outer bound (the PR-status route's 12s overall budget) fires, and a
@@ -9,7 +19,7 @@ import { getGhCliToken } from './gh-cli-credential.js';
 // caller fail fast and fall back to cached state instead.
 const OCTOKIT_REQUEST_TIMEOUT_MS = 8000;
 
-const timeoutFetch = (url, options = {}) => {
+const timeoutFetch = (url: string, options: FetchOptions = {}) => {
   // Respect a caller-provided signal if present; otherwise attach our timeout.
   if (options.signal) {
     return fetch(url, options);
@@ -22,9 +32,9 @@ const timeoutFetch = (url, options = {}) => {
 // limit, so polling unchanged PRs/checks becomes rate-limit-free. Keyed by
 // token+URL so different identities never share responses.
 const ETAG_CACHE_MAX_ENTRIES = 300;
-const etagCache = new Map();
+const etagCache = new Map<string, CachedEtagEntry>();
 
-const rememberEtag = (key, etag, body, headers) => {
+const rememberEtag = (key: string, etag: string, body: ArrayBuffer, headers: Headers) => {
   etagCache.delete(key);
   etagCache.set(key, { etag, body, headers });
   if (etagCache.size > ETAG_CACHE_MAX_ENTRIES) {
@@ -35,7 +45,7 @@ const rememberEtag = (key, etag, body, headers) => {
   }
 };
 
-const createConditionalFetch = (token) => async (url, options = {}) => {
+const createConditionalFetch = (token: string) => async (url: string, options: FetchOptions = {}) => {
   const method = (options.method || 'GET').toUpperCase();
   if (method !== 'GET') {
     return timeoutFetch(url, options);
@@ -69,7 +79,7 @@ const createConditionalFetch = (token) => async (url, options = {}) => {
 };
 
 /** Create an Octokit instance with per-request timeout + ETag revalidation. */
-export function createOctokit(token) {
+export function createOctokit(token: string) {
   return new Octokit({ auth: token, request: { fetch: createConditionalFetch(token) } });
 }
 

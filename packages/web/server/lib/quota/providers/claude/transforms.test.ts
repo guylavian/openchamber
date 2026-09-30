@@ -2,6 +2,18 @@ import { describe, expect, it } from 'vitest';
 
 import { toClaudeUsage } from './transforms.js';
 
+interface UsageWindowView {
+  usedPercent: number;
+  resetAt: number;
+  windowSeconds: number | null;
+  valueLabel: string;
+}
+
+type ClaudeUsageView = {
+  windows: { '5h': UsageWindowView; '7d': UsageWindowView; extra_usage: UsageWindowView };
+  models: { Fable: { windows: { '7d': UsageWindowView } } };
+};
+
 // Trimmed capture of GET https://api.anthropic.com/api/oauth/usage for a Max account.
 const LIVE_PAYLOAD = {
   five_hour: { utilization: 5.0, resets_at: '2026-08-14T19:10:00.313090+00:00' },
@@ -31,7 +43,7 @@ const LIVE_PAYLOAD = {
 
 describe('Claude usage transforms', () => {
   it('maps the limits array to session, weekly, and model-scoped windows', () => {
-    const { windows, models } = toClaudeUsage(LIVE_PAYLOAD);
+    const { windows, models } = toClaudeUsage(LIVE_PAYLOAD) as ClaudeUsageView;
 
     expect(windows['5h'].usedPercent).toBe(5);
     expect(windows['5h'].resetAt).toBe(Date.parse('2026-08-14T19:10:00.313090+00:00'));
@@ -40,7 +52,7 @@ describe('Claude usage transforms', () => {
   });
 
   it('reports each window duration so callers can rank limits by urgency', () => {
-    const { windows, models } = toClaudeUsage(LIVE_PAYLOAD);
+    const { windows, models } = toClaudeUsage(LIVE_PAYLOAD) as ClaudeUsageView;
 
     expect(windows['5h'].windowSeconds).toBe(5 * 60 * 60);
     expect(windows['7d'].windowSeconds).toBe(7 * 24 * 60 * 60);
@@ -49,7 +61,7 @@ describe('Claude usage transforms', () => {
   });
 
   it('reports extra usage as a spend window with a money label', () => {
-    const { windows } = toClaudeUsage(LIVE_PAYLOAD);
+    const { windows } = toClaudeUsage(LIVE_PAYLOAD) as ClaudeUsageView;
 
     expect(windows.extra_usage.usedPercent).toBe(2.5);
     expect(windows.extra_usage.valueLabel).toBe('$2.50 / $100.00');
@@ -62,7 +74,7 @@ describe('Claude usage transforms', () => {
   });
 
   it('falls back to the legacy named fields when no limits array is present', () => {
-    const { windows, models } = toClaudeUsage({ five_hour: LIVE_PAYLOAD.five_hour, seven_day: LIVE_PAYLOAD.seven_day });
+    const { windows, models } = toClaudeUsage({ five_hour: LIVE_PAYLOAD.five_hour, seven_day: LIVE_PAYLOAD.seven_day }) as ClaudeUsageView;
 
     expect(windows['5h'].usedPercent).toBe(5);
     expect(windows['7d'].usedPercent).toBe(4);

@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { createNotificationEmitterRuntime } from './emitter-runtime.js';
+import type { NotificationEmitterDependencies, UiNotificationEvent } from './emitter-runtime.js';
 
-const createRuntime = (overrides = {}) => createNotificationEmitterRuntime({
+const createRuntime = (overrides: Partial<NotificationEmitterDependencies> = {}) => createNotificationEmitterRuntime({
   process: { stdout: { write: vi.fn() } },
   getDesktopNotifyEnabled: () => true,
   desktopNotifyPrefix: '[desktop-notify]',
@@ -30,7 +31,7 @@ describe('notification emitter runtime', () => {
   });
 
   it('marks UI broadcasts that were already delivered natively', () => {
-    const broadcastGlobalUiEvent = vi.fn();
+    const broadcastGlobalUiEvent = vi.fn<(event: UiNotificationEvent) => void>();
     const runtime = createRuntime({ getBroadcastGlobalUiEvent: () => broadcastGlobalUiEvent });
 
     runtime.broadcastUiNotification({ title: 'Ready' }, { desktopNotificationDelivered: true });
@@ -51,7 +52,7 @@ describe('shared control notification delivery', () => {
   it('writes once to control SSE and once to the legacy/global broadcaster', () => {
     const control = { write: vi.fn() };
     const failed = { write: () => { throw new Error('closed'); } };
-    const broadcastGlobalUiEvent = vi.fn();
+    const broadcastGlobalUiEvent = vi.fn<(event: UiNotificationEvent) => void>();
     const runtime = createRuntime({
       getOpenChamberEventClients: () => new Set([failed, control]),
       getBroadcastGlobalUiEvent: () => broadcastGlobalUiEvent,
@@ -59,9 +60,9 @@ describe('shared control notification delivery', () => {
     runtime.broadcastUiNotification({ title: 'Done', sessionId: 's1', kind: 'complete' });
     expect(control.write).toHaveBeenCalledTimes(1);
     expect(broadcastGlobalUiEvent).toHaveBeenCalledTimes(1);
-    const envelope = broadcastGlobalUiEvent.mock.calls[0][0];
+    const envelope = broadcastGlobalUiEvent.mock.calls[0]![0];
     expect(control.write).toHaveBeenCalledWith(`data: ${JSON.stringify(envelope)}\n\n`);
-    expect(envelope.properties.sessionId).toBe('s1');
+    expect((envelope.properties as { sessionId: string }).sessionId).toBe('s1');
   });
 
   it('preserves legacy notification SSE without a global broadcaster', () => {

@@ -34,7 +34,7 @@ describe('toUsageWindow', () => {
   });
 
   it('does not derive remaining percent from missing usage', () => {
-    expect(toUsageWindow({ usedPercent: undefined }).remainingPercent).toBeNull();
+    expect(toUsageWindow({ usedPercent: undefined as never }).remainingPercent).toBeNull();
   });
 
   it('does not derive remaining percent from non-finite usage', () => {

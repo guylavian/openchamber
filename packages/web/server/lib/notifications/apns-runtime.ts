@@ -13,6 +13,90 @@ import {
   getOrCreateRelaySigningKeypair,
   signRelayMessage as signRelayMessageShared,
 } from '../relay/signing-key.js';
+import type * as NodeCrypto from 'node:crypto';
+import type * as NodeFsPromises from 'node:fs/promises';
+import type * as NodeHttp2 from 'node:http2';
+import type * as NodePath from 'node:path';
+import type { RelaySigningKeypair, RelaySigningSettings } from '../relay/signing-key.js';
+
+interface StoredApnsConfig {
+  keyId?: unknown;
+  teamId?: unknown;
+  bundleId?: unknown;
+  environment?: unknown;
+  p8?: unknown;
+}
+
+interface ApnsSettings extends RelaySigningSettings {
+  apnsConfig?: StoredApnsConfig | null;
+}
+
+interface ApnsRuntimeDependencies {
+  fsPromises: Pick<typeof NodeFsPromises, 'readFile' | 'mkdir' | 'writeFile'>;
+  path: Pick<typeof NodePath, 'dirname'>;
+  crypto: typeof NodeCrypto;
+  http2: Pick<typeof NodeHttp2, 'connect'>;
+  APNS_TOKENS_FILE_PATH: string;
+  readSettingsFromDiskMigrated: () => Promise<ApnsSettings>;
+  writeSettingsToDisk: (settings: RelaySigningSettings) => Promise<void>;
+  readSettingsStrict: () => Promise<RelaySigningSettings>;
+}
+
+interface ApnsTokenEntry {
+  deviceToken: string;
+  createdAt: number | null;
+  lastSeenAt: number | null;
+  userAgent: string | undefined;
+  platform: 'android' | 'ios';
+  environment: 'sandbox' | 'production';
+}
+
+interface RawTokenEntry {
+  deviceToken?: unknown;
+  createdAt?: unknown;
+  lastSeenAt?: unknown;
+  userAgent?: unknown;
+  platform?: unknown;
+  environment?: unknown;
+}
+
+interface TokensStore {
+  version: number;
+  tokensBySession: Record<string, unknown>;
+}
+
+interface ApnsConfig {
+  keyId: string;
+  teamId: string;
+  p8: string;
+  bundleId: string;
+  environment: 'sandbox' | 'production' | null;
+}
+
+interface ApnsSendConfig extends ApnsConfig {
+  tag: string | undefined;
+}
+
+interface RelayConfig {
+  url: string;
+  registerUrl: string;
+  environment: 'sandbox' | 'production' | null;
+}
+
+interface RelaySendResult {
+  drop?: unknown;
+  token?: unknown;
+}
+
+interface ApnsPayload {
+  title?: unknown;
+  body?: unknown;
+  badge: number;
+  tag?: unknown;
+  data?: unknown;
+}
+
+type ErrorWithMessage = { message?: unknown } | null | undefined;
 
 const APNS_TOKENS_VERSION = 1;
 const APNS_HOST_PRODUCTION = 'https://api.push.apple.com';
@@ -25,15 +109,15 @@ const MAX_TOKENS_PER_SESSION = 10;
 // APNs reasons that mean the token is permanently invalid → drop it.
 const DEAD_TOKEN_REASONS = new Set(['BadDeviceToken', 'Unregistered', 'DeviceTokenNotForTopic']);
 
-const trimmedEnv = (name) => {
+const trimmedEnv = (name: string) => {
   const value = process.env[name];
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
 };
 
 // Env vars commonly store the .p8 with literal "\n" sequences; restore real newlines.
-const normalizePem = (value) => (typeof value === 'string' ? value.replace(/\\n/g, '\n').trim() : '');
+const normalizePem = (value: unknown) => (typeof value === 'string' ? value.replace(/\\n/g, '\n').trim() : '');
 
-export const createApnsRuntime = (deps) => {
+export const createApnsRuntime = (deps: ApnsRuntimeDependencies) => {
   const {
     fsPromises,
     path,
@@ -46,9 +130,9 @@ export const createApnsRuntime = (deps) => {
     readSettingsStrict,
   } = deps;
 
-  let persistLock = Promise.resolve();
-  let cachedJwt = null; // { token, issuedAtMs, keyId }
-  let cachedRelayKey = null; // { privateKey, publicJwk }
+  let persistLock: Promise<unknown> = Promise.resolve();
+  let cachedJwt: { token: string; issuedAtMs: number; keyId: string } | null = null; // { token, issuedAtMs, keyId }
+  let cachedRelayKey: RelaySigningKeypair | null = null; // { privateKey, publicJwk }
   let warnedUnconfigured = false;
 
   // ---------------------------------------------------------------------------
@@ -66,17 +150,17 @@ export const createApnsRuntime = (deps) => {
     return cachedRelayKey;
   };
 
-  const signRelayMessage = (privateKey, message) => signRelayMessageShared({ crypto }, privateKey, message);
+  const signRelayMessage = (privateKey: NodeCrypto.KeyObject, message: string) => signRelayMessageShared({ crypto }, privateKey, message);
 
   // Trim to the 4 fields the relay's schema accepts (and that feed the serverId hash).
-  const relayPublicJwk = (publicJwk) => ({
+  const relayPublicJwk = (publicJwk: NodeCrypto.JsonWebKey) => ({
     kty: publicJwk.kty,
     crv: publicJwk.crv,
     x: publicJwk.x,
     y: publicJwk.y,
   });
 
-  const registerTokenWithRelay = async (token, platform = 'ios') => {
+  const registerTokenWithRelay = async (token: string, platform = 'ios') => {
     const relay = resolveRelayConfig();
     if (!relay) return; // direct mode — no relay binding needed
     try {
@@ -91,7 +175,7 @@ export const createApnsRuntime = (deps) => {
       });
       if (!res.ok) console.warn(`[Push relay] register-token failed status=${res.status}`);
     } catch (error) {
-      console.warn('[Push relay] register-token request failed:', error?.message ?? error);
+      console.warn('[Push relay] register-token request failed:', (error as ErrorWithMessage)?.message ?? error);
     }
   };
 
@@ -99,12 +183,12 @@ export const createApnsRuntime = (deps) => {
   // Token persistence (same shape + write-lock pattern as push-runtime.js)
   // ---------------------------------------------------------------------------
 
-  const emptyStore = () => ({ version: APNS_TOKENS_VERSION, tokensBySession: {} });
+  const emptyStore = (): TokensStore => ({ version: APNS_TOKENS_VERSION, tokensBySession: {} });
 
-  const readTokensFromDisk = async () => {
+  const readTokensFromDisk = async (): Promise<TokensStore> => {
     try {
       const raw = await fsPromises.readFile(APNS_TOKENS_FILE_PATH, 'utf8');
-      const parsed = JSON.parse(raw);
+      const parsed = JSON.parse(raw) as { version?: unknown; tokensBySession?: Record<string, unknown> } | null;
       if (!parsed || typeof parsed !== 'object' || parsed.version !== APNS_TOKENS_VERSION) {
         return emptyStore();
       }
@@ -112,7 +196,7 @@ export const createApnsRuntime = (deps) => {
         parsed.tokensBySession && typeof parsed.tokensBySession === 'object' ? parsed.tokensBySession : {};
       return { version: APNS_TOKENS_VERSION, tokensBySession };
     } catch (error) {
-      if (error && typeof error === 'object' && error.code === 'ENOENT') {
+      if (error && typeof error === 'object' && (error as { code?: unknown }).code === 'ENOENT') {
         return emptyStore();
       }
       console.warn('Failed to read APNs tokens file:', error);
@@ -120,12 +204,12 @@ export const createApnsRuntime = (deps) => {
     }
   };
 
-  const writeTokensToDisk = async (data) => {
+  const writeTokensToDisk = async (data: TokensStore) => {
     await fsPromises.mkdir(path.dirname(APNS_TOKENS_FILE_PATH), { recursive: true });
     await fsPromises.writeFile(APNS_TOKENS_FILE_PATH, JSON.stringify(data, null, 2), 'utf8');
   };
 
-  const persistTokenUpdate = async (mutate) => {
+  const persistTokenUpdate = async (mutate: (current: TokensStore) => TokensStore) => {
     persistLock = persistLock.then(async () => {
       const current = await readTokensFromDisk();
       const next = mutate({ version: APNS_TOKENS_VERSION, tokensBySession: current.tokensBySession || {} });
@@ -135,10 +219,10 @@ export const createApnsRuntime = (deps) => {
     return persistLock;
   };
 
-  const normalizeTokens = (record) => {
+  const normalizeTokens = (record: unknown): ApnsTokenEntry[] => {
     if (!Array.isArray(record)) return [];
     return record
-      .map((entry) => {
+      .map((entry: RawTokenEntry | null | undefined) => {
         if (!entry || typeof entry !== 'object') return null;
         const deviceToken = entry.deviceToken;
         if (typeof deviceToken !== 'string' || deviceToken.trim().length === 0) return null;
@@ -156,16 +240,16 @@ export const createApnsRuntime = (deps) => {
           environment: entry.environment === 'sandbox' ? 'sandbox' : 'production',
         };
       })
-      .filter(Boolean);
+      .filter(Boolean) as ApnsTokenEntry[];
   };
 
   // Normalize an incoming platform hint to the two we support; default to APNs/iOS since that
   // was the only registrant before Android/FCM existed.
-  const normalizePlatform = (platform) => (platform === 'android' ? 'android' : 'ios');
+  const normalizePlatform = (platform: unknown) => (platform === 'android' ? 'android' : 'ios');
 
-  const normalizeEnvironment = (environment) => (environment === 'sandbox' ? 'sandbox' : 'production');
+  const normalizeEnvironment = (environment: unknown) => (environment === 'sandbox' ? 'sandbox' : 'production');
 
-  const addOrUpdateApnsToken = async (uiSessionToken, deviceToken, userAgent, platform, environment) => {
+  const addOrUpdateApnsToken = async (uiSessionToken: string | null | undefined, deviceToken: unknown, userAgent: unknown, platform: unknown, environment: unknown) => {
     if (!uiSessionToken || typeof deviceToken !== 'string' || deviceToken.trim().length === 0) return;
     const token = deviceToken.trim();
     const tokenPlatform = normalizePlatform(platform);
@@ -196,7 +280,7 @@ export const createApnsRuntime = (deps) => {
     await registerTokenWithRelay(token, tokenPlatform);
   };
 
-  const removeApnsToken = async (uiSessionToken, deviceToken) => {
+  const removeApnsToken = async (uiSessionToken: string | null | undefined, deviceToken: string | null | undefined) => {
     if (!uiSessionToken || !deviceToken) return;
     await persistTokenUpdate((current) => {
       const tokensBySession = { ...(current.tokensBySession || {}) };
@@ -209,7 +293,7 @@ export const createApnsRuntime = (deps) => {
     });
   };
 
-  const removeApnsTokenFromAllSessions = async (deviceToken) => {
+  const removeApnsTokenFromAllSessions = async (deviceToken: string | null | undefined) => {
     if (!deviceToken) return;
     await persistTokenUpdate((current) => {
       const tokensBySession = { ...(current.tokensBySession || {}) };
@@ -226,7 +310,7 @@ export const createApnsRuntime = (deps) => {
   // Config (env first, then settings.apnsConfig) — mirrors resolveVapidSubject
   // ---------------------------------------------------------------------------
 
-  const resolveApnsConfig = async () => {
+  const resolveApnsConfig = async (): Promise<ApnsConfig | null> => {
     let keyId = trimmedEnv('OPENCHAMBER_APNS_KEY_ID');
     let teamId = trimmedEnv('OPENCHAMBER_APNS_TEAM_ID');
     let bundleId = trimmedEnv('OPENCHAMBER_APNS_BUNDLE_ID');
@@ -238,7 +322,7 @@ export const createApnsRuntime = (deps) => {
       try {
         p8 = (await fsPromises.readFile(p8Path, 'utf8')).trim();
       } catch (error) {
-        console.warn('[APNs] Failed to read OPENCHAMBER_APNS_P8_PATH:', error?.message ?? error);
+        console.warn('[APNs] Failed to read OPENCHAMBER_APNS_P8_PATH:', (error as ErrorWithMessage)?.message ?? error);
       }
     }
 
@@ -275,7 +359,7 @@ export const createApnsRuntime = (deps) => {
   // JWT (ES256, JOSE/raw signature) + HTTP/2 send
   // ---------------------------------------------------------------------------
 
-  const signApnsJwt = (config) => {
+  const signApnsJwt = (config: ApnsConfig) => {
     const header = Buffer.from(JSON.stringify({ alg: 'ES256', kid: config.keyId })).toString('base64url');
     const claims = Buffer.from(
       JSON.stringify({ iss: config.teamId, iat: Math.floor(Date.now() / 1000) }),
@@ -287,7 +371,7 @@ export const createApnsRuntime = (deps) => {
     return `${signingInput}.${signature}`;
   };
 
-  const getJwt = (config) => {
+  const getJwt = (config: ApnsConfig) => {
     const now = Date.now();
     if (cachedJwt && cachedJwt.keyId === config.keyId && now - cachedJwt.issuedAtMs < JWT_TTL_MS) {
       return cachedJwt.token;
@@ -297,7 +381,7 @@ export const createApnsRuntime = (deps) => {
     return token;
   };
 
-  const buildBody = (payload) => {
+  const buildBody = (payload: ApnsPayload) => {
     const data = payload && typeof payload.data === 'object' && payload.data ? payload.data : {};
     return JSON.stringify({
       aps: {
@@ -317,9 +401,9 @@ export const createApnsRuntime = (deps) => {
     });
   };
 
-  const sendOne = (client, deviceToken, body, jwt, config) =>
-    new Promise((resolve) => {
-      const headers = {
+  const sendOne = (client: NodeHttp2.ClientHttp2Session, deviceToken: string, body: string, jwt: string, config: ApnsSendConfig) =>
+    new Promise<void>((resolve) => {
+      const headers: Record<string, string> = {
         ':method': 'POST',
         ':path': `/3/device/${deviceToken}`,
         authorization: `bearer ${jwt}`,
@@ -331,11 +415,11 @@ export const createApnsRuntime = (deps) => {
       const collapseId = typeof config.tag === 'string' ? config.tag.slice(0, 64) : undefined;
       if (collapseId) headers['apns-collapse-id'] = collapseId;
 
-      let req;
+      let req: NodeHttp2.ClientHttp2Stream;
       try {
         req = client.request(headers);
       } catch (error) {
-        console.warn('[APNs] request open failed:', error?.message ?? error);
+        console.warn('[APNs] request open failed:', (error as ErrorWithMessage)?.message ?? error);
         resolve();
         return;
       }
@@ -346,7 +430,7 @@ export const createApnsRuntime = (deps) => {
         status = Number(resHeaders[':status']) || 0;
       });
       req.setEncoding('utf8');
-      req.on('data', (chunk) => {
+      req.on('data', (chunk: string) => {
         responseBody += chunk;
       });
       req.on('end', async () => {
@@ -356,7 +440,7 @@ export const createApnsRuntime = (deps) => {
         }
         let reason = '';
         try {
-          reason = JSON.parse(responseBody)?.reason || '';
+          reason = (JSON.parse(responseBody) as { reason?: string } | null)?.reason || '';
         } catch {
           // non-JSON error body
         }
@@ -368,7 +452,7 @@ export const createApnsRuntime = (deps) => {
         resolve();
       });
       req.on('error', (error) => {
-        console.warn('[APNs] request error:', error?.message ?? error);
+        console.warn('[APNs] request error:', (error as ErrorWithMessage)?.message ?? error);
         resolve();
       });
       req.end(body);
@@ -378,7 +462,7 @@ export const createApnsRuntime = (deps) => {
   // each user's server — so users configure nothing. The server just POSTs device tokens +
   // generic text; the relay signs + sends and reports which tokens to drop. Direct mode (below)
   // is the fallback for self-hosters who set OPENCHAMBER_APNS_* and disable the relay.
-  const resolveRelayConfig = () => {
+  const resolveRelayConfig = (): RelayConfig | null => {
     if (trimmedEnv('OPENCHAMBER_PUSH_RELAY_DISABLED') === 'true') return null;
     const url = trimmedEnv('OPENCHAMBER_PUSH_RELAY_URL') || DEFAULT_RELAY_URL;
     const override = (trimmedEnv('OPENCHAMBER_APNS_ENVIRONMENT') || '').toLowerCase();
@@ -391,7 +475,7 @@ export const createApnsRuntime = (deps) => {
     };
   };
 
-  const sendViaRelay = async (deviceTokens, payload, relay, environment) => {
+  const sendViaRelay = async (deviceTokens: string[], payload: ApnsPayload, relay: RelayConfig, environment: string) => {
     const tokens = deviceTokens.slice(0, 100);
     const title = typeof payload?.title === 'string' && payload.title.length > 0 ? payload.title : 'OpenChamber';
     const { privateKey, publicJwk } = await getOrCreateRelayKeypair();
@@ -420,7 +504,7 @@ export const createApnsRuntime = (deps) => {
         console.warn(`[APNs relay] send failed status=${res.status}`);
         return;
       }
-      const data = await res.json().catch(() => null);
+      const data = await res.json().catch(() => null) as { results?: RelaySendResult[] } | null;
       const results = Array.isArray(data?.results) ? data.results : [];
       for (const result of results) {
         if (result && result.drop === true && typeof result.token === 'string') {
@@ -428,11 +512,11 @@ export const createApnsRuntime = (deps) => {
         }
       }
     } catch (error) {
-      console.warn('[APNs relay] request failed:', error?.message ?? error);
+      console.warn('[APNs relay] request failed:', (error as ErrorWithMessage)?.message ?? error);
     }
   };
 
-  const sendViaDirectApns = async (tokenGroups, payload) => {
+  const sendViaDirectApns = async (tokenGroups: Map<string, string[]>, payload: ApnsPayload) => {
     const config = await resolveApnsConfig();
     if (!config) {
       if (!warnedUnconfigured) {
@@ -454,15 +538,15 @@ export const createApnsRuntime = (deps) => {
       const effectiveEnvironment = config.environment ?? environment;
       const host = effectiveEnvironment === 'sandbox' ? APNS_HOST_SANDBOX : APNS_HOST_PRODUCTION;
 
-      let client;
+      let client: NodeHttp2.ClientHttp2Session;
       try {
         client = http2.connect(host);
       } catch (error) {
-        console.warn('[APNs] connect failed:', error?.message ?? error);
+        console.warn('[APNs] connect failed:', (error as ErrorWithMessage)?.message ?? error);
         continue;
       }
 
-      await new Promise((resolve) => {
+      await new Promise<void>((resolve) => {
         let settled = false;
         const finish = () => {
           if (settled) return;
@@ -475,7 +559,7 @@ export const createApnsRuntime = (deps) => {
           resolve();
         };
         client.on('error', (error) => {
-          console.warn('[APNs] session error:', error?.message ?? error);
+          console.warn('[APNs] session error:', (error as ErrorWithMessage)?.message ?? error);
           finish();
         });
         Promise.all(
@@ -490,12 +574,12 @@ export const createApnsRuntime = (deps) => {
   // background push for short responses. Instead we always send, and rely on iOS to NOT
   // display the alert while the app is foreground (presentationOptions: [] in
   // capacitor.config) — so there is no notification when the app is active, with no race.
-  const sendApnsToAllUiSessions = async (payload, _options = {}) => {
+  const sendApnsToAllUiSessions = async (payload: ApnsPayload, _options = {}) => {
     const store = await readTokensFromDisk();
     // Tokens are grouped by their registered APNs environment so each batch goes to the
     // endpoint that actually knows the token (Xcode builds → sandbox, TestFlight/App Store
     // → production). Mixing them gets BadDeviceToken and the token wrongly dropped as dead.
-    const tokensByEnvironment = new Map();
+    const tokensByEnvironment = new Map<string, string[]>();
     const seen = new Set();
     for (const record of Object.values(store.tokensBySession || {})) {
       for (const entry of normalizeTokens(record)) {

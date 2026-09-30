@@ -1,20 +1,94 @@
 import express from 'express';
 import { readTrimmedString } from './parse.js';
+import type * as LinearAuthModule from './auth.js';
+import type { Express, Request } from 'express';
+
+interface ErrorLike {
+  code?: unknown;
+  status?: unknown;
+  origin?: unknown;
+  userError?: unknown;
+  message?: string;
+}
+
+interface LinearIdentity {
+  user: unknown;
+  organization: unknown;
+}
+
+interface AuthorizationResult {
+  accessToken: string;
+  refreshToken?: unknown;
+  tokenType?: unknown;
+  expiresAt?: unknown;
+  scope?: unknown;
+  origin?: string;
+  brokerReceipt?: unknown;
+}
+
+interface ListLinearIssuesInput {
+  query: string;
+  cursor: string;
+  status: string;
+  assignee: string;
+  teamId: string;
+  priority: string;
+}
+
+interface SessionStatusInput {
+  kind?: unknown;
+  sessionId?: unknown;
+  issueIdentifier?: unknown;
+  sessionOrigin?: unknown;
+}
+
+type LinearLibraries = Pick<
+  typeof LinearAuthModule,
+  | 'setLinearAuth'
+  | 'getLinearAuth'
+  | 'getLinearAuthWorkspaces'
+  | 'clearLinearAuth'
+  | 'toLinearPublicStatus'
+  | 'activateLinearAuth'
+  | 'getLinearSessionCommentsEnabled'
+  | 'setLinearSessionCommentsEnabled'
+> & {
+  consumeAuthorizationCallback: (input: { code: string; state: string; error: string; errorDescription: string }) => Promise<AuthorizationResult>;
+  fetchLinearIdentity: (accessToken: string) => Promise<LinearIdentity>;
+  getValidLinearAccessToken: () => Promise<string | null | undefined>;
+  pollAuthorizationBroker: () => Promise<AuthorizationResult | null | undefined>;
+  completeAuthorizationBroker: (receipt: unknown) => Promise<unknown>;
+  startAuthorization: (input: { origin: string }) => Promise<unknown>;
+  revokeToken: (token: string, hint: string) => Promise<unknown>;
+  listLinearIssues: (input: ListLinearIssuesInput) => Promise<unknown>;
+  getLinearIssue: (id: string) => Promise<unknown>;
+  listLinearIssueStates: (teamId: string) => Promise<unknown>;
+  updateLinearIssue: (input: { id: unknown; stateId: unknown }) => Promise<unknown>;
+  listLinearTeams: () => Promise<{ connected?: boolean; teams?: unknown }>;
+  readStoredLinearMapping: () => unknown;
+  setStoredLinearMapping: (body: unknown) => unknown;
+  mergeLinearMappingView: (stored: unknown, teams: unknown) => object;
+  LinearMappingError: new (...args: never[]) => Error & { code?: unknown };
+  postLinearSessionStatus: (input: SessionStatusInput) => Promise<unknown>;
+  LinearSessionStatusError: new (...args: never[]) => Error & { code?: unknown };
+};
+
+type LinearBodyRequest<Body> = Request<Record<string, string>, unknown, Body | null | undefined>;
 
 const PENDING_JSON_LIMIT = '16kb';
 const parseJsonBody = express.json({ limit: PENDING_JSON_LIMIT });
 
-function queryValue(req, key) {
+function queryValue(req: Request, key: string) {
   const raw = req.query?.[key];
   const value = Array.isArray(raw) ? raw[0] : raw;
   return readTrimmedString(value);
 }
 
-function isLinearUserError(error) {
-  return error?.code === 'INVALID' || error?.userError === true;
+function isLinearUserError(error: unknown) {
+  return (error as ErrorLike | null | undefined)?.code === 'INVALID' || (error as ErrorLike | null | undefined)?.userError === true;
 }
 
-function escapeHtml(value) {
+function escapeHtml(value: string) {
   return String(value)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -23,7 +97,7 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
-function renderLinearOAuthCallbackPage({ title, message, desktopReturn }) {
+function renderLinearOAuthCallbackPage({ title, message, desktopReturn }: { title: string; message: string; desktopReturn: boolean }) {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -53,10 +127,10 @@ ${desktopReturn ? `<a class="return" href="openchamber://focus/linear-auth">Retu
 </html>`;
 }
 
-async function storeAuthorizationResult(libraries, result) {
+async function storeAuthorizationResult(libraries: LinearLibraries, result: AuthorizationResult) {
   const { setLinearAuth, fetchLinearIdentity } = libraries;
-  let user = null;
-  let organization = null;
+  let user: unknown = null;
+  let organization: unknown = null;
   try {
     const identity = await fetchLinearIdentity(result.accessToken);
     user = identity.user;
@@ -75,8 +149,8 @@ async function storeAuthorizationResult(libraries, result) {
   });
 }
 
-export function registerLinearRoutes(app) {
-  let linearLibraries = null;
+export function registerLinearRoutes(app: Express) {
+  let linearLibraries: LinearLibraries | null = null;
   const getLinearLibraries = async () => {
     if (!linearLibraries) {
       linearLibraries = await import('./index.js');
@@ -85,7 +159,7 @@ export function registerLinearRoutes(app) {
   };
 
   app.get('/linear/oauth/callback', async (req, res) => {
-    const finish = (status, { title, message, desktopReturn = false }) => {
+    const finish = (status: number, { title, message, desktopReturn = false }: { title: string; message: string; desktopReturn?: boolean }) => {
       res.status(status).type('html').send(renderLinearOAuthCallbackPage({ title, message, desktopReturn }));
     };
 
@@ -107,14 +181,14 @@ export function registerLinearRoutes(app) {
         desktopReturn: result.origin === 'desktop',
       });
     } catch (error) {
-      const code = error instanceof Error ? error.code : '';
+      const code = error instanceof Error ? (error as ErrorLike).code : '';
       const status = code === 'UNKNOWN_STATE' || code === 'MISSING_CODE' || code === 'ACCESS_DENIED'
         ? 400
         : 502;
       return finish(status, {
         title: 'Authorization Failed',
         message: error instanceof Error ? error.message : 'Linear authorization failed. Return to OpenChamber and click Connect again.',
-        desktopReturn: error?.origin === 'desktop',
+        desktopReturn: (error as ErrorLike | null | undefined)?.origin === 'desktop',
       });
     }
   });
@@ -138,7 +212,7 @@ export function registerLinearRoutes(app) {
         const result = await pollAuthorizationBroker();
         if (result) {
           await storeAuthorizationResult(libraries, result);
-          await completeAuthorizationBroker(result.brokerReceipt).catch((error) => {
+          await completeAuthorizationBroker(result.brokerReceipt).catch((error: unknown) => {
             console.warn('Failed to acknowledge Linear authorization broker result:', error);
           });
         }
@@ -166,7 +240,7 @@ export function registerLinearRoutes(app) {
         }, { activate: false });
         return res.json(toLinearPublicStatus(next, getLinearAuthWorkspaces()));
       } catch (error) {
-        if (error?.status === 401) {
+        if ((error as ErrorLike | null | undefined)?.status === 401) {
           clearLinearAuth(auth?.workspaceId);
           const remaining = getLinearAuth();
           if (!remaining) {
@@ -181,20 +255,20 @@ export function registerLinearRoutes(app) {
       }
     } catch (error) {
       console.error('Failed to get Linear auth status:', error);
-      return res.status(500).json({ error: error.message || 'Failed to get Linear auth status' });
+      return res.status(500).json({ error: (error as ErrorLike).message || 'Failed to get Linear auth status' });
     }
   });
 
-  app.post('/api/linear/auth/start', parseJsonBody, async (req, res) => {
+  app.post('/api/linear/auth/start', parseJsonBody, async (req: LinearBodyRequest<{ origin?: unknown }>, res) => {
     try {
       const { startAuthorization } = await getLinearLibraries();
       const origin = req.body?.origin === 'desktop' ? 'desktop' : 'web';
       const payload = await startAuthorization({ origin });
       return res.json(payload);
     } catch (error) {
-      const status = error?.code === 'LINEAR_CLIENT_ID_MISSING' ? 400 : 500;
+      const status = (error as ErrorLike | null | undefined)?.code === 'LINEAR_CLIENT_ID_MISSING' ? 400 : 500;
       console.error('Failed to start Linear authorization:', error);
-      return res.status(status).json({ error: error.message || 'Failed to start Linear authorization' });
+      return res.status(status).json({ error: (error as ErrorLike).message || 'Failed to start Linear authorization' });
     }
   });
 
@@ -212,7 +286,7 @@ export function registerLinearRoutes(app) {
       return res.json(result);
     } catch (error) {
       console.error('Failed to list Linear issues:', error);
-      return res.status(500).json({ error: error.message || 'Failed to list Linear issues' });
+      return res.status(500).json({ error: (error as ErrorLike).message || 'Failed to list Linear issues' });
     }
   });
 
@@ -227,7 +301,7 @@ export function registerLinearRoutes(app) {
       return res.json(result);
     } catch (error) {
       console.error('Failed to load Linear issue:', error);
-      return res.status(500).json({ error: error.message || 'Failed to load Linear issue' });
+      return res.status(500).json({ error: (error as ErrorLike).message || 'Failed to load Linear issue' });
     }
   });
 
@@ -242,14 +316,14 @@ export function registerLinearRoutes(app) {
       return res.json(result);
     } catch (error) {
       if (isLinearUserError(error)) {
-        return res.status(400).json({ error: error.message });
+        return res.status(400).json({ error: (error as ErrorLike).message });
       }
       console.error('Failed to load Linear workflow states:', error);
-      return res.status(500).json({ error: error.message || 'Failed to load Linear workflow states' });
+      return res.status(500).json({ error: (error as ErrorLike).message || 'Failed to load Linear workflow states' });
     }
   });
 
-  app.post('/api/linear/issues/update', parseJsonBody, async (req, res) => {
+  app.post('/api/linear/issues/update', parseJsonBody, async (req: LinearBodyRequest<{ id?: unknown; stateId?: unknown }>, res) => {
     try {
       const { updateLinearIssue } = await getLinearLibraries();
       const result = await updateLinearIssue({
@@ -259,10 +333,10 @@ export function registerLinearRoutes(app) {
       return res.json(result);
     } catch (error) {
       if (isLinearUserError(error)) {
-        return res.status(400).json({ error: error.message });
+        return res.status(400).json({ error: (error as ErrorLike).message });
       }
       console.error('Failed to update Linear issue:', error);
-      return res.status(500).json({ error: error.message || 'Failed to update Linear issue' });
+      return res.status(500).json({ error: (error as ErrorLike).message || 'Failed to update Linear issue' });
     }
   });
 
@@ -283,7 +357,7 @@ export function registerLinearRoutes(app) {
         stored = readStoredLinearMapping();
       } catch (error) {
         if (error instanceof LinearMappingError && error.code === 'MALFORMED') {
-          return res.status(500).json({ error: error.message });
+          return res.status(500).json({ error: (error as ErrorLike).message });
         }
         throw error;
       }
@@ -293,11 +367,11 @@ export function registerLinearRoutes(app) {
       });
     } catch (error) {
       console.error('Failed to load Linear mapping:', error);
-      return res.status(500).json({ error: error.message || 'Failed to load Linear mapping' });
+      return res.status(500).json({ error: (error as ErrorLike).message || 'Failed to load Linear mapping' });
     }
   });
 
-  app.put('/api/linear/mapping', parseJsonBody, async (req, res) => {
+  app.put('/api/linear/mapping', parseJsonBody, async (req: LinearBodyRequest<unknown>, res) => {
     try {
       const {
         getValidLinearAccessToken,
@@ -315,7 +389,7 @@ export function registerLinearRoutes(app) {
         stored = setStoredLinearMapping(req.body);
       } catch (error) {
         if (error instanceof LinearMappingError && error.code === 'INVALID') {
-          return res.status(400).json({ error: error.message });
+          return res.status(400).json({ error: (error as ErrorLike).message });
         }
         throw error;
       }
@@ -332,11 +406,11 @@ export function registerLinearRoutes(app) {
       });
     } catch (error) {
       console.error('Failed to save Linear mapping:', error);
-      return res.status(500).json({ error: error.message || 'Failed to save Linear mapping' });
+      return res.status(500).json({ error: (error as ErrorLike).message || 'Failed to save Linear mapping' });
     }
   });
 
-  app.post('/api/linear/session-status', parseJsonBody, async (req, res) => {
+  app.post('/api/linear/session-status', parseJsonBody, async (req: LinearBodyRequest<SessionStatusInput>, res) => {
     try {
       const { postLinearSessionStatus, LinearSessionStatusError } = await getLinearLibraries();
       try {
@@ -349,16 +423,16 @@ export function registerLinearRoutes(app) {
         return res.json(result);
       } catch (error) {
         if (error instanceof LinearSessionStatusError && error.code === 'INVALID') {
-          return res.status(400).json({ error: error.message });
+          return res.status(400).json({ error: (error as ErrorLike).message });
         }
         if (error instanceof LinearSessionStatusError && error.code === 'MALFORMED') {
-          return res.status(500).json({ error: error.message });
+          return res.status(500).json({ error: (error as ErrorLike).message });
         }
         throw error;
       }
     } catch (error) {
       console.error('Failed to post Linear session status:', error);
-      return res.status(500).json({ error: error.message || 'Failed to post Linear session status' });
+      return res.status(500).json({ error: (error as ErrorLike).message || 'Failed to post Linear session status' });
     }
   });
 
@@ -368,11 +442,11 @@ export function registerLinearRoutes(app) {
       return res.json({ sessionComments: getLinearSessionCommentsEnabled() });
     } catch (error) {
       console.error('Failed to load Linear preferences:', error);
-      return res.status(500).json({ error: error.message || 'Failed to load Linear preferences' });
+      return res.status(500).json({ error: (error as ErrorLike).message || 'Failed to load Linear preferences' });
     }
   });
 
-  app.put('/api/linear/preferences', parseJsonBody, async (req, res) => {
+  app.put('/api/linear/preferences', parseJsonBody, async (req: LinearBodyRequest<{ sessionComments?: unknown }>, res) => {
     try {
       const sessionComments = req.body?.sessionComments;
       if (sessionComments !== true && sessionComments !== false) {
@@ -382,11 +456,11 @@ export function registerLinearRoutes(app) {
       return res.json({ sessionComments: setLinearSessionCommentsEnabled(sessionComments) });
     } catch (error) {
       console.error('Failed to save Linear preferences:', error);
-      return res.status(500).json({ error: error.message || 'Failed to save Linear preferences' });
+      return res.status(500).json({ error: (error as ErrorLike).message || 'Failed to save Linear preferences' });
     }
   });
 
-  app.post('/api/linear/auth/activate', parseJsonBody, async (req, res) => {
+  app.post('/api/linear/auth/activate', parseJsonBody, async (req: LinearBodyRequest<{ organizationId?: unknown }>, res) => {
     try {
       const {
         activateLinearAuth,
@@ -409,7 +483,7 @@ export function registerLinearRoutes(app) {
       return res.json(toLinearPublicStatus(auth, getLinearAuthWorkspaces()));
     } catch (error) {
       console.error('Failed to switch Linear workspace:', error);
-      return res.status(500).json({ error: error.message || 'Failed to switch Linear workspace' });
+      return res.status(500).json({ error: (error as ErrorLike).message || 'Failed to switch Linear workspace' });
     }
   });
 
@@ -426,7 +500,7 @@ export function registerLinearRoutes(app) {
       return res.json({ success: true, removed });
     } catch (error) {
       console.error('Failed to disconnect Linear:', error);
-      return res.status(500).json({ error: error.message || 'Failed to disconnect Linear' });
+      return res.status(500).json({ error: (error as ErrorLike).message || 'Failed to disconnect Linear' });
     }
   });
 }

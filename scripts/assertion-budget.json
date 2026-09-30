@@ -325,8 +325,17 @@
   "packages/web/server/lib/inherited-env.ts": {
     "require('bun:ffi') as BunFfi": 1
   },
+  "packages/web/server/lib/linear/auth.ts": {
+    "list[writtenIndex]!": 1,
+    "remaining[0]!": 1,
+    "source.map((entry) => normalizeAuthEntry(entry)).filter(Boolean) as LinearAuthEntry[]": 1
+  },
   "packages/web/server/lib/linear/parse.ts": {
     "value as number": 1
+  },
+  "packages/web/server/lib/linear/routes.ts": {
+    "error as ErrorLike": 20,
+    "error as ErrorLike | null | undefined": 5
   },
   "packages/web/server/lib/magic-prompts/runtime.ts": {
     "JSON.parse(raw) as { overrides?: unknown } | null": 1,
@@ -335,6 +344,32 @@
   "packages/web/server/lib/network-defaults.test.ts": {
     "{ setDefaultAutoSelectFamily, setDefaultAutoSelectFamilyAttemptTimeout } as Pick<typeof net, 'setDefaultAutoSelectFamily' | 'setDefaultAutoSelectFamilyAttemptTimeout'>": 1,
     "{} as Pick<typeof net, 'setDefaultAutoSelectFamilyAttemptTimeout'>": 1
+  },
+  "packages/web/server/lib/notifications/apns-runtime.ts": {
+    "JSON.parse(raw) as { version?: unknown; tokensBySession?: Record<string, unknown> } | null": 1,
+    "JSON.parse(responseBody) as { reason?: string } | null": 1,
+    "await res.json().catch(() => null) as { results?: RelaySendResult[] } | null": 1,
+    "error as ErrorWithMessage": 7,
+    "error as { code?: unknown }": 1,
+    "record .map((entry: RawTokenEntry | null | undefined) => { if (!entry || typeof entry !== 'object') return null; const deviceToken = entry.deviceToken; if (typeof deviceToken !== 'string' || deviceToken.trim().length === 0) return null; return { deviceToken: deviceToken.trim(), createdAt: typeof entry.createdAt === 'number' ? entry.createdAt : null, lastSeenAt: typeof entry.lastSeenAt === 'number' ? entry.lastSeenAt : null, userAgent: typeof entry.userAgent === 'string' ? entry.userAgent : undefined, // 'ios' (APNs) or 'android' (FCM). Older entries without one are APNs by default. platform: entry.platform === 'android' ? 'android' : 'ios', // APNs delivery environment for this token. Xcode/dev-signed installs produce // sandbox tokens, TestFlight/App Store produce production ones; the client reports // which at registration. Older entries without one default to production (matches // released builds). environment: entry.environment === 'sandbox' ? 'sandbox' : 'production', }; }) .filter(Boolean) as ApnsTokenEntry[]": 1
+  },
+  "packages/web/server/lib/notifications/emit-route.test.ts": {
+    "always.delivered[0]!": 1,
+    "delivered[0]!": 1,
+    "focused.delivered[0]!": 1
+  },
+  "packages/web/server/lib/notifications/emitter-runtime.test.ts": {
+    "broadcastGlobalUiEvent.mock.calls[0]!": 1,
+    "envelope.properties as { sessionId: string }": 1
+  },
+  "packages/web/server/lib/notifications/runtime.ts": {
+    "assistantStepMeta.keys().next().value!": 1,
+    "data.type as string": 1,
+    "error as ErrorWithMessage": 6,
+    "lastAssistantStepBySession.keys().next().value!": 1,
+    "tokens[i]!": 1,
+    "unwrapOpenCodeResponse(await response.json().catch(() => null)) as TriggerInfo | null | undefined": 1,
+    "unwrapOpenCodeResponse(await response.json().catch(() => null)) as { title?: unknown } | null | undefined": 1
   },
   "packages/web/server/lib/openchamber-control/actions.ts": {
     "toolName as string": 1
@@ -496,11 +531,21 @@
     "patch.setupWorktreeMode as SetupWorktreeMode": 1,
     "value.trustedAt as number": 1
   },
+  "packages/web/server/lib/quota/credentials/providers.ts": {
+    "readQuotaCredential(providerId, normalize) as Record<string, string> | null": 1
+  },
+  "packages/web/server/lib/quota/providers/claude/transforms.test.ts": {
+    "toClaudeUsage(LIVE_PAYLOAD) as ClaudeUsageView": 3,
+    "toClaudeUsage({ five_hour: LIVE_PAYLOAD.five_hour, seven_day: LIVE_PAYLOAD.seven_day }) as ClaudeUsageView": 1
+  },
   "packages/web/server/lib/quota/providers/claude/transforms.ts": {
     "{ usedPercent: percent, windowSeconds, resetAt, valueLabel } as Parameters<typeof toUsageWindow>[0]": 1
   },
   "packages/web/server/lib/quota/providers/google/api.ts": {
     "await response.json() as { access_token?: unknown } | null": 1
+  },
+  "packages/web/server/lib/quota/utils/formatters.test.ts": {
+    "undefined as never": 1
   },
   "packages/web/server/lib/quota/utils/transformers.ts": {
     "value as Record<string, unknown>": 1

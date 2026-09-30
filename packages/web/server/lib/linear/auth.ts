@@ -3,6 +3,46 @@ import path from 'path';
 import os from 'os';
 import { isPlainObject, readEnv, readFiniteNumber, readTrimmedString } from './parse.js';
 
+interface LinearUser {
+  id: string;
+  name: string | null;
+  displayName: string | null;
+  email: string | null;
+  avatarUrl: string | null;
+}
+
+interface LinearOrganization {
+  id: string;
+  name: string;
+  urlKey: string | null;
+}
+
+export interface LinearAuthEntry {
+  accessToken: string;
+  refreshToken: string | null;
+  tokenType: string;
+  expiresAt: number | null;
+  scope: string;
+  createdAt: number | null;
+  authorizedAt: number | null;
+  user: LinearUser | null;
+  organization: LinearOrganization | null;
+  current: boolean;
+  workspaceId: string;
+}
+
+export interface LinearAuthInput {
+  accessToken?: unknown;
+  refreshToken?: unknown;
+  tokenType?: unknown;
+  expiresAt?: unknown;
+  scope?: unknown;
+  authorizedAt?: unknown;
+  user?: unknown;
+  organization?: unknown;
+  workspaceId?: unknown;
+}
+
 const DEFAULT_LINEAR_CLIENT_ID = '91bbe26a69a2c8568d3683f1e01e776c';
 const DEFAULT_LINEAR_SCOPES = 'read,write,comments:create';
 const DEFAULT_LINEAR_BROKER_URL = 'https://api.openchamber.dev/v1/oauth/linear';
@@ -33,7 +73,7 @@ function ensureStorageDir() {
   }
 }
 
-function readJsonFile(filePath) {
+function readJsonFile(filePath: string) {
   if (!fs.existsSync(filePath)) {
     return null;
   }
@@ -43,7 +83,7 @@ function readJsonFile(filePath) {
     if (!trimmed) {
       return null;
     }
-    const parsed = JSON.parse(trimmed);
+    const parsed: unknown = JSON.parse(trimmed);
     if (!isPlainObject(parsed)) {
       return null;
     }
@@ -54,7 +94,7 @@ function readJsonFile(filePath) {
   }
 }
 
-function writeJsonFile(filePath, payload) {
+function writeJsonFile(filePath: string, payload: unknown) {
   ensureStorageDir();
   const tmpFile = `${filePath}.${process.pid}.${Date.now()}.tmp`;
   fs.writeFileSync(tmpFile, JSON.stringify(payload, null, 2), 'utf8');
@@ -71,7 +111,7 @@ function writeJsonFile(filePath, payload) {
   }
 }
 
-function normalizeUser(user) {
+function normalizeUser(user: unknown) {
   if (!isPlainObject(user)) {
     return null;
   }
@@ -88,7 +128,7 @@ function normalizeUser(user) {
   };
 }
 
-function normalizeOrganization(organization) {
+function normalizeOrganization(organization: unknown) {
   if (!isPlainObject(organization)) {
     return null;
   }
@@ -104,7 +144,7 @@ function normalizeOrganization(organization) {
   };
 }
 
-function resolveLinearWorkspaceId({ organization, user, workspaceId } = {}) {
+function resolveLinearWorkspaceId({ organization, user, workspaceId }: { organization?: LinearOrganization | null; user?: LinearUser | null; workspaceId?: unknown } = {}) {
   const explicit = readTrimmedString(workspaceId);
   if (explicit) return explicit;
   const organizationId = organization ? readTrimmedString(organization.id) : '';
@@ -114,7 +154,7 @@ function resolveLinearWorkspaceId({ organization, user, workspaceId } = {}) {
   return LEGACY_WORKSPACE_ID;
 }
 
-function normalizeAuthEntry(raw) {
+function normalizeAuthEntry(raw: unknown) {
   if (!isPlainObject(raw)) {
     return null;
   }
@@ -143,11 +183,11 @@ function normalizeAuthEntry(raw) {
   };
 }
 
-function normalizeAuthList(raw) {
+function normalizeAuthList(raw: Record<string, unknown> | null | undefined) {
   const source = Array.isArray(raw?.workspaces)
     ? raw.workspaces
     : (raw?.accessToken ? [raw] : []);
-  const list = source.map((entry) => normalizeAuthEntry(entry)).filter(Boolean);
+  const list = source.map((entry) => normalizeAuthEntry(entry)).filter(Boolean) as LinearAuthEntry[];
 
   if (!list.length) {
     return { list: [], changed: Boolean(raw && (raw.accessToken || Array.isArray(raw.workspaces))) };
@@ -155,7 +195,7 @@ function normalizeAuthList(raw) {
 
   let changed = Array.isArray(raw?.workspaces) === false && Boolean(raw?.accessToken);
   const seen = new Set();
-  const deduped = [];
+  const deduped: LinearAuthEntry[] = [];
   for (const entry of list) {
     if (seen.has(entry.workspaceId)) {
       changed = true;
@@ -195,7 +235,7 @@ function readAuthList() {
   return list;
 }
 
-function writeAuthList(list) {
+function writeAuthList(list: LinearAuthEntry[]) {
   if (!list.length) {
     const filePath = storageFile();
     if (fs.existsSync(filePath)) {
@@ -210,11 +250,11 @@ function readSettings() {
   return readJsonFile(settingsFile()) || {};
 }
 
-function writeSettings(settings) {
+function writeSettings(settings: Record<string, unknown>) {
   writeJsonFile(settingsFile(), settings);
 }
 
-function readSettingString(key) {
+function readSettingString(key: string) {
   const stored = readSettings()[key];
   return readTrimmedString(stored);
 }
@@ -227,7 +267,7 @@ export function getLinearAuth() {
   return list.find((entry) => entry.current) || list[0];
 }
 
-export function getLinearAuthByWorkspaceId(workspaceId) {
+export function getLinearAuthByWorkspaceId(workspaceId: unknown) {
   const id = readTrimmedString(workspaceId);
   if (!id) {
     return getLinearAuth();
@@ -246,7 +286,7 @@ export function getLinearAuthWorkspaces() {
   }));
 }
 
-export function setLinearAuth(input, options = {}) {
+export function setLinearAuth(input: LinearAuthInput, options: { activate?: boolean } = {}) {
   const accessToken = readTrimmedString(input?.accessToken);
   if (!accessToken) {
     throw new Error('accessToken is required');
@@ -306,14 +346,14 @@ export function setLinearAuth(input, options = {}) {
       entry.current = index === writtenIndex;
     });
   } else {
-    list[writtenIndex].current = wasCurrent;
+    list[writtenIndex]!.current = wasCurrent;
   }
 
   writeAuthList(list);
   return list[writtenIndex];
 }
 
-export function activateLinearAuth(workspaceId) {
+export function activateLinearAuth(workspaceId: unknown) {
   const id = readTrimmedString(workspaceId);
   if (!id) {
     return false;
@@ -330,7 +370,7 @@ export function activateLinearAuth(workspaceId) {
   return true;
 }
 
-export function clearLinearAuth(workspaceId) {
+export function clearLinearAuth(workspaceId?: unknown) {
   try {
     const list = readAuthList();
     if (!list.length) {
@@ -345,7 +385,7 @@ export function clearLinearAuth(workspaceId) {
       return true;
     }
     if (!remaining.some((entry) => entry.current)) {
-      remaining[0].current = true;
+      remaining[0]!.current = true;
     }
     writeAuthList(remaining);
     return true;
@@ -355,7 +395,7 @@ export function clearLinearAuth(workspaceId) {
   }
 }
 
-export function isLinearAccessTokenStale(expiresAt, now = Date.now()) {
+export function isLinearAccessTokenStale(expiresAt: unknown, now = Date.now()) {
   const expiry = readFiniteNumber(expiresAt);
   if (expiry == null) {
     return true;
@@ -363,7 +403,7 @@ export function isLinearAccessTokenStale(expiresAt, now = Date.now()) {
   return expiry - ACCESS_TOKEN_REFRESH_SKEW_MS <= now;
 }
 
-export function toLinearPublicStatus(auth, workspaces = getLinearAuthWorkspaces()) {
+export function toLinearPublicStatus(auth: LinearAuthEntry | null | undefined, workspaces = getLinearAuthWorkspaces()) {
   if (!auth?.accessToken) {
     return { connected: false };
   }
@@ -422,7 +462,7 @@ export function getLinearSessionCommentsEnabled() {
   return readSettings()[SESSION_COMMENTS_SETTING_KEY] === true;
 }
 
-export function setLinearSessionCommentsEnabled(enabled) {
+export function setLinearSessionCommentsEnabled(enabled: unknown) {
   const next = enabled === true;
   const settings = readSettings();
   settings[SESSION_COMMENTS_SETTING_KEY] = next;

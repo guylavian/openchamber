@@ -350,12 +350,116 @@
         "reason": "The JavaScript's own delete of a computed key on a plain record; the fix would rebuild the object or use a Map, which changes the runtime."
       }
     ],
+    "packages/web/server/lib/linear/auth.ts": [
+      {
+        "rule": "@typescript-eslint/no-unnecessary-boolean-literal-compare",
+        "text": "let changed = Array.isArray(raw?.workspaces) === false && Boolean(raw?.accessToken);",
+        "count": 1,
+        "reason": "The JavaScript's own === false comparison; removing it changes emitted code."
+      },
+      {
+        "rule": "@typescript-eslint/no-unnecessary-type-conversion",
+        "text": "current: Boolean(entry.current),",
+        "count": 1,
+        "reason": "The JavaScript's own Boolean()/String() conversion; removing it changes emitted code."
+      }
+    ],
+    "packages/web/server/lib/linear/routes.ts": [
+      {
+        "rule": "@typescript-eslint/no-unnecessary-type-conversion",
+        "text": "return String(value)",
+        "count": 1,
+        "reason": "The JavaScript's own Boolean()/String() conversion; removing it changes emitted code."
+      }
+    ],
     "packages/web/server/lib/magic-prompts/runtime.ts": [
       {
         "rule": "@typescript-eslint/no-dynamic-delete",
         "text": "delete nextOverrides[normalizedId];",
         "count": 1,
         "reason": "The JavaScript deletes a dynamic key from its copied overrides map; replacing the delete would change the emitted code."
+      }
+    ],
+    "packages/web/server/lib/notifications/apns-runtime.ts": [
+      {
+        "rule": "@typescript-eslint/no-dynamic-delete",
+        "text": "if (filtered.length === 0) delete tokensBySession[session];",
+        "count": 1,
+        "reason": "The JavaScript's own delete obj[key]; the fix replaces it."
+      },
+      {
+        "rule": "@typescript-eslint/no-dynamic-delete",
+        "text": "if (filtered.length === 0) delete tokensBySession[uiSessionToken];",
+        "count": 1,
+        "reason": "The JavaScript's own delete obj[key]; the fix replaces it."
+      },
+      {
+        "rule": "@typescript-eslint/no-floating-promises",
+        "text": "Promise.all( deviceTokens.map((token) => sendOne(client, token, body, jwt, sendConfig)), ).finally(finish);",
+        "count": 1,
+        "reason": "The JavaScript's fire-and-forget Promise.all(...).finally(); adding void/await changes emitted code."
+      },
+      {
+        "rule": "@typescript-eslint/no-misused-promises",
+        "text": "async () => { if (status === 200) { resolve(); return; } let reason = ''; try { reason = (JSON.parse(responseBody) as { reason?: string } | null)?.reason || ''; } catch { // non-JSON error body } if (status === 410 || DEAD_TOKEN_REASONS.has(reason)) { await removeApnsTokenFromAllSessions(deviceToken); } else { console.warn(`[APNs] push failed status=${status} reason=${reason || 'unknown'}`); } resolve(); }",
+        "count": 1,
+        "reason": "The JavaScript passes an async callback where a void callback is expected (event handler/timer); wrapping it changes emitted code."
+      },
+      {
+        "rule": "@typescript-eslint/no-unused-vars",
+        "text": "const sendApnsToAllUiSessions = async (payload: ApnsPayload, _options = {}) => {",
+        "count": 1,
+        "reason": "The JavaScript's own unused _options parameter; removing it changes Function.length."
+      }
+    ],
+    "packages/web/server/lib/notifications/runtime.ts": [
+      {
+        "rule": "@typescript-eslint/no-base-to-string",
+        "text": "? String(payload.properties.resources[0] ?? '').trim()",
+        "count": 1,
+        "reason": "The JavaScript's own String()/join over unknown-typed values; the fix would change stringification."
+      },
+      {
+        "rule": "@typescript-eslint/no-base-to-string",
+        "text": "const agent = String(info.agent ?? info.mode ?? '');",
+        "count": 1,
+        "reason": "The JavaScript's own String()/join over unknown-typed values; the fix would change stringification."
+      },
+      {
+        "rule": "@typescript-eslint/no-base-to-string",
+        "text": "const id = String(info.id ?? '');",
+        "count": 1,
+        "reason": "The JavaScript's own String()/join over unknown-typed values; the fix would change stringification."
+      },
+      {
+        "rule": "@typescript-eslint/no-base-to-string",
+        "text": "const modelID = String(info.modelID ?? '');",
+        "count": 1,
+        "reason": "The JavaScript's own String()/join over unknown-typed values; the fix would change stringification."
+      },
+      {
+        "rule": "@typescript-eslint/no-base-to-string",
+        "text": "const remembered = info ? assistantStepMeta.get(String(info.id ?? '')) : undefined;",
+        "count": 1,
+        "reason": "The JavaScript's own String()/join over unknown-typed values; the fix would change stringification."
+      },
+      {
+        "rule": "@typescript-eslint/no-base-to-string",
+        "text": "const sessionId = String(info.sessionID ?? '');",
+        "count": 1,
+        "reason": "The JavaScript's own String()/join over unknown-typed values; the fix would change stringification."
+      },
+      {
+        "rule": "@typescript-eslint/no-misused-promises",
+        "text": "async () => { pushPermissionDebounceTimers.delete(sessionId); if (await (getIsSessionAutoAccepting?.(sessionId, notificationDirectory, requestId) ?? isSessionAutoAccepting(sessionId, notificationDirectory))) { if (requestKey) notifiedPermissionRequests.add(requestKey); return; } const settings = await readSettingsFromDisk(); if (settings.notifyOnQuestion === false) { return; } if (settings.notificationMode !== 'always' && getIsWindowFocused?.()) { return; } const sessionTitle = payload.properties?.sessionTitle; const permissionText = typeof permission === 'string' && permission.length > 0 ? permission : ''; const fallbackMessage = typeof sessionTitle === 'string' && sessionTitle.trim().length > 0 ? sessionTitle.trim() : permissionText || 'Agent is waiting for your approval'; let title = 'Permission required'; let body = fallbackMessage; let sessionName = ''; try { const variables = await buildTemplateVariables(payload, sessionId); sessionName = typeof variables.session_name === 'string' ? variables.session_name : sessionName; variables.last_message = fallbackMessage; const templates = settings.notificationTemplates || {}; const questionTemplate = templates.question || { title: 'Permission required', message: '{last_message}' }; const resolvedTitle = resolveNotificationTemplate(questionTemplate.title, variables); const resolvedBody = resolveNotificationTemplate(questionTemplate.message, variables); if (resolvedTitle) title = resolvedTitle; if (shouldApplyResolvedTemplateMessage(questionTemplate.message, resolvedBody, variables)) body = resolvedBody; } catch (error) { console.warn('[Notification] Permission template resolution failed, using defaults:', (error as ErrorWithMessage)?.message || error); } if (settings.nativeNotificationsEnabled) { const notificationPayload = { kind: 'permission', title, body, tag: requestKey ? `permission-${requestKey}` : `permission-${sessionId}`, sessionId, directory: notificationDirectory, requireHidden: settings.notificationMode !== 'always', }; const desktopNotificationDelivered = emitDesktopNotification(notificationPayload); broadcastUiNotification(notificationPayload, { desktopNotificationDelivered }); } if (requestKey) { notifiedPermissionRequests.add(requestKey); } void fanoutPush( { title, body, tag: `permission-${sessionId}`, data: { url: buildSessionDeepLinkUrl(sessionId), sessionId, sessionName, type: 'permission', }, }, { requireNoSse: true }, ); }",
+        "count": 1,
+        "reason": "The JavaScript passes an async callback where a void callback is expected (event handler/timer); wrapping it changes emitted code."
+      },
+      {
+        "rule": "@typescript-eslint/no-misused-promises",
+        "text": "async () => { pushQuestionDebounceTimers.delete(sessionId); const settings = await readSettingsFromDisk(); if (settings.notifyOnQuestion === false) { return; } if (settings.notificationMode !== 'always' && getIsWindowFocused?.()) { return; } // v2 replaced questions with forms: the form's title is the ask, and // the first field carries the detail a question used to put in its body. const form = payload.properties?.form; const header = typeof form?.title === 'string' ? form.title.trim() : ''; const firstField = Array.isArray(form?.fields) ? form.fields[0] : null; const fieldTitle = typeof firstField?.title === 'string' ? firstField.title.trim() : ''; const fieldDescription = typeof firstField?.description === 'string' ? firstField.description.trim() : ''; const questionText = fieldDescription || fieldTitle; let title = /plan\\s*mode/i.test(header) ? 'Switch to plan mode' : /build\\s*agent/i.test(header) ? 'Switch to build mode' : header || 'Input needed'; let body = questionText || 'Agent is waiting for your response'; let sessionName = ''; try { const variables = await buildTemplateVariables(payload, sessionId); sessionName = typeof variables.session_name === 'string' ? variables.session_name : sessionName; variables.last_message = questionText || header || ''; const templates = settings.notificationTemplates || {}; const questionTemplate = templates.question || { title: 'Input needed', message: '{last_message}' }; const resolvedTitle = resolveNotificationTemplate(questionTemplate.title, variables); const resolvedBody = resolveNotificationTemplate(questionTemplate.message, variables); if (resolvedTitle) title = resolvedTitle; if (shouldApplyResolvedTemplateMessage(questionTemplate.message, resolvedBody, variables)) body = resolvedBody; } catch (error) { console.warn('[Notification] Question template resolution failed, using defaults:', (error as ErrorWithMessage)?.message || error); } if (settings.nativeNotificationsEnabled) { const notificationPayload = { kind: 'question', title, body, tag: `question-${sessionId}`, sessionId, directory: notificationDirectory, requireHidden: settings.notificationMode !== 'always', }; const desktopNotificationDelivered = emitDesktopNotification(notificationPayload); broadcastUiNotification(notificationPayload, { desktopNotificationDelivered }); } void fanoutPush( { title, body, tag: `question-${sessionId}`, data: { url: buildSessionDeepLinkUrl(sessionId), sessionId, sessionName, type: 'question', }, }, { requireNoSse: true }, ); }",
+        "count": 1,
+        "reason": "The JavaScript passes an async callback where a void callback is expected (event handler/timer); wrapping it changes emitted code."
       }
     ],
     "packages/web/server/lib/openchamber-control/screenshots.ts": [

@@ -1,8 +1,134 @@
 import { unwrapOpenCodeResponse } from '../opencode/response-envelope.js';
 import { createSessionActivityProbe } from '../opencode/session-activity.js';
 
+interface NotificationTemplate {
+  title: string;
+  message: string;
+}
 
-export const createNotificationTriggerRuntime = (deps) => {
+interface NotificationTemplates {
+  subtask?: NotificationTemplate;
+  completion?: NotificationTemplate;
+  error?: NotificationTemplate;
+  question?: NotificationTemplate;
+}
+
+interface NotificationSettings {
+  notifyOnSubtasks?: boolean;
+  notifyOnCompletion?: boolean;
+  notifyOnError?: boolean;
+  notifyOnQuestion?: boolean;
+  notificationMode?: string;
+  nativeNotificationsEnabled?: boolean;
+  notificationTemplates?: NotificationTemplates;
+}
+
+interface TriggerInfo {
+  id?: unknown;
+  sessionID?: unknown;
+  sessionId?: unknown;
+  directory?: unknown;
+  parentID?: unknown;
+  role?: unknown;
+  agent?: unknown;
+  mode?: unknown;
+  modelID?: unknown;
+  finish?: unknown;
+  parts?: unknown;
+}
+
+interface FormField {
+  title?: unknown;
+  description?: unknown;
+}
+
+interface TriggerForm {
+  title?: unknown;
+  fields?: FormField[];
+}
+
+interface TriggerProperties {
+  aborted?: unknown;
+  error?: { message?: unknown } | null;
+  turnEnded?: boolean;
+  info?: TriggerInfo | null;
+  form?: TriggerForm | null;
+  requestID?: unknown;
+  requestId?: unknown;
+  id?: unknown;
+  action?: unknown;
+  resources?: unknown[];
+  message?: unknown;
+  sessionTitle?: unknown;
+  directory?: unknown;
+  sessionID?: unknown;
+  sessionId?: unknown;
+  session?: unknown;
+}
+
+export interface TriggerEventPayload {
+  type?: string;
+  properties?: TriggerProperties;
+}
+
+interface PushData {
+  sessionName?: unknown;
+  sessionId?: unknown;
+  type?: string;
+  url?: string;
+}
+
+interface PushPayload {
+  title?: unknown;
+  body?: unknown;
+  tag?: unknown;
+  data?: PushData | null | undefined;
+}
+
+interface PushOptions {
+  requireNoSse: boolean;
+}
+
+interface RuntimeNotificationPayload {
+  title: string;
+  body: string;
+  tag: string;
+  kind: string;
+  sessionId: string;
+  directory: string | undefined;
+  requireHidden: boolean;
+}
+
+interface SessionMetadata {
+  openchamber?: { goal?: { status?: unknown } | null };
+}
+
+type TemplateVariables = Record<string, string>;
+type GetIsSessionAutoAccepting = (sessionId: string, directory: string | undefined, requestId: unknown) => boolean | Promise<boolean>;
+type ErrorWithMessage = { message?: unknown } | null | undefined;
+
+export interface NotificationTriggerRuntimeDependencies {
+  readSettingsFromDisk: () => Promise<NotificationSettings>;
+  prepareNotificationLastMessage: (input: { message: unknown; settings: NotificationSettings }) => Promise<string>;
+  buildTemplateVariables: (payload: TriggerEventPayload, sessionId: string) => Promise<TemplateVariables>;
+  extractLastMessageText: (payload: TriggerEventPayload) => string;
+  fetchLastAssistantMessageText: (sessionId: string, messageId: unknown) => Promise<string>;
+  resolveNotificationTemplate: (template: unknown, variables: TemplateVariables) => string;
+  shouldApplyResolvedTemplateMessage: (template: unknown, resolved: unknown, variables: TemplateVariables) => boolean;
+  emitDesktopNotification: (payload: RuntimeNotificationPayload) => boolean;
+  broadcastUiNotification: (payload: RuntimeNotificationPayload, options: { desktopNotificationDelivered: boolean }) => void;
+  sendPushToAllUiSessions?: (payload: PushPayload, options: PushOptions) => unknown;
+  sendApnsToAllUiSessions?: (payload: PushPayload, options: PushOptions) => unknown;
+  isAnyInteractiveClientVisible?: () => boolean;
+  buildOpenCodeUrl: (path: string, prefix: string) => string;
+  getOpenCodeAuthHeaders: () => Record<string, string>;
+  readSessionMetadata?: ((sessionId: string) => Promise<SessionMetadata | null | undefined>) | null;
+  getIsSessionAutoAccepting?: GetIsSessionAutoAccepting;
+  getIsWindowFocused?: () => boolean;
+}
+
+export const createNotificationTriggerRuntime = (deps: NotificationTriggerRuntimeDependencies) => {
+
   const {
     readSettingsFromDisk,
     prepareNotificationLastMessage,
@@ -29,12 +155,12 @@ export const createNotificationTriggerRuntime = (deps) => {
   // hands the result back and the parent runs again. That first idle is a
   // pause, so it announces nothing. When the check cannot be made, the idle is
   // announced as before: a missed "ready" is worse than an early one.
-  const isPausedForSubagents = async (sessionId) => {
+  const isPausedForSubagents = async (sessionId: string) => {
     const statuses = await activityProbe.fetchActiveSessionStatuses();
     if (!statuses) return false;
     return (await activityProbe.hasWorkingChildren(sessionId, statuses)) === true;
   };
-  const setGetIsSessionAutoAccepting = (resolver) => {
+  const setGetIsSessionAutoAccepting = (resolver: GetIsSessionAutoAccepting | null | undefined) => {
     getIsSessionAutoAccepting = typeof resolver === 'function' ? resolver : undefined;
   };
 
@@ -54,11 +180,11 @@ export const createNotificationTriggerRuntime = (deps) => {
   // is set by a separate session.status event that races the push trigger. The
   // set is cleared when a UI client reports visible (`clearPendingPushBadge`),
   // the same moment the device zeroes its icon badge on becomeActive.
-  const pendingPushTags = new Set();
+  const pendingPushTags = new Set<string>();
   const clearPendingPushBadge = () => {
     pendingPushTags.clear();
   };
-  const trackPushAndCountBadge = (tag) => {
+  const trackPushAndCountBadge = (tag: unknown) => {
     if (typeof tag === 'string' && tag.length > 0) {
       pendingPushTags.add(tag);
     }
@@ -67,7 +193,7 @@ export const createNotificationTriggerRuntime = (deps) => {
 
   // Generic notification for native push (per the mobile design): a fixed, scenario-based
   // title + the session name as the body. No model/project/message content crosses the relay.
-  const APNS_TITLE_BY_TYPE = {
+  const APNS_TITLE_BY_TYPE: Record<string, string> = {
     ready: 'Agent response is ready',
     error: 'Agent hit an error',
     question: 'Agent needs your input',
@@ -77,13 +203,13 @@ export const createNotificationTriggerRuntime = (deps) => {
     goal_budget: 'Goal reached its token budget',
   };
 
-  const toApnsGenericPayload = (payload) => {
-    const data = payload?.data && typeof payload.data === 'object' ? payload.data : {};
+  const toApnsGenericPayload = (payload: PushPayload | null | undefined) => {
+    const data: PushData = payload?.data && typeof payload.data === 'object' ? payload.data : {};
     const sessionName = typeof data.sessionName === 'string' && data.sessionName.trim().length > 0
       ? data.sessionName.trim()
       : 'Session';
     return {
-      title: APNS_TITLE_BY_TYPE[data.type] || 'Agent update',
+      title: APNS_TITLE_BY_TYPE[data.type as string] || 'Agent update',
       body: sessionName,
       badge: trackPushAndCountBadge(typeof payload?.tag === 'string' ? payload.tag : undefined),
       tag: payload?.tag,
@@ -95,20 +221,20 @@ export const createNotificationTriggerRuntime = (deps) => {
   // Fan a notification out to every delivery channel: browser web-push (full templated
   // payload) and native iOS APNs (generic model-based text). Both share the dedup tag and
   // `requireNoSse` focus gate; a failure in one channel must not block the other.
-  const fanoutPush = (payload, options) => {
+  const fanoutPush = (payload: PushPayload, options: PushOptions) => {
     // Presence-aware routing: if any interactive (non-mobile) client — desktop/web/vscode — is
     // currently visible, it already shows the in-app notification, so skip the native push to the
     // phone. Gated on the desktop's visibility (reliable), never the phone's own. When we skip we
     // also skip toApnsGenericPayload, so the badge isn't incremented for an undelivered push.
     const interactiveVisible = isAnyInteractiveClientVisible?.() === true;
     return Promise.all([
-      Promise.resolve(sendPushToAllUiSessions?.(payload, options)).catch((error) => {
-        console.warn('[Push] web-push fanout failed:', error?.message ?? error);
+      Promise.resolve(sendPushToAllUiSessions?.(payload, options)).catch((error: unknown) => {
+        console.warn('[Push] web-push fanout failed:', (error as ErrorWithMessage)?.message ?? error);
       }),
       interactiveVisible
         ? Promise.resolve()
-        : Promise.resolve(sendApnsToAllUiSessions?.(toApnsGenericPayload(payload), options)).catch((error) => {
-            console.warn('[APNs] fanout failed:', error?.message ?? error);
+        : Promise.resolve(sendApnsToAllUiSessions?.(toApnsGenericPayload(payload), options)).catch((error: unknown) => {
+            console.warn('[APNs] fanout failed:', (error as ErrorWithMessage)?.message ?? error);
           }),
     ]);
   };
@@ -117,20 +243,20 @@ export const createNotificationTriggerRuntime = (deps) => {
     ? deps.getIsWindowFocused
     : null;
 
-  const setGetIsWindowFocused = (cb) => {
+  const setGetIsWindowFocused = (cb: (() => boolean) | null | undefined) => {
     getIsWindowFocused = typeof cb === 'function' ? cb : null;
   };
 
   const PUSH_READY_COOLDOWN_MS = 5000;
   const PUSH_QUESTION_DEBOUNCE_MS = 500;
   const PUSH_PERMISSION_DEBOUNCE_MS = 500;
-  const pushQuestionDebounceTimers = new Map();
-  const pushPermissionDebounceTimers = new Map();
-  const notifiedPermissionRequests = new Set();
-  const lastReadyNotificationAt = new Map();
-  const lastErrorNotificationAt = new Map();
+  const pushQuestionDebounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const pushPermissionDebounceTimers = new Map<string, { timer: ReturnType<typeof setTimeout>; requestKey: string | null }>();
+  const notifiedPermissionRequests = new Set<string>();
+  const lastReadyNotificationAt = new Map<string, number>();
+  const lastErrorNotificationAt = new Map<string, number>();
 
-  const sessionParentIdCache = new Map();
+  const sessionParentIdCache = new Map<string, { parentID: string | null; at: number }>();
   const SESSION_PARENT_CACHE_TTL_MS = 60 * 1000;
 
   // Sessions where the client has enabled Permission Auto-Accept. Mirrored
@@ -138,8 +264,8 @@ export const createNotificationTriggerRuntime = (deps) => {
   // so the server can suppress permission notifications BEFORE dispatch (the
   // 500ms debounce race otherwise leaks notifications for auto-accepted
   // permissions when the replied round-trip is slower than the debounce).
-  const autoAcceptingSessions = new Set();
-  const setAutoAcceptSession = (sessionId, enabled) => {
+  const autoAcceptingSessions = new Set<string>();
+  const setAutoAcceptSession = (sessionId: unknown, enabled: unknown) => {
     if (typeof sessionId !== 'string' || sessionId.length === 0) return;
     if (enabled) {
       autoAcceptingSessions.add(sessionId);
@@ -148,16 +274,16 @@ export const createNotificationTriggerRuntime = (deps) => {
     }
   };
 
-  const buildSessionDeepLinkUrl = (sessionId) => {
+  const buildSessionDeepLinkUrl = (sessionId: unknown) => {
     if (!sessionId || typeof sessionId !== 'string') {
       return '/';
     }
     return `/?session=${encodeURIComponent(sessionId)}`;
   };
 
-  const getSessionParentCacheKey = (sessionId, directory) => `${directory || ''}\0${sessionId}`;
+  const getSessionParentCacheKey = (sessionId: string, directory: string | undefined) => `${directory || ''}\0${sessionId}`;
 
-  const getCachedSessionParentId = (sessionId, directory) => {
+  const getCachedSessionParentId = (sessionId: string, directory: string | undefined) => {
     const cacheKey = getSessionParentCacheKey(sessionId, directory);
     const entry = sessionParentIdCache.get(cacheKey);
     if (!entry) return undefined;
@@ -168,11 +294,11 @@ export const createNotificationTriggerRuntime = (deps) => {
     return entry.parentID;
   };
 
-  const setCachedSessionParentId = (sessionId, directory, parentID) => {
+  const setCachedSessionParentId = (sessionId: string, directory: string | undefined, parentID: string | null | undefined) => {
     sessionParentIdCache.set(getSessionParentCacheKey(sessionId, directory), { parentID: parentID ?? null, at: Date.now() });
   };
 
-  const getParentIdFromPayload = (payload) => {
+  const getParentIdFromPayload = (payload: TriggerEventPayload | null | undefined) => {
     if (!payload || typeof payload !== 'object') return undefined;
     if (payload.type !== 'session.created' && payload.type !== 'session.updated') return undefined;
     const parentID = payload.properties?.info?.parentID;
@@ -192,11 +318,11 @@ export const createNotificationTriggerRuntime = (deps) => {
   // event the "ready" push is built from. Bounded: a session emits a handful
   // of steps and the map is per process.
   const ASSISTANT_STEP_CACHE_LIMIT = 500;
-  const assistantStepMeta = new Map();
+  const assistantStepMeta = new Map<string, { agent: string; modelID: string }>();
   // The reply a turn ended on: the idle event names only the session, so the
   // ready notification borrows this step's id for its agent, model and text.
-  const lastAssistantStepBySession = new Map();
-  const rememberAssistantStep = (info) => {
+  const lastAssistantStepBySession = new Map<string, string>();
+  const rememberAssistantStep = (info: TriggerInfo | null | undefined) => {
     if (!info || info.role !== 'assistant') return;
     const id = String(info.id ?? '');
     const agent = String(info.agent ?? info.mode ?? '');
@@ -209,14 +335,14 @@ export const createNotificationTriggerRuntime = (deps) => {
       lastAssistantStepBySession.delete(sessionId);
       lastAssistantStepBySession.set(sessionId, id);
       while (lastAssistantStepBySession.size > ASSISTANT_STEP_CACHE_LIMIT) {
-        lastAssistantStepBySession.delete(lastAssistantStepBySession.keys().next().value);
+        lastAssistantStepBySession.delete(lastAssistantStepBySession.keys().next().value!);
       }
     }
     while (assistantStepMeta.size > ASSISTANT_STEP_CACHE_LIMIT) {
-      assistantStepMeta.delete(assistantStepMeta.keys().next().value);
+      assistantStepMeta.delete(assistantStepMeta.keys().next().value!);
     }
   };
-  const withRememberedStep = (info) => {
+  const withRememberedStep = (info: TriggerInfo | null | undefined) => {
     const remembered = info ? assistantStepMeta.get(String(info.id ?? '')) : undefined;
     if (!remembered) return info;
     const merged = { ...info };
@@ -228,7 +354,7 @@ export const createNotificationTriggerRuntime = (deps) => {
     return merged;
   };
 
-  const maybeCacheSessionParentFromPayload = (payload) => {
+  const maybeCacheSessionParentFromPayload = (payload: TriggerEventPayload | null | undefined) => {
     const sessionId = extractSessionIdFromPayload(payload);
     if (typeof sessionId !== 'string' || sessionId.length === 0) return;
     const directory = extractDirectoryFromPayload(payload);
@@ -237,7 +363,7 @@ export const createNotificationTriggerRuntime = (deps) => {
     setCachedSessionParentId(sessionId, directory, parentID);
   };
 
-  const fetchSessionParentId = async (sessionId, directory) => {
+  const fetchSessionParentId = async (sessionId: string | null | undefined, directory: string | undefined) => {
     if (!sessionId) return undefined;
 
     const cached = getCachedSessionParentId(sessionId, directory);
@@ -257,7 +383,7 @@ export const createNotificationTriggerRuntime = (deps) => {
       if (!response.ok) {
         return undefined;
       }
-      const session = unwrapOpenCodeResponse(await response.json().catch(() => null));
+      const session = unwrapOpenCodeResponse(await response.json().catch(() => null)) as TriggerInfo | null | undefined;
       if (!session || typeof session !== 'object') {
         return undefined;
       }
@@ -274,10 +400,10 @@ export const createNotificationTriggerRuntime = (deps) => {
 
   // Mirrors client-side autoRespondsPermission: a session auto-accepts if it
   // OR any ancestor is flagged. Walks the parent chain via fetchSessionParentId.
-  const isSessionAutoAccepting = async (sessionId, directory) => {
+  const isSessionAutoAccepting = async (sessionId: string | null | undefined, directory: string | undefined) => {
     if (!sessionId || autoAcceptingSessions.size === 0) return false;
     let current = sessionId;
-    const seen = new Set();
+    const seen = new Set<string>();
     while (current && !seen.has(current)) {
       if (autoAcceptingSessions.has(current)) return true;
       seen.add(current);
@@ -288,7 +414,7 @@ export const createNotificationTriggerRuntime = (deps) => {
     return false;
   };
 
-  const extractSessionIdFromPayload = (payload) => {
+  const extractSessionIdFromPayload = (payload: TriggerEventPayload | null | undefined) => {
     if (!payload || typeof payload !== 'object') return null;
     const props = payload.properties;
     const info = props?.info;
@@ -302,7 +428,7 @@ export const createNotificationTriggerRuntime = (deps) => {
     return typeof sessionId === 'string' && sessionId.length > 0 ? sessionId : null;
   };
 
-  const extractDirectoryFromPayload = (payload) => {
+  const extractDirectoryFromPayload = (payload: TriggerEventPayload | null | undefined) => {
     if (!payload || typeof payload !== 'object') return undefined;
     const props = payload.properties;
     const directory = props?.directory ?? props?.info?.directory;
@@ -311,7 +437,7 @@ export const createNotificationTriggerRuntime = (deps) => {
     return trimmed.length > 0 ? trimmed : undefined;
   };
 
-  const formatMode = (raw) => {
+  const formatMode = (raw: unknown) => {
     const value = typeof raw === 'string' ? raw.trim() : '';
     const normalized = value.length > 0 ? value : 'agent';
     return normalized
@@ -321,16 +447,16 @@ export const createNotificationTriggerRuntime = (deps) => {
       .join(' ');
   };
 
-  const formatModelId = (raw) => {
+  const formatModelId = (raw: unknown) => {
     const value = typeof raw === 'string' ? raw.trim() : '';
     if (!value) {
       return 'Assistant';
     }
 
     const tokens = value.split(/[-_]+/).filter(Boolean);
-    const result = [];
+    const result: string[] = [];
     for (let i = 0; i < tokens.length; i += 1) {
-      const current = tokens[i];
+      const current = tokens[i]!;
       const next = tokens[i + 1];
       if (/^\d+$/.test(current) && next && /^\d+$/.test(next)) {
         result.push(`${current}.${next}`);
@@ -348,7 +474,7 @@ export const createNotificationTriggerRuntime = (deps) => {
   // A session with an ACTIVE goal suppresses per-turn ready notifications;
   // the session-goal runtime sends its own notification when the goal
   // settles. Fetch failures fall through to normal notification behavior.
-  const hasActiveSessionGoal = async (sessionId) => {
+  const hasActiveSessionGoal = async (sessionId: string) => {
     if (!sessionId || typeof readSessionMetadata !== 'function') return false;
     try {
       const metadata = await readSessionMetadata(sessionId);
@@ -359,7 +485,7 @@ export const createNotificationTriggerRuntime = (deps) => {
     }
   };
 
-  const maybeSendPushForTrigger = async (payload) => {
+  const maybeSendPushForTrigger = async (payload: TriggerEventPayload): Promise<void> => {
     if (!payload || typeof payload !== 'object') {
       return;
     }
@@ -474,7 +600,7 @@ export const createNotificationTriggerRuntime = (deps) => {
           if (resolvedTitle) title = resolvedTitle;
           if (shouldApplyResolvedTemplateMessage(completionTemplate.message, resolvedBody, variables)) body = resolvedBody;
         } catch (error) {
-          console.warn('[Notification] Template resolution failed, using defaults:', error?.message || error);
+          console.warn('[Notification] Template resolution failed, using defaults:', (error as ErrorWithMessage)?.message || error);
         }
 
         if (settings.nativeNotificationsEnabled) {
@@ -544,7 +670,7 @@ export const createNotificationTriggerRuntime = (deps) => {
           if (resolvedTitle) title = resolvedTitle;
           if (shouldApplyResolvedTemplateMessage(errorTemplate.message, resolvedBody, variables)) body = resolvedBody;
         } catch (error) {
-          console.warn('[Notification] Error template resolution failed, using defaults:', error?.message || error);
+          console.warn('[Notification] Error template resolution failed, using defaults:', (error as ErrorWithMessage)?.message || error);
         }
 
         if (settings.nativeNotificationsEnabled) {
@@ -628,7 +754,7 @@ export const createNotificationTriggerRuntime = (deps) => {
           if (resolvedTitle) title = resolvedTitle;
           if (shouldApplyResolvedTemplateMessage(questionTemplate.message, resolvedBody, variables)) body = resolvedBody;
         } catch (error) {
-          console.warn('[Notification] Question template resolution failed, using defaults:', error?.message || error);
+          console.warn('[Notification] Question template resolution failed, using defaults:', (error as ErrorWithMessage)?.message || error);
         }
 
         if (settings.nativeNotificationsEnabled) {
@@ -755,7 +881,7 @@ export const createNotificationTriggerRuntime = (deps) => {
           if (resolvedTitle) title = resolvedTitle;
           if (shouldApplyResolvedTemplateMessage(questionTemplate.message, resolvedBody, variables)) body = resolvedBody;
         } catch (error) {
-          console.warn('[Notification] Permission template resolution failed, using defaults:', error?.message || error);
+          console.warn('[Notification] Permission template resolution failed, using defaults:', (error as ErrorWithMessage)?.message || error);
         }
 
         if (settings.nativeNotificationsEnabled) {
@@ -799,7 +925,7 @@ export const createNotificationTriggerRuntime = (deps) => {
   // Goal settle push: same fanout as the trigger paths (web-push with the
   // full text; APNs with the generic per-type title and the session name as
   // body, so the relay never sees content).
-  const sendGoalSettlePush = async ({ sessionId, directory, status, title, body }) => {
+  const sendGoalSettlePush = async ({ sessionId, directory, status, title, body }: { sessionId: string; directory?: string | null; status: string; title: string; body: string }) => {
     let sessionName = '';
     try {
       const base = buildOpenCodeUrl(`/api/session/${encodeURIComponent(sessionId)}`, '');
@@ -810,7 +936,7 @@ export const createNotificationTriggerRuntime = (deps) => {
         signal: AbortSignal.timeout(2000),
       });
       if (response.ok) {
-        const session = unwrapOpenCodeResponse(await response.json().catch(() => null));
+        const session = unwrapOpenCodeResponse(await response.json().catch(() => null)) as { title?: unknown } | null | undefined;
         if (typeof session?.title === 'string') sessionName = session.title.trim();
       }
     } catch {

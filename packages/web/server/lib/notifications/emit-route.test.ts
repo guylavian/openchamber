@@ -2,12 +2,13 @@ import { describe, expect, it } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createPluginNotificationEmitter, registerNotificationEmitRoutes } from './emit-route.js';
+import type { NotificationEmitSettings, PluginNotificationPayload } from './emit-route.js';
 
 const PLUGIN_TOKEN = 'Bearer plugin-token';
 const UI_TOKEN = 'Bearer ui-token';
 
-const createApp = ({ settings = { nativeNotificationsEnabled: true, notificationMode: 'hidden-only' }, now = () => 0 } = {}) => {
-  const delivered = [];
+const createApp = ({ settings = { nativeNotificationsEnabled: true, notificationMode: 'hidden-only' }, now = () => 0 }: { settings?: NotificationEmitSettings; now?: () => number } = {}) => {
+  const delivered: { payload: PluginNotificationPayload; options: { desktopNotificationDelivered: boolean } }[] = [];
   const app = express();
   const emitter = createPluginNotificationEmitter({
     readSettingsFromDiskMigrated: async () => settings,
@@ -68,12 +69,12 @@ describe('POST /api/notifications/emit', () => {
       .set('Authorization', PLUGIN_TOKEN)
       .send({ title: 'x', kind: 'opencode-restart-interrupted' })
       .expect(200);
-    expect(delivered[0].payload.kind).toBe('plugin');
+    expect(delivered[0]!.payload.kind).toBe('plugin');
   });
 
   it('rejects empty and oversized payloads', async () => {
     const { app, delivered } = createApp();
-    const post = (body) => request(app).post('/api/notifications/emit').set('Authorization', PLUGIN_TOKEN).send(body);
+    const post = (body: object) => request(app).post('/api/notifications/emit').set('Authorization', PLUGIN_TOKEN).send(body);
     await post({}).expect(400);
     await post({ title: '   ' }).expect(400);
     await post({ title: 'x'.repeat(121) }).expect(400);
@@ -102,11 +103,11 @@ describe('POST /api/notifications/emit', () => {
 
     const always = createApp({ settings: { nativeNotificationsEnabled: true, notificationMode: 'always' } });
     await request(always.app).post('/api/notifications/emit').set('Authorization', PLUGIN_TOKEN).send({ body: 'x' }).expect(200);
-    expect(always.delivered[0].payload.requireHidden).toBe(false);
+    expect(always.delivered[0]!.payload.requireHidden).toBe(false);
 
     const focused = createApp();
     await request(focused.app).post('/api/notifications/emit').set('Authorization', PLUGIN_TOKEN).send({ body: 'x', showWhenFocused: true }).expect(200);
-    expect(focused.delivered[0].payload.requireHidden).toBe(false);
+    expect(focused.delivered[0]!.payload.requireHidden).toBe(false);
     await request(focused.app).post('/api/notifications/emit').set('Authorization', PLUGIN_TOKEN).send({ body: 'x', showWhenFocused: 'yes' }).expect(400);
   });
 });
