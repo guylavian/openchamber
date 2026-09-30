@@ -1,6 +1,18 @@
 import { isGeneratedArtifact } from './generated.js';
 import { parseDiffFiles } from './hunks.js';
 
+type ParsedDiffFile = ReturnType<typeof parseDiffFiles>['files'][number];
+
+interface DigestSection {
+  patch: string;
+  scope: string;
+}
+
+interface ScopedDiffFile extends ParsedDiffFile {
+  scope: string;
+  generated: boolean;
+}
+
 // The digest is what the model actually reads. Within what it covers there is
 // no truncation: a diff that does not fit the model's context is refused
 // upstream so the user can pick a roomier model, because a walkthrough written
@@ -18,8 +30,8 @@ import { parseDiffFiles } from './hunks.js';
  * rather than their real ids: the aliases are far cheaper in tokens, and a
  * model cannot invent a plausible-looking id for a hunk that does not exist.
  */
-export function buildDigest(sections) {
-  const files = [];
+export function buildDigest(sections: DigestSection[]) {
+  const files: ScopedDiffFile[] = [];
   for (const section of sections) {
     const parsed = parseDiffFiles(section.patch, section.scope);
     for (const file of parsed.files) {
@@ -27,8 +39,8 @@ export function buildDigest(sections) {
     }
   }
 
-  const idByAlias = new Map();
-  const aliasById = new Map();
+  const idByAlias = new Map<string, string>();
+  const aliasById = new Map<string, string>();
   let counter = 0;
 
   const digestFiles = files

@@ -21,6 +21,72 @@
 
 import { Pcm16MonoResampler, parsePcmRateFromFormat, pcm16lePeakAbs } from './audio.js';
 
+type ErrorLike = { message?: string } | null | undefined;
+
+interface TranscriptPayload {
+  segmentId: string;
+  transcript: string;
+  isFinal: boolean;
+}
+
+interface SttSession {
+  requiredSampleRate: number;
+  appendPcm16: (buffer: Buffer) => void;
+  commit: () => void;
+  clear: () => void;
+  close: () => void;
+  on: {
+    (event: 'committed', handler: (payload: { segmentId: string }) => void): void;
+    (event: 'transcript', handler: (payload: TranscriptPayload) => void): void;
+    (event: 'error', handler: (error: Error) => void): void;
+  };
+}
+
+interface SttSessionResolution {
+  session?: SttSession;
+  error?: string;
+  retryable?: boolean;
+  reasonCode?: string;
+}
+
+interface ManagerMessage {
+  type: string;
+  payload: object;
+}
+
+interface DictationStreamManagerParams {
+  emit: (message: ManagerMessage) => void;
+  createSttSession: (startOptions: object) => Promise<SttSessionResolution>;
+  finalTimeoutMs?: number | undefined;
+  segmentMinSeconds?: number | undefined;
+  segmentMaxSeconds?: number | undefined;
+}
+
+interface StreamState {
+  dictationId: string;
+  inputFormat: string;
+  stt: SttSession;
+  inputRate: number;
+  outputRate: number;
+  resampler: Pcm16MonoResampler | null;
+  receivedChunks: Map<number, Buffer>;
+  nextSeqToForward: number;
+  ackSeq: number;
+  segmentMinBytes: number;
+  segmentMaxBytes: number;
+  bytesSinceCommit: number;
+  peakSinceCommit: number;
+  lastChunkPeak: number;
+  committedSegmentIds: string[];
+  transcriptsBySegmentId: Map<string, string>;
+  finalTranscriptSegmentIds: Set<string>;
+  pendingCommits: number;
+  finishRequested: boolean;
+  finishSealed: boolean;
+  finalSeq: number | null;
+  finalTimeout: NodeJS.Timeout | null;
+}
+
 const DEFAULT_FINAL_TIMEOUT_MS = 10000;
 // Parakeet is a full-attention conformer: decode cost and peak memory grow
 // quadratically with segment length (measured: 60s -> 2.1s/+90MB,
@@ -36,7 +102,7 @@ const FINAL_TIMEOUT_PER_PENDING_AUDIO_SECOND_MS = 1500;
 const FINAL_TIMEOUT_PER_MISSING_SEQ_MS = 250;
 const SILENCE_PEAK_THRESHOLD = 300;
 
-const secondsToPcm16Bytes = (seconds, sampleRate) =>
+const secondsToPcm16Bytes = (seconds: number, sampleRate: number): number =>
   seconds > 0 ? Math.max(1, Math.round(seconds * sampleRate * 2)) : 0;
 
 /**
@@ -45,7 +111,7 @@ const secondsToPcm16Bytes = (seconds, sampleRate) =>
  * Client chunks are ~1s, so a quiet chunk is roughly a second of silence — long
  * enough to be a sentence boundary rather than a gap between words.
  */
-function shouldSplitSegment(state) {
+function shouldSplitSegment(state: StreamState): boolean {
   if (state.segmentMaxBytes > 0 && state.bytesSinceCommit >= state.segmentMaxBytes) {
     return true;
   }
@@ -56,6 +122,13 @@ function shouldSplitSegment(state) {
 }
 
 export class DictationStreamManager {
+  declare emit: (message: ManagerMessage) => void;
+  declare createSttSession: (startOptions: object) => Promise<SttSessionResolution>;
+  declare finalTimeoutMs: number;
+  declare segmentMinSeconds: number;
+  declare segmentMaxSeconds: number;
+  declare streams: Map<string, StreamState>;
+
   /**
    * @param {object} params
    * @param {(msg: { type: string, payload: object }) => void} params.emit
@@ -67,16 +140,16 @@ export class DictationStreamManager {
    * @param {number} [params.segmentMinSeconds] audio before a pause may split a segment
    * @param {number} [params.segmentMaxSeconds] hard segment cap for pauseless speech
    */
-  constructor({ emit, createSttSession, finalTimeoutMs, segmentMinSeconds, segmentMaxSeconds }) {
+  constructor({ emit, createSttSession, finalTimeoutMs, segmentMinSeconds, segmentMaxSeconds }: DictationStreamManagerParams) {
     this.emit = emit;
     this.createSttSession = createSttSession;
     this.finalTimeoutMs = finalTimeoutMs ?? DEFAULT_FINAL_TIMEOUT_MS;
     this.segmentMinSeconds = segmentMinSeconds ?? DEFAULT_SEGMENT_MIN_SECONDS;
     this.segmentMaxSeconds = segmentMaxSeconds ?? DEFAULT_SEGMENT_MAX_SECONDS;
-    this.streams = new Map();
+    this.streams = new Map<string, StreamState>();
   }
 
-  cleanupAll() {
+  cleanupAll(): void {
     for (const dictationId of Array.from(this.streams.keys())) {
       this.cleanupStream(dictationId);
     }
@@ -87,7 +160,7 @@ export class DictationStreamManager {
    * @param {string} format e.g. "audio/pcm;rate=16000;bits=16"
    * @param {object} startOptions provider/config options forwarded to createSttSession
    */
-  async handleStart(dictationId, format, startOptions = {}) {
+  async handleStart(dictationId: string, format: string, startOptions: object = {}): Promise<void> {
     this.cleanupStream(dictationId);
 
     const inputRate = parsePcmRateFromFormat(format, 16000) ?? 16000;
@@ -96,11 +169,11 @@ export class DictationStreamManager {
       return;
     }
 
-    let resolved;
+    let resolved: SttSessionResolution;
     try {
       resolved = await this.createSttSession(startOptions);
     } catch (error) {
-      this.failStream(dictationId, error?.message || String(error), true);
+      this.failStream(dictationId, (error as ErrorLike)?.message || String(error), true);
       return;
     }
     if (!resolved || resolved.error) {
@@ -113,7 +186,7 @@ export class DictationStreamManager {
       return;
     }
 
-    const stt = resolved.session;
+    const stt = resolved.session!;
 
     stt.on('committed', ({ segmentId }) => {
       const state = this.streams.get(dictationId);
@@ -168,7 +241,7 @@ export class DictationStreamManager {
         inputRate === stt.requiredSampleRate
           ? null
           : new Pcm16MonoResampler({ inputRate, outputRate: stt.requiredSampleRate }),
-      receivedChunks: new Map(),
+      receivedChunks: new Map<number, Buffer>(),
       nextSeqToForward: 0,
       ackSeq: -1,
       segmentMinBytes: secondsToPcm16Bytes(this.segmentMinSeconds, stt.requiredSampleRate),
@@ -177,8 +250,8 @@ export class DictationStreamManager {
       peakSinceCommit: 0,
       lastChunkPeak: 0,
       committedSegmentIds: [],
-      transcriptsBySegmentId: new Map(),
-      finalTranscriptSegmentIds: new Set(),
+      transcriptsBySegmentId: new Map<string, string>(),
+      finalTranscriptSegmentIds: new Set<string>(),
       pendingCommits: 0,
       finishRequested: false,
       finishSealed: false,
@@ -192,7 +265,7 @@ export class DictationStreamManager {
   /**
    * @param {{ dictationId: string, seq: number, audioBase64: string }} params
    */
-  handleChunk({ dictationId, seq, audioBase64 }) {
+  handleChunk({ dictationId, seq, audioBase64 }: { dictationId: string; seq: number; audioBase64: string }): void {
     const state = this.streams.get(dictationId);
     if (!state) {
       this.failStream(dictationId, 'Dictation stream not started', true);
@@ -209,7 +282,7 @@ export class DictationStreamManager {
     }
 
     if (!state.receivedChunks.has(seq)) {
-      let chunk;
+      let chunk: Buffer;
       try {
         chunk = Buffer.from(audioBase64, 'base64');
       } catch {
@@ -223,7 +296,7 @@ export class DictationStreamManager {
 
     while (state.receivedChunks.has(state.nextSeqToForward)) {
       const nextSeq = state.nextSeqToForward;
-      const pcm16 = state.receivedChunks.get(nextSeq);
+      const pcm16 = state.receivedChunks.get(nextSeq)!;
       state.receivedChunks.delete(nextSeq);
 
       const resampled = state.resampler ? state.resampler.processChunk(pcm16) : pcm16;
@@ -235,7 +308,7 @@ export class DictationStreamManager {
         try {
           this.maybeAutoCommitSegment(state);
         } catch (error) {
-          this.failAndCleanupStream(dictationId, error?.message || String(error), true);
+          this.failAndCleanupStream(dictationId, (error as ErrorLike)?.message || String(error), true);
           return;
         }
       }
@@ -253,7 +326,7 @@ export class DictationStreamManager {
    * @param {string} dictationId
    * @param {number} finalSeq highest seq the client sent (or -1 if none)
    */
-  handleFinish(dictationId, finalSeq) {
+  handleFinish(dictationId: string, finalSeq: number): void {
     const state = this.streams.get(dictationId);
     if (!state) {
       this.failStream(dictationId, 'Dictation stream not started', true);
@@ -297,15 +370,15 @@ export class DictationStreamManager {
     this.emit({ type: 'finish_accepted', payload: { dictationId, timeoutMs } });
   }
 
-  handleCancel(dictationId) {
+  handleCancel(dictationId: string): void {
     this.cleanupStream(dictationId);
   }
 
-  emitAck(dictationId, ackSeq) {
+  emitAck(dictationId: string, ackSeq: number): void {
     this.emit({ type: 'ack', payload: { dictationId, ackSeq } });
   }
 
-  failStream(dictationId, error, retryable, reasonCode) {
+  failStream(dictationId: string, error: string, retryable: boolean, reasonCode?: string): void {
     this.emit({
       type: 'error',
       payload: {
@@ -317,12 +390,12 @@ export class DictationStreamManager {
     });
   }
 
-  failAndCleanupStream(dictationId, error, retryable) {
+  failAndCleanupStream(dictationId: string, error: string, retryable: boolean): void {
     this.failStream(dictationId, error, retryable);
     this.cleanupStream(dictationId);
   }
 
-  cleanupStream(dictationId) {
+  cleanupStream(dictationId: string): void {
     const state = this.streams.get(dictationId);
     if (!state) {
       return;
@@ -338,7 +411,7 @@ export class DictationStreamManager {
     this.streams.delete(dictationId);
   }
 
-  estimateFinalizationTimeout(state) {
+  estimateFinalizationTimeout(state: StreamState): number {
     const bytesPerSecond = Math.max(1, state.outputRate * 2);
     const pendingCommittedSegments = state.committedSegmentIds.reduce((count, segmentId) => {
       return state.finalTranscriptSegmentIds.has(segmentId) ? count : count + 1;
@@ -369,7 +442,7 @@ export class DictationStreamManager {
     );
   }
 
-  maybeAutoCommitSegment(state) {
+  maybeAutoCommitSegment(state: StreamState): void {
     if (state.finishRequested) {
       return;
     }
@@ -395,7 +468,7 @@ export class DictationStreamManager {
    * `committed` event; until then the manager must not finalize, or the
    * segment's transcript would be missing from the final text.
    */
-  commitSegment(state) {
+  commitSegment(state: StreamState): void {
     state.pendingCommits += 1;
     try {
       state.stt.commit();
@@ -405,7 +478,7 @@ export class DictationStreamManager {
     }
   }
 
-  maybeSealStreamFinish(dictationId) {
+  maybeSealStreamFinish(dictationId: string): void {
     const state = this.streams.get(dictationId);
     if (!state) {
       return;
@@ -434,7 +507,7 @@ export class DictationStreamManager {
         try {
           this.commitSegment(state);
         } catch (error) {
-          this.failAndCleanupStream(dictationId, error?.message || String(error), true);
+          this.failAndCleanupStream(dictationId, (error as ErrorLike)?.message || String(error), true);
           return;
         }
       }
@@ -443,7 +516,7 @@ export class DictationStreamManager {
     state.finishSealed = true;
   }
 
-  dropUncommittedNonFinalTranscripts(state) {
+  dropUncommittedNonFinalTranscripts(state: StreamState): void {
     const committedSet = new Set(state.committedSegmentIds);
     for (const segmentId of Array.from(state.transcriptsBySegmentId.keys())) {
       if (committedSet.has(segmentId)) {
@@ -456,7 +529,7 @@ export class DictationStreamManager {
     }
   }
 
-  maybeFinalizeStream(dictationId) {
+  maybeFinalizeStream(dictationId: string): void {
     const state = this.streams.get(dictationId);
     if (!state) {
       return;

@@ -19,29 +19,78 @@ import { randomUUID } from 'crypto';
 import { loadSherpaOnnxNode } from './sherpa-loader.js';
 import { pcm16lePeakAbs, pcm16leToFloat32 } from '../audio.js';
 
-function assertFileExists(filePath, label) {
+interface SherpaOfflineStream {
+  acceptWaveform: {
+    (input: { samples: Float32Array; sampleRate: number }): void;
+    (sampleRate: number, samples: Float32Array): void;
+  };
+  free?: () => void;
+}
+
+interface SherpaOfflineRecognizer {
+  config?: { featConfig?: { sampleRate?: unknown } };
+  createStream: () => SherpaOfflineStream;
+  decode: (stream: SherpaOfflineStream) => void;
+  getResult: (stream: SherpaOfflineStream) => unknown;
+  free?: () => void;
+}
+
+interface SherpaOfflineModelConfig {
+  whisper?: { encoder: string; decoder: string; language: string; task: string; tailPaddings: number };
+  transducer?: { encoder: string; decoder: string; joiner: string | undefined };
+  tokens: string;
+  modelType: string;
+  numThreads: number;
+  provider: string;
+  debug: number;
+}
+
+interface SherpaOfflineRecognizerConfig {
+  featConfig: { sampleRate: number; featureDim: number };
+  modelConfig: SherpaOfflineModelConfig;
+  decodingMethod: string;
+  maxActivePaths: number;
+}
+
+interface SherpaOnnxNode {
+  OfflineRecognizer: new (config: SherpaOfflineRecognizerConfig) => SherpaOfflineRecognizer;
+}
+
+interface SherpaOfflineRecognizerEngineConfig {
+  type: 'nemo_transducer' | 'whisper';
+  encoder: string;
+  decoder: string;
+  joiner?: string | undefined;
+  tokens: string;
+  numThreads?: number | undefined;
+}
+
+function assertFileExists(filePath: string, label: string): void {
   if (!existsSync(filePath)) {
     throw new Error(`Missing ${label}: ${filePath}`);
   }
 }
 
 export class SherpaOfflineRecognizerEngine {
+  declare recognizer: SherpaOfflineRecognizer;
+  declare sampleRate: number;
+
   /**
    * @param {{ type: 'nemo_transducer' | 'whisper',
    *           encoder: string, decoder: string, joiner?: string, tokens: string,
    *           numThreads?: number }} config
    */
-  constructor(config) {
+  constructor(config: SherpaOfflineRecognizerEngineConfig) {
     assertFileExists(config.encoder, 'offline encoder');
     assertFileExists(config.decoder, 'offline decoder');
     if (config.type === 'nemo_transducer') {
-      assertFileExists(config.joiner, 'offline joiner');
+      assertFileExists(config.joiner!, 'offline joiner');
     }
     assertFileExists(config.tokens, 'tokens');
 
-    const sherpa = loadSherpaOnnxNode();
+    const sherpa = loadSherpaOnnxNode() as SherpaOnnxNode;
 
-    const modelConfig =
+    const modelConfig: SherpaOfflineModelConfig =
       config.type === 'whisper'
         ? {
             whisper: {
@@ -71,7 +120,7 @@ export class SherpaOfflineRecognizerEngine {
             debug: 0,
           };
 
-    const recognizerConfig = {
+    const recognizerConfig: SherpaOfflineRecognizerConfig = {
       featConfig: {
         sampleRate: 16000,
         featureDim: 80,
@@ -89,11 +138,11 @@ export class SherpaOfflineRecognizerEngine {
         : recognizerConfig.featConfig.sampleRate;
   }
 
-  createStream() {
+  createStream(): SherpaOfflineStream {
     return this.recognizer.createStream();
   }
 
-  acceptWaveform(stream, sampleRate, samples) {
+  acceptWaveform(stream: SherpaOfflineStream | null | undefined, sampleRate: number, samples: Float32Array): void {
     if (!stream || typeof stream.acceptWaveform !== 'function') {
       throw new Error('Unexpected sherpa offline stream: missing acceptWaveform()');
     }
@@ -112,7 +161,7 @@ export class SherpaOfflineRecognizerEngine {
    * @param {Buffer} pcm16
    * @returns {string}
    */
-  decodePcm16(pcm16) {
+  decodePcm16(pcm16: Buffer): string {
     if (pcm16.length === 0) {
       return '';
     }
@@ -142,7 +191,7 @@ export class SherpaOfflineRecognizerEngine {
     }
   }
 
-  free() {
+  free(): void {
     try {
       this.recognizer?.free?.();
     } catch {
@@ -161,10 +210,17 @@ export class SherpaOfflineRecognizerEngine {
  * live `partial` messages are the concatenation of already-committed segments.
  */
 export class SherpaSegmentTranscriptionSession extends EventEmitter {
+  declare engine: SherpaOfflineRecognizerEngine;
+  declare requiredSampleRate: number;
+  declare connected: boolean;
+  declare currentSegmentId: string | null;
+  declare previousSegmentId: string | null;
+  declare pcm16: Buffer;
+
   /**
    * @param {{ engine: SherpaOfflineRecognizerEngine }} params
    */
-  constructor({ engine }) {
+  constructor({ engine }: { engine: SherpaOfflineRecognizerEngine }) {
     super();
     this.engine = engine;
     this.requiredSampleRate = engine.sampleRate;
@@ -174,7 +230,7 @@ export class SherpaSegmentTranscriptionSession extends EventEmitter {
     this.pcm16 = Buffer.alloc(0);
   }
 
-  async connect() {
+  async connect(): Promise<void> {
     if (this.connected) {
       return;
     }
@@ -182,7 +238,7 @@ export class SherpaSegmentTranscriptionSession extends EventEmitter {
     this.connected = true;
   }
 
-  appendPcm16(chunk) {
+  appendPcm16(chunk: Buffer): void {
     if (!this.connected || !this.currentSegmentId) {
       this.emit('error', new Error('Sherpa transcription session not connected'));
       return;
@@ -190,7 +246,7 @@ export class SherpaSegmentTranscriptionSession extends EventEmitter {
     this.pcm16 = this.pcm16.length === 0 ? chunk : Buffer.concat([this.pcm16, chunk]);
   }
 
-  commit() {
+  commit(): void {
     if (!this.connected || !this.currentSegmentId) {
       this.emit('error', new Error('Sherpa transcription session not connected'));
       return;
@@ -208,7 +264,7 @@ export class SherpaSegmentTranscriptionSession extends EventEmitter {
 
     this.emit('committed', { segmentId, previousSegmentId });
 
-    let transcript;
+    let transcript: string;
     try {
       transcript = this.engine.decodePcm16(pcm16);
     } catch (err) {
@@ -218,7 +274,7 @@ export class SherpaSegmentTranscriptionSession extends EventEmitter {
     this.emit('transcript', { segmentId, transcript, isFinal: true });
   }
 
-  clear() {
+  clear(): void {
     if (!this.connected) {
       return;
     }
@@ -226,7 +282,7 @@ export class SherpaSegmentTranscriptionSession extends EventEmitter {
     this.currentSegmentId = randomUUID();
   }
 
-  close() {
+  close(): void {
     this.connected = false;
     this.currentSegmentId = null;
     this.pcm16 = Buffer.alloc(0);

@@ -1,5 +1,20 @@
 import { readDiskCache, writeDiskCache } from './disk-cache.js';
 
+interface RepoMeta {
+  stars: number | null;
+  repoUpdatedAt: string | null;
+}
+
+interface MetaCacheEntry {
+  expiresAt: number;
+  value: RepoMeta;
+}
+
+interface GitHubRepoPayload {
+  stargazers_count?: number;
+  pushed_at?: unknown;
+}
+
 const GITHUB_API_BASE = 'https://api.github.com';
 const CACHE_TTL_MS = 3 * 60 * 60 * 1000;
 const FAILURE_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -8,13 +23,13 @@ const FAILURE_CACHE_TTL_MS = 5 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 1500;
 const DISK_CACHE_FILE = 'skills-github-meta.json';
 
-const metaCache = new Map();
-const inFlight = new Map();
+const metaCache = new Map<string, MetaCacheEntry>();
+const inFlight = new Map<string, Promise<RepoMeta | null>>();
 
 let diskLoaded = false;
-let diskWriteTimer = null;
+let diskWriteTimer: NodeJS.Timeout | null = null;
 
-const loadDiskEntries = () => {
+const loadDiskEntries = (): void => {
   if (diskLoaded) {
     return;
   }
@@ -24,7 +39,7 @@ const loadDiskEntries = () => {
     return;
   }
   const now = Date.now();
-  for (const [repo, entry] of Object.entries(persisted)) {
+  for (const [repo, entry] of Object.entries(persisted as Record<string, MetaCacheEntry | null | undefined>)) {
     if (
       entry
       && typeof entry === 'object'
@@ -38,14 +53,14 @@ const loadDiskEntries = () => {
   }
 };
 
-const scheduleDiskWrite = () => {
+const scheduleDiskWrite = (): void => {
   if (diskWriteTimer) {
     return;
   }
   diskWriteTimer = setTimeout(() => {
     diskWriteTimer = null;
     const now = Date.now();
-    const persisted = {};
+    const persisted: Record<string, MetaCacheEntry> = {};
     for (const [repo, entry] of metaCache.entries()) {
       if (entry.expiresAt > now) {
         persisted[repo] = entry;
@@ -58,18 +73,18 @@ const scheduleDiskWrite = () => {
   }
 };
 
-const parseMeta = (payload) => {
+const parseMeta = (payload: GitHubRepoPayload | null | undefined): RepoMeta | null => {
   if (!payload || typeof payload !== 'object') {
     return null;
   }
   const pushedAt = payload.pushed_at;
   return {
-    stars: Number.isFinite(payload.stargazers_count) ? payload.stargazers_count : null,
+    stars: Number.isFinite(payload.stargazers_count) ? payload.stargazers_count! : null,
     repoUpdatedAt: typeof pushedAt === 'string' && pushedAt ? pushedAt : null,
   };
 };
 
-const fetchRepoMeta = async (normalizedRepo) => {
+const fetchRepoMeta = async (normalizedRepo: string): Promise<RepoMeta | null> => {
   loadDiskEntries();
   const cached = metaCache.get(normalizedRepo);
   if (cached && Date.now() < cached.expiresAt) {
@@ -81,7 +96,7 @@ const fetchRepoMeta = async (normalizedRepo) => {
     return existing;
   }
 
-  const run = (async () => {
+  const run = (async (): Promise<RepoMeta | null> => {
     try {
       const response = await fetch(`${GITHUB_API_BASE}/repos/${normalizedRepo}`, {
         headers: { Accept: 'application/vnd.github+json' },
@@ -98,7 +113,7 @@ const fetchRepoMeta = async (normalizedRepo) => {
         return null;
       }
 
-      const value = parseMeta(await response.json());
+      const value = parseMeta(await response.json() as GitHubRepoPayload | null);
       if (value) {
         metaCache.set(normalizedRepo, { expiresAt: Date.now() + CACHE_TTL_MS, value });
         scheduleDiskWrite();
@@ -125,14 +140,14 @@ const fetchRepoMeta = async (normalizedRepo) => {
  * `owner/repo` strings. Best-effort: failed lookups resolve to null and
  * never block the catalog response.
  */
-export async function fetchGitHubRepoMetas(normalizedRepos) {
-  const unique = [...new Set(normalizedRepos.filter(Boolean))];
-  const entries = await Promise.all(unique.map(async (repo) => [repo, await fetchRepoMeta(repo)]));
+export async function fetchGitHubRepoMetas(normalizedRepos: ReadonlyArray<string | null | undefined>): Promise<Record<string, RepoMeta | null>> {
+  const unique = [...new Set(normalizedRepos.filter(Boolean))] as string[];
+  const entries = await Promise.all(unique.map(async (repo): Promise<[string, RepoMeta | null]> => [repo, await fetchRepoMeta(repo)]));
   return Object.fromEntries(entries);
 }
 
 /** For tests only: clear the in-memory repository metadata cache. */
-export function clearGitHubMetaCache() {
+export function clearGitHubMetaCache(): void {
   metaCache.clear();
   inFlight.clear();
   diskLoaded = true;

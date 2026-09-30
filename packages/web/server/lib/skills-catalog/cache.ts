@@ -1,16 +1,27 @@
 import { readDiskCache, writeDiskCache } from './disk-cache.js';
 
+interface CacheEntry {
+  expiresAt: number;
+  value: object;
+}
+
+interface CacheKeyParts {
+  normalizedRepo?: string | null | undefined;
+  subpath?: string | null | undefined;
+  identityId?: string | null | undefined;
+}
+
 const DEFAULT_TTL_MS = 3 * 60 * 60 * 1000;
 const DISK_CACHE_FILE = 'skills-catalog-cache.json';
 const MAX_CONCURRENT_SCANS = 2;
 
-const cache = new Map();
-const inFlight = new Map();
+const cache = new Map<string, CacheEntry>();
+const inFlight = new Map<string, Promise<object>>();
 
 let diskLoaded = false;
-let diskWriteTimer = null;
+let diskWriteTimer: NodeJS.Timeout | null = null;
 
-const loadDiskEntries = () => {
+const loadDiskEntries = (): void => {
   if (diskLoaded) {
     return;
   }
@@ -20,7 +31,7 @@ const loadDiskEntries = () => {
     return;
   }
   const now = Date.now();
-  for (const [key, entry] of Object.entries(persisted)) {
+  for (const [key, entry] of Object.entries(persisted as Record<string, CacheEntry | null | undefined>)) {
     if (
       entry
       && typeof entry === 'object'
@@ -34,14 +45,14 @@ const loadDiskEntries = () => {
   }
 };
 
-const scheduleDiskWrite = () => {
+const scheduleDiskWrite = (): void => {
   if (diskWriteTimer) {
     return;
   }
   diskWriteTimer = setTimeout(() => {
     diskWriteTimer = null;
     const now = Date.now();
-    const persisted = {};
+    const persisted: Record<string, CacheEntry> = {};
     for (const [key, entry] of cache.entries()) {
       if (entry.expiresAt > now) {
         persisted[key] = entry;
@@ -54,14 +65,14 @@ const scheduleDiskWrite = () => {
   }
 };
 
-export function getCacheKey({ normalizedRepo, subpath, identityId }) {
+export function getCacheKey({ normalizedRepo, subpath, identityId }: CacheKeyParts): string {
   const safeRepo = String(normalizedRepo || '').trim();
   const safeSubpath = String(subpath || '').trim();
   const safeIdentity = String(identityId || '').trim();
   return `${safeRepo}::${safeSubpath}::${safeIdentity}`;
 }
 
-export function getCachedScan(key) {
+export function getCachedScan(key: string): object | null {
   loadDiskEntries();
   const entry = cache.get(key);
   if (!entry) return null;
@@ -72,13 +83,13 @@ export function getCachedScan(key) {
   return entry.value;
 }
 
-export function setCachedScan(key, value, ttlMs = DEFAULT_TTL_MS) {
+export function setCachedScan(key: string, value: object, ttlMs = DEFAULT_TTL_MS): void {
   const ttl = Number.isFinite(ttlMs) ? ttlMs : DEFAULT_TTL_MS;
   cache.set(key, { expiresAt: Date.now() + ttl, value });
   scheduleDiskWrite();
 }
 
-export function clearCache() {
+export function clearCache(): void {
   cache.clear();
   inFlight.clear();
 }
@@ -86,21 +97,21 @@ export function clearCache() {
 // ─── Concurrency-limited scan orchestration ───
 
 let activeScans = 0;
-const scanQueue = [];
+const scanQueue: Array<() => void> = [];
 
-const acquireScanSlot = () => new Promise((resolve) => {
+const acquireScanSlot = (): Promise<void> => new Promise<void>((resolve) => {
   scanQueue.push(resolve);
   pumpScanQueue();
 });
 
-const releaseScanSlot = () => {
+const releaseScanSlot = (): void => {
   activeScans -= 1;
   pumpScanQueue();
 };
 
-const pumpScanQueue = () => {
+const pumpScanQueue = (): void => {
   while (activeScans < MAX_CONCURRENT_SCANS && scanQueue.length > 0) {
-    const resolve = scanQueue.shift();
+    const resolve = scanQueue.shift()!;
     activeScans += 1;
     resolve();
   }
@@ -112,17 +123,17 @@ const pumpScanQueue = () => {
  * run; at most MAX_CONCURRENT_SCANS loaders run at once. Only successful
  * (`ok: true`) results are cached.
  */
-export async function scanWithCache(key, loader, { refresh = false } = {}) {
+export async function scanWithCache<T extends { ok?: unknown }>(key: string, loader: () => Promise<T>, { refresh = false }: { refresh?: boolean | undefined } = {}): Promise<T> {
   if (!refresh) {
     const cached = getCachedScan(key);
     if (cached) {
-      return cached;
+      return cached as T;
     }
   }
 
   const existing = inFlight.get(key);
   if (existing) {
-    return existing;
+    return existing as Promise<T>;
   }
 
   const run = (async () => {

@@ -8,16 +8,52 @@ import path from 'path';
 
 import { loadSherpaOnnxNode } from './sherpa-loader.js';
 
-function assertFileExists(filePath, label) {
+interface SherpaTtsModelConfig {
+  vits?: { model: string; tokens: string; dataDir?: string; lengthScale: number };
+  kokoro?: { model: string; voices: string; tokens: string; dataDir: string; lengthScale: number; lexicon?: string };
+}
+
+interface SherpaTtsAudio {
+  samples?: Float32Array | number[];
+  sampleRate?: number;
+}
+
+interface SherpaOfflineTts {
+  sampleRate?: number;
+  generate: (request: { text: string; sid: number | undefined; speed: number; enableExternalBuffer: boolean }) => SherpaTtsAudio | null;
+  free?: () => void;
+}
+
+interface SherpaOnnxNode {
+  OfflineTts?: new (config: { model: SherpaTtsModelConfig; numThreads: number; provider: string; maxNumSentences: number }) => SherpaOfflineTts;
+}
+
+interface SherpaTtsModelFiles {
+  modelDir: string;
+  type?: string | undefined;
+  files: Record<string, string>;
+  lexicon?: string[] | undefined;
+}
+
+interface SherpaTtsEngineConfig extends SherpaTtsModelFiles {
+  numThreads?: number | undefined;
+}
+
+interface SynthesizeOptions {
+  speakerId?: number | undefined;
+  speed?: number | undefined;
+}
+
+function assertFileExists(filePath: string, label: string): void {
   if (!existsSync(filePath)) {
     throw new Error(`Missing ${label}: ${filePath}`);
   }
 }
 
-function float32ToPcm16le(samples) {
+function float32ToPcm16le(samples: Float32Array): Buffer {
   const out = new Int16Array(samples.length);
   for (let i = 0; i < samples.length; i += 1) {
-    const clamped = Math.max(-1, Math.min(1, samples[i]));
+    const clamped = Math.max(-1, Math.min(1, samples[i]!));
     out[i] = Math.round(clamped * 32767);
   }
   return Buffer.from(out.buffer, out.byteOffset, out.byteLength);
@@ -29,9 +65,9 @@ function float32ToPcm16le(samples) {
  * voice with espeak-ng phonemization.
  * @param {{ modelDir: string, type?: string, files: Record<string, string>, lexicon?: string[] }} config
  */
-function buildModelConfig(config) {
-  const file = (key, label) => {
-    const filePath = path.join(config.modelDir, config.files[key]);
+function buildModelConfig(config: SherpaTtsModelFiles): SherpaTtsModelConfig {
+  const file = (key: string, label: string): string => {
+    const filePath = path.join(config.modelDir, config.files[key]!);
     assertFileExists(filePath, label);
     return filePath;
   };
@@ -61,13 +97,15 @@ function buildModelConfig(config) {
 }
 
 export class SherpaTtsEngine {
+  declare tts: SherpaOfflineTts;
+
   /**
    * @param {{ modelDir: string, type?: string, files: Record<string, string>, lexicon?: string[], numThreads?: number }} config
    */
-  constructor(config) {
+  constructor(config: SherpaTtsEngineConfig) {
     const model = buildModelConfig(config);
 
-    const sherpa = loadSherpaOnnxNode();
+    const sherpa = loadSherpaOnnxNode() as SherpaOnnxNode;
     if (typeof sherpa.OfflineTts !== 'function') {
       throw new Error('sherpa-onnx-node OfflineTts is unavailable');
     }
@@ -86,7 +124,7 @@ export class SherpaTtsEngine {
    * @param {{ speakerId?: number, speed?: number }} [options]
    * @returns {{ pcm16: Buffer, sampleRate: number }}
    */
-  synthesize(text, options = {}) {
+  synthesize(text: string, options: SynthesizeOptions = {}): { pcm16: Buffer; sampleRate: number } {
     const trimmed = String(text || '').trim();
     if (!trimmed) {
       throw new Error('Cannot synthesize empty text');
@@ -101,7 +139,7 @@ export class SherpaTtsEngine {
       enableExternalBuffer: false,
     });
 
-    let samples = null;
+    let samples: Float32Array | null = null;
     if (audio && audio.samples instanceof Float32Array) {
       samples = Float32Array.from(audio.samples);
     } else if (audio && Array.isArray(audio.samples)) {
@@ -121,7 +159,7 @@ export class SherpaTtsEngine {
     return { pcm16: float32ToPcm16le(samples), sampleRate };
   }
 
-  free() {
+  free(): void {
     try {
       this.tts?.free?.();
     } catch {

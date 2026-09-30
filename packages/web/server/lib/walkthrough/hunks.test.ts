@@ -28,8 +28,8 @@ describe('parseDiffFiles', () => {
     const { files } = parseDiffFiles(TWO_FILE_DIFF, 'working');
 
     expect(files.map((file) => file.path)).toEqual(['src/a.ts', 'src/b.ts']);
-    expect(files[0].hunks).toHaveLength(2);
-    expect(files[0].hunks[0]).toMatchObject({
+    expect(files[0]!.hunks).toHaveLength(2);
+    expect(files[0]!.hunks[0]).toMatchObject({
       oldStart: 1,
       oldLines: 3,
       newStart: 1,
@@ -37,14 +37,14 @@ describe('parseDiffFiles', () => {
       added: 1,
       deleted: 0,
     });
-    expect(files[0].hunks[1]).toMatchObject({ added: 1, deleted: 1 });
-    expect(files[1].status).toBe('added');
-    expect(files[1].hunks[0]).toMatchObject({ added: 2, deleted: 0 });
+    expect(files[0]!.hunks[1]).toMatchObject({ added: 1, deleted: 1 });
+    expect(files[1]!.status).toBe('added');
+    expect(files[1]!.hunks[0]).toMatchObject({ added: 2, deleted: 0 });
   });
 
   it('produces a standalone applicable patch per hunk', () => {
     const { files } = parseDiffFiles(TWO_FILE_DIFF, 'working');
-    const patch = files[0].hunks[1].patch;
+    const patch = files[0]!.hunks[1]!.patch;
 
     expect(patch.startsWith('diff --git a/src/a.ts b/src/a.ts')).toBe(true);
     expect(patch).toContain('--- a/src/a.ts');
@@ -63,18 +63,18 @@ describe('parseDiffFiles', () => {
   });
 
   it('keeps an untouched hunk addressable when a neighbour changes', () => {
-    const before = parseDiffFiles(TWO_FILE_DIFF, 'working').files[0].hunks;
+    const before = parseDiffFiles(TWO_FILE_DIFF, 'working').files[0]!.hunks;
     const edited = TWO_FILE_DIFF.replace('+const next = true;', '+const next = false;');
-    const after = parseDiffFiles(edited, 'working').files[0].hunks;
+    const after = parseDiffFiles(edited, 'working').files[0]!.hunks;
 
     // The unrelated first hunk survives; only the edited one loses its id.
-    expect(after[0].id).toBe(before[0].id);
-    expect(after[1].id).not.toBe(before[1].id);
+    expect(after[0]!.id).toBe(before[0]!.id);
+    expect(after[1]!.id).not.toBe(before[1]!.id);
   });
 
   it('separates identical hunks in different scopes', () => {
-    const staged = parseDiffFiles(TWO_FILE_DIFF, 'staged').files[0].hunks[0].id;
-    const working = parseDiffFiles(TWO_FILE_DIFF, 'working').files[0].hunks[0].id;
+    const staged = parseDiffFiles(TWO_FILE_DIFF, 'staged').files[0]!.hunks[0]!.id;
+    const working = parseDiffFiles(TWO_FILE_DIFF, 'working').files[0]!.hunks[0]!.id;
 
     expect(staged).not.toBe(working);
   });
@@ -128,7 +128,7 @@ Binary files a/logo.png and b/logo.png differ
     const { files } = parseDiffFiles(binary, 'working');
 
     expect(files[0]).toMatchObject({ path: 'logo.png', binary: true });
-    expect(files[0].hunks).toHaveLength(0);
+    expect(files[0]!.hunks).toHaveLength(0);
   });
 
   it('returns nothing for empty or whitespace input', () => {

@@ -7,7 +7,23 @@ const ALIASES = new Map([
   ['h3', 'working:src/b.ts:cccc3333'],
 ]);
 
-const walkthrough = (chapters) => ({ title: 'Change', focus: 'why', chapters });
+type ModelWalkthroughInput = NonNullable<Parameters<typeof normalizeWalkthrough>[0]>;
+
+interface LooseStop {
+  title: string;
+  hunks: string[];
+  importance: string;
+  prose: string;
+}
+
+interface LooseChapter {
+  title: string;
+  icon: string;
+  blurb: string;
+  stops: LooseStop[];
+}
+
+const walkthrough = (chapters: LooseChapter[]) => ({ title: 'Change', focus: 'why', chapters }) as ModelWalkthroughInput;
 
 describe('normalizeWalkthrough', () => {
   it('maps aliases to real hunk ids and assigns stable local ids', () => {
@@ -22,8 +38,8 @@ describe('normalizeWalkthrough', () => {
       },
     ]), ALIASES);
 
-    expect(result.chapters[0].id).toBe('chapter-1');
-    expect(result.chapters[0].stops[0]).toMatchObject({
+    expect(result.chapters[0]!.id).toBe('chapter-1');
+    expect(result.chapters[0]!.stops[0]).toMatchObject({
       id: 'stop-1-1',
       hunkIds: ['working:src/a.ts:aaaa1111', 'working:src/a.ts:bbbb2222'],
       importance: 'critical',
@@ -42,7 +58,7 @@ describe('normalizeWalkthrough', () => {
       },
     ]), ALIASES);
 
-    expect(result.chapters[0].stops[0].hunkIds).toEqual(['working:src/a.ts:aaaa1111']);
+    expect(result.chapters[0]!.stops[0]!.hunkIds).toEqual(['working:src/a.ts:aaaa1111']);
     expect(result.droppedAnchors).toBe(2);
   });
 
@@ -59,8 +75,8 @@ describe('normalizeWalkthrough', () => {
       },
     ]), ALIASES);
 
-    expect(result.chapters[0].stops[0].hunkIds).toEqual(['working:src/a.ts:aaaa1111']);
-    expect(result.chapters[0].stops[1].hunkIds).toEqual(['working:src/a.ts:bbbb2222']);
+    expect(result.chapters[0]!.stops[0]!.hunkIds).toEqual(['working:src/a.ts:aaaa1111']);
+    expect(result.chapters[0]!.stops[1]!.hunkIds).toEqual(['working:src/a.ts:bbbb2222']);
   });
 
   it('discards stops left with no anchor or no prose', () => {
@@ -77,7 +93,7 @@ describe('normalizeWalkthrough', () => {
       },
     ]), ALIASES);
 
-    expect(result.chapters[0].stops.map((stop) => stop.title)).toEqual(['Real']);
+    expect(result.chapters[0]!.stops.map((stop) => stop.title)).toEqual(['Real']);
   });
 
   it('rejects a response whose stops all fall away', () => {
@@ -96,15 +112,15 @@ describe('normalizeWalkthrough', () => {
       },
     ]), ALIASES);
 
-    expect(result.chapters[0].title.length).toBeLessThanOrEqual(24);
-    expect(result.chapters[0].icon).toBe('doc');
-    expect(result.chapters[0].stops[0].importance).toBe('normal');
+    expect(result.chapters[0]!.title.length).toBeLessThanOrEqual(24);
+    expect(result.chapters[0]!.icon).toBe('doc');
+    expect(result.chapters[0]!.stops[0]!.importance).toBe('normal');
   });
 
   it('caps the total number of stops', () => {
     const many = Array.from({ length: 30 }, (_, index) => ({
       title: `Stop ${index}`,
-      hunks: [['h1', 'h2', 'h3'][index % 3]],
+      hunks: [['h1', 'h2', 'h3'][index % 3]!],
       importance: 'normal',
       prose: 'Text.',
     }));

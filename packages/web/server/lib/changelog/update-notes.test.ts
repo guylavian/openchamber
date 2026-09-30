@@ -1,14 +1,31 @@
 import { describe, expect, it } from 'vitest';
 import { fetchUpdateNotes, renderUpdateNotes } from './update-notes.js';
 
-const compare = (a, b) => {
+interface ReleaseNotes {
+  new?: string[];
+  improvements?: string[];
+  fixes?: string[];
+  sdk?: string[];
+  misc?: string[];
+}
+
+interface IndexEntry {
+  version: string;
+  date: string;
+  title: string | null;
+  intro: string | null;
+  app: ReleaseNotes;
+  vscode: null;
+}
+
+const compare = (a: string, b: string) => {
   const pa = a.split('.').map(Number);
   const pb = b.split('.').map(Number);
-  for (let i = 0; i < 3; i += 1) if (pa[i] !== pb[i]) return pa[i] - pb[i];
+  for (let i = 0; i < 3; i += 1) if (pa[i] !== pb[i]) return pa[i]! - pb[i]!;
   return 0;
 };
 
-const index = [
+const index: [IndexEntry, IndexEntry, IndexEntry] = [
   { version: '1.2.3', date: '2026-03-03', title: 'Comments everywhere', intro: 'A short intro.', app: { new: ['**Comments:** on code.'], improvements: [], fixes: ['Chat: no freeze.'], misc: [] }, vscode: null },
   { version: '1.2.2', date: '2026-03-02', title: null, intro: null, app: { new: [], improvements: ['Faster.'], fixes: [], misc: [] }, vscode: null },
   { version: '1.2.1', date: '2026-03-01', title: 'Old', intro: null, app: { new: ['Older.'], improvements: [], fixes: [], misc: [] }, vscode: null },
@@ -65,14 +82,14 @@ A short intro.
 
 describe('fetchUpdateNotes', () => {
   it('turns a failed request or a thrown fetch into null', async () => {
-    const notFound = async () => ({ ok: false });
+    const notFound = async () => ({ ok: false }) as Response;
     expect(await fetchUpdateNotes('1.0.0', '2.0.0', compare, { fetch: notFound })).toBe(null);
     const throwing = async () => { throw new Error('offline'); };
     expect(await fetchUpdateNotes('1.0.0', '2.0.0', compare, { fetch: throwing })).toBe(null);
   });
 
   it('renders a successful response', async () => {
-    const ok = async () => ({ ok: true, json: async () => index });
+    const ok = async () => ({ ok: true, json: async () => index }) as Response;
     expect(await fetchUpdateNotes('1.2.2', '1.2.3', compare, { fetch: ok })).toMatch(/^## \[1\.2\.3\] - 2026-03-03\n\n\*\*Comments everywhere\*\*/);
   });
 });

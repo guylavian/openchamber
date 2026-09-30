@@ -13,9 +13,17 @@ import { spawn } from 'child_process';
 
 import { getLocalSttModelSpec } from './model-catalog.js';
 
-async function hasRequiredFiles(modelDir, requiredFiles) {
+type ProgressHandler = (downloadedBytes: number, totalBytes: number | null) => void;
+
+interface EnsureLocalSttModelOptions {
+  modelsDir: string;
+  modelId: string;
+  onProgress?: ProgressHandler;
+}
+
+async function hasRequiredFiles(modelDir: string, requiredFiles: string[]): Promise<boolean> {
   const results = await Promise.all(
-    requiredFiles.map(async (rel) => {
+    requiredFiles.map(async (rel): Promise<boolean> => {
       try {
         const s = await stat(path.join(modelDir, rel));
         if (s.isDirectory()) {
@@ -30,7 +38,7 @@ async function hasRequiredFiles(modelDir, requiredFiles) {
   return results.every(Boolean);
 }
 
-async function downloadToFile(url, outputPath, onProgress) {
+async function downloadToFile(url: string, outputPath: string, onProgress?: ProgressHandler): Promise<void> {
   const res = await fetch(url);
   if (!res.ok) {
     throw new Error(`Failed to download ${url}: ${res.status} ${res.statusText}`);
@@ -47,7 +55,7 @@ async function downloadToFile(url, outputPath, onProgress) {
 
   const nodeStream = Readable.fromWeb(res.body);
   if (typeof onProgress === 'function') {
-    nodeStream.on('data', (chunk) => {
+    nodeStream.on('data', (chunk: Uint8Array) => {
       downloadedBytes += chunk.length;
       onProgress(downloadedBytes, totalBytes);
     });
@@ -62,10 +70,10 @@ async function downloadToFile(url, outputPath, onProgress) {
   }
 }
 
-async function extractTarArchive(archivePath, destDir) {
+async function extractTarArchive(archivePath: string, destDir: string): Promise<void> {
   await mkdir(destDir, { recursive: true });
 
-  await new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     const child = spawn('tar', ['xf', archivePath, '-C', destDir], {
       stdio: 'ignore',
       windowsHide: true,
@@ -81,7 +89,7 @@ async function extractTarArchive(archivePath, destDir) {
   });
 }
 
-async function isNonEmptyFile(filePath) {
+async function isNonEmptyFile(filePath: string): Promise<boolean> {
   try {
     const s = await stat(filePath);
     return s.isFile() && s.size > 0;
@@ -96,7 +104,7 @@ async function isNonEmptyFile(filePath) {
  * @param {string} modelId
  * @returns {Promise<boolean>}
  */
-export async function isLocalSttModelInstalled(modelsDir, modelId) {
+export async function isLocalSttModelInstalled(modelsDir: string, modelId: string): Promise<boolean> {
   const spec = getLocalSttModelSpec(modelId);
   return hasRequiredFiles(path.join(modelsDir, spec.extractedDir), spec.requiredFiles);
 }
@@ -114,7 +122,7 @@ export async function isLocalSttModelInstalled(modelsDir, modelId) {
  *           onProgress?: (downloadedBytes: number, totalBytes: number | null) => void }} options
  * @returns {Promise<string>}
  */
-export async function ensureLocalSttModel({ modelsDir, modelId, onProgress }) {
+export async function ensureLocalSttModel({ modelsDir, modelId, onProgress }: EnsureLocalSttModelOptions): Promise<string> {
   const spec = getLocalSttModelSpec(modelId);
   const modelDir = path.join(modelsDir, spec.extractedDir);
   if (await hasRequiredFiles(modelDir, spec.requiredFiles)) {

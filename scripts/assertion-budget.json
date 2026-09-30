@@ -57,6 +57,12 @@
     "await outcome as Error | null": 1,
     "emitted[0]!": 3
   },
+  "packages/web/server/lib/changelog/update-notes.test.ts": {
+    "({ ok: false }) as Response": 1,
+    "({ ok: true, json: async () => index }) as Response": 1,
+    "pa[i]!": 1,
+    "pb[i]!": 1
+  },
   "packages/web/server/lib/client-auth/pairing.ts": {
     "JSON.parse(raw) as { sessions?: unknown } | null": 1,
     "error as NodeJS.ErrnoException | null": 1,
@@ -93,6 +99,23 @@
   },
   "packages/web/server/lib/dictation/local/sherpa-loader.ts": {
     "error as ErrorLike": 2
+  },
+  "packages/web/server/lib/dictation/local/sherpa-recognizer.ts": {
+    "config.joiner!": 1,
+    "loadSherpaOnnxNode() as SherpaOnnxNode": 1
+  },
+  "packages/web/server/lib/dictation/local/sherpa-tts.ts": {
+    "config.files[key]!": 1,
+    "loadSherpaOnnxNode() as SherpaOnnxNode": 1,
+    "samples[i]!": 1
+  },
+  "packages/web/server/lib/dictation/local/worker-client.ts": {
+    "message as WorkerMessage": 1
+  },
+  "packages/web/server/lib/dictation/stream-manager.ts": {
+    "error as ErrorLike": 3,
+    "resolved.session!": 1,
+    "state.receivedChunks.get(nextSeq)!": 1
   },
   "packages/web/server/lib/event-stream/delta-coalescer.test.ts": {
     "emitted[1]!": 5,
@@ -500,6 +523,12 @@
   "packages/web/server/lib/session-lineage.ts": {
     "isChildById.keys().next().value!": 1
   },
+  "packages/web/server/lib/skills-catalog/cache.ts": {
+    "cached as T": 1,
+    "existing as Promise<T>": 1,
+    "persisted as Record<string, CacheEntry | null | undefined>": 1,
+    "scanQueue.shift()!": 1
+  },
   "packages/web/server/lib/skills-catalog/curated-sources.test.ts": {
     "anthropic!": 1
   },
@@ -508,6 +537,12 @@
   },
   "packages/web/server/lib/skills-catalog/git.ts": {
     "error as GitExecError | null | undefined": 1
+  },
+  "packages/web/server/lib/skills-catalog/github-meta.ts": {
+    "[...new Set(normalizedRepos.filter(Boolean))] as string[]": 1,
+    "await response.json() as GitHubRepoPayload | null": 1,
+    "payload.stargazers_count!": 1,
+    "persisted as Record<string, MetaCacheEntry | null | undefined>": 1
   },
   "packages/web/server/lib/skills-catalog/source.ts": {
     "pathSegments[pathSegments.length - 1]!": 1,
@@ -575,6 +610,10 @@
     "scores[bestOf(scores, marked)]!": 1,
     "scores[marked]!": 1
   },
+  "packages/web/server/lib/tts/stt.ts": {
+    "(mimeType || '').split(';')[0]!": 1,
+    "normalizeCustomOpenAIBaseURL(baseURL) as { error?: string; value?: string }": 1
+  },
   "packages/web/server/lib/tunnels/managed-config.ts": {
     "JSON.parse(legacyRaw) as ManagedTunnelsFileJson | null": 1,
     "JSON.parse(raw) as ManagedTunnelsFileJson | null": 1,
@@ -588,11 +627,41 @@
   "packages/web/server/lib/ui-auth/session-cookie.ts": {
     "forwarded.split(',')[0]!": 1
   },
+  "packages/web/server/lib/walkthrough/hunks.test.ts": {
+    "after[0]!": 1,
+    "after[1]!": 1,
+    "before[0]!": 1,
+    "before[1]!": 1,
+    "files[0]!": 5,
+    "files[0]!.hunks[1]!": 1,
+    "files[1]!": 2,
+    "parseDiffFiles(TWO_FILE_DIFF, 'staged').files[0]!": 1,
+    "parseDiffFiles(TWO_FILE_DIFF, 'staged').files[0]!.hunks[0]!": 1,
+    "parseDiffFiles(TWO_FILE_DIFF, 'working').files[0]!": 2,
+    "parseDiffFiles(TWO_FILE_DIFF, 'working').files[0]!.hunks[0]!": 1,
+    "parseDiffFiles(edited, 'working').files[0]!": 1
+  },
   "packages/web/server/lib/walkthrough/hunks.ts": {
     "current.hunkDigests!": 2,
     "hunkMatch[1]!": 1,
     "hunkMatch[3]!": 1,
     "match[1]!": 1,
     "match[2]!": 1
+  },
+  "packages/web/server/lib/walkthrough/languages.test.ts": {
+    "match[1]!": 1
+  },
+  "packages/web/server/lib/walkthrough/schema.test.ts": {
+    "({ title: 'Change', focus: 'why', chapters }) as ModelWalkthroughInput": 1,
+    "['h1', 'h2', 'h3'][index % 3]!": 1,
+    "result.chapters[0]!": 9,
+    "result.chapters[0]!.stops[0]!": 3,
+    "result.chapters[0]!.stops[1]!": 1
+  },
+  "packages/web/server/lib/walkthrough/store.ts": {
+    "JSON.parse(await fsp.readFile(full, 'utf8')) as StoredRecord | null": 1,
+    "JSON.parse(fs.readFileSync(filePath, 'utf8')) as StoredRecord | null": 1,
+    "error as ErrorLike | undefined": 3,
+    "fs.readdirSync(ENTRIES_DIR) .filter((name) => name.endsWith('.json')) .map((name) => { const full = path.join(ENTRIES_DIR, name); try { const stat = fs.statSync(full); return { full, size: stat.size, atime: stat.atimeMs }; } catch { return null; } }) .filter(Boolean) as EntryFile[]": 1
   }
 }

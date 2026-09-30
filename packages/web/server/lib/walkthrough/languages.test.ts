@@ -19,7 +19,7 @@ const interfaceLocales = () => {
   const source = fs.readFileSync(RUNTIME_TS, 'utf8');
   const match = source.match(/export const LOCALES = \[([^\]]*)\]/);
   if (!match) throw new Error(`Could not find LOCALES in ${RUNTIME_TS}`);
-  return match[1]
+  return match[1]!
     .split(',')
     .map((entry) => entry.trim().replace(/^['"]|['"]$/g, ''))
     .filter(Boolean);

@@ -226,6 +226,22 @@
         "reason": "Typing the env value as string | undefined makes the JavaScript's own String() coercion look unnecessary; removing it would change the emitted code."
       }
     ],
+    "packages/web/server/lib/dictation/local/sherpa-recognizer.ts": [
+      {
+        "rule": "@typescript-eslint/no-base-to-string",
+        "text": "return String(text ?? '').trim();",
+        "count": 1,
+        "reason": "Runtime parity: the original JavaScript's own String(...) conversion normalizes arbitrary input; removing it would change behaviour."
+      }
+    ],
+    "packages/web/server/lib/dictation/local/sherpa-tts.ts": [
+      {
+        "rule": "@typescript-eslint/no-unnecessary-type-conversion",
+        "text": "const trimmed = String(text || '').trim();",
+        "count": 1,
+        "reason": "Runtime parity: the original JavaScript's own String(...) conversion normalizes arbitrary input; removing it would change behaviour."
+      }
+    ],
     "packages/web/server/lib/foreman/execution.test.ts": [
       {
         "rule": "@typescript-eslint/no-unused-vars",
@@ -438,6 +454,26 @@
         "text": "const clampContent = (content: unknown) => String(content ?? '').trim().slice(0, GOAL_OBJECTIVE_CHAR_LIMIT);",
         "count": 1,
         "reason": "The JavaScript stringifies whatever content the caller sent with String(content ?? ''); the fix changes how the value is stringified."
+      }
+    ],
+    "packages/web/server/lib/skills-catalog/cache.ts": [
+      {
+        "rule": "@typescript-eslint/no-unnecessary-type-conversion",
+        "text": "const safeIdentity = String(identityId || '').trim();",
+        "count": 1,
+        "reason": "Runtime parity: the original JavaScript's own String(...) conversion normalizes arbitrary input; removing it would change behaviour."
+      },
+      {
+        "rule": "@typescript-eslint/no-unnecessary-type-conversion",
+        "text": "const safeRepo = String(normalizedRepo || '').trim();",
+        "count": 1,
+        "reason": "Runtime parity: the original JavaScript's own String(...) conversion normalizes arbitrary input; removing it would change behaviour."
+      },
+      {
+        "rule": "@typescript-eslint/no-unnecessary-type-conversion",
+        "text": "const safeSubpath = String(subpath || '').trim();",
+        "count": 1,
+        "reason": "Runtime parity: the original JavaScript's own String(...) conversion normalizes arbitrary input; removing it would change behaviour."
       }
     ],
     "packages/web/server/lib/skills-catalog/git.ts": [
