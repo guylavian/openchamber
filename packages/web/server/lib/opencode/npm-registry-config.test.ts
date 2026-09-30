@@ -12,7 +12,7 @@ const originalLowerUserConfig = process.env.npm_config_userconfig;
 const originalPrivateRegistry = process.env.PRIVATE_NPM_REGISTRY;
 const originalPrivateToken = process.env.PRIVATE_NPM_TOKEN;
 const originalScopedRegistry = process.env['npm_config_@scope:registry'];
-let userConfigPath;
+let userConfigPath: string;
 
 describe('npm registry configuration', () => {
   beforeEach(() => {

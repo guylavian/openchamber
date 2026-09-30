@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { createHmrStateRuntime } from './hmr-state-runtime.js';
 
-const createRuntime = (env = {}) => createHmrStateRuntime({
+const createRuntime = (env: Record<string, string> = {}) => createHmrStateRuntime({
   globalThisLike: {},
   os: { homedir: () => '/Users/example' },
   processLike: { env },

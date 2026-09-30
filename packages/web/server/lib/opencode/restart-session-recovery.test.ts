@@ -4,15 +4,15 @@ import { createSessionRuntime } from './session-runtime.js';
 
 describe('managed OpenCode restart session recovery', () => {
   it('settles busy sessions and broadcasts one interruption notification', () => {
-    const events = [];
+    const events: Array<{ type: string }> = [];
     const broadcastUiNotification = vi.fn();
     const rebindUpstream = vi.fn();
     const sessionRuntime = createSessionRuntime({
       writeSseEvent() {},
       getNotificationClients: () => new Set(),
-      broadcastEvent: (event) => events.push(event),
+      broadcastEvent: (event: { type: string }) => events.push(event),
     });
-    const onOpenCodeRestarted = () => {
+    const onOpenCodeRestarted = (): void => {
       rebindUpstream();
       const { sessionIds } = sessionRuntime.interruptBusySessionsAfterRestart();
       if (sessionIds.length > 0) {
@@ -28,7 +28,7 @@ describe('managed OpenCode restart session recovery', () => {
         });
       }
     };
-    const markBusy = (sessionID) => sessionRuntime.processOpenCodeSsePayload({
+    const markBusy = (sessionID: string): void => sessionRuntime.processOpenCodeSsePayload({
       type: 'session.status',
       properties: { sessionID, status: { type: 'busy' } },
     });
