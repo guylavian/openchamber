@@ -422,7 +422,6 @@
   "packages/web/server/lib/skills-catalog/cache.test.js": 77,
   "packages/web/server/lib/skills-catalog/github-meta.test.js": 71,
   "packages/web/server/lib/skills-catalog/install.js": 295,
-  "packages/web/server/lib/skills-catalog/scan.js": 221,
   "packages/web/server/lib/small-model/index.js": 455,
   "packages/web/server/lib/small-model/index.test.js": 542,
   "packages/web/server/lib/spaces/code-in-bait.js": 324,

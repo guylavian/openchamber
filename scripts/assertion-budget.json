@@ -585,6 +585,14 @@
     "payload.stargazers_count!": 1,
     "persisted as Record<string, MetaCacheEntry | null | undefined>": 1
   },
+  "packages/web/server/lib/skills-catalog/scan.ts": {
+    "match[1]!": 1,
+    "parsed.cloneUrlHttps!": 1,
+    "parsed.cloneUrlSsh!": 1,
+    "uniqueSkillDirs[idx++]!": 1,
+    "yaml.parse(match[1]!) as Record<string, unknown> | null": 1,
+    "{} as ScanOptions": 1
+  },
   "packages/web/server/lib/skills-catalog/source.ts": {
     "pathSegments[pathSegments.length - 1]!": 1,
     "raw.split('@')[1]!": 2

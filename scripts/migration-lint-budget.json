@@ -596,6 +596,14 @@
         "reason": "Typing message as string | null | undefined makes the JavaScript's own String() coercion look unnecessary; removing it would change the emitted code."
       }
     ],
+    "packages/web/server/lib/skills-catalog/scan.ts": [
+      {
+        "rule": "@typescript-eslint/no-unnecessary-type-conversion",
+        "text": "const toFsPath = (posixPath: string) => path.join(tempBase, ...String(posixPath || '').split('/').filter(Boolean));",
+        "count": 1,
+        "reason": "String(posixPath || '') is the original runtime expression; removing it would change the emitted JS (parity wins)"
+      }
+    ],
     "packages/web/server/lib/skills-catalog/source.ts": [
       {
         "rule": "@typescript-eslint/no-unnecessary-type-conversion",

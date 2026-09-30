@@ -6,15 +6,43 @@ import yaml from 'yaml';
 import { assertGitAvailable, looksLikeAuthError, runGit } from './git.js';
 import { parseSkillRepoSource } from './source.js';
 
+interface ScanIdentity {
+  sshKey?: string | null;
+}
+
+interface ScanOptions {
+  source?: unknown;
+  subpath?: unknown;
+  defaultSubpath?: unknown;
+  identity: ScanIdentity | null;
+}
+
+interface ParsedSkillMd {
+  ok: true;
+  frontmatter: Record<string, unknown>;
+  warnings: string[];
+}
+
+interface ScanItem {
+  repoSource: unknown;
+  repoSubpath: string | undefined;
+  skillDir: string;
+  skillName: string;
+  frontmatterName: string | undefined;
+  description: string | undefined;
+  installable: boolean;
+  warnings: string[] | undefined;
+}
+
 const SKILL_NAME_PATTERN = /^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/;
 
-function validateSkillName(skillName) {
+function validateSkillName(skillName: unknown) {
   if (typeof skillName !== 'string') return false;
   if (skillName.length < 1 || skillName.length > 64) return false;
   return SKILL_NAME_PATTERN.test(skillName);
 }
 
-function parseSkillMd(content) {
+function parseSkillMd(content: unknown): ParsedSkillMd {
   const text = typeof content === 'string' ? content : '';
   const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
   if (!match) {
@@ -26,7 +54,7 @@ function parseSkillMd(content) {
   }
 
   try {
-    const frontmatter = yaml.parse(match[1]) || {};
+    const frontmatter = (yaml.parse(match[1]!) as Record<string, unknown> | null) || {};
     return { ok: true, frontmatter, warnings: [] };
   } catch {
     return {
@@ -37,7 +65,7 @@ function parseSkillMd(content) {
   }
 }
 
-async function safeRm(dir) {
+async function safeRm(dir: string) {
   try {
     await fs.promises.rm(dir, { recursive: true, force: true });
   } catch {
@@ -45,7 +73,7 @@ async function safeRm(dir) {
   }
 }
 
-async function cloneRepo({ cloneUrl, identity, tempDir }) {
+async function cloneRepo({ cloneUrl, identity, tempDir }: { cloneUrl: string; identity: ScanIdentity | null; tempDir: string }) {
   const preferred = ['clone', '--depth', '1', '--filter=blob:none', '--no-checkout', cloneUrl, tempDir];
   const fallback = ['clone', '--depth', '1', '--no-checkout', cloneUrl, tempDir];
 
@@ -66,7 +94,7 @@ export async function scanSkillsRepository({
   subpath,
   defaultSubpath,
   identity,
-} = {}) {
+} = {} as ScanOptions) {
   const gitCheck = await assertGitAvailable();
   if (!gitCheck.ok) {
     return { ok: false, error: gitCheck.error };
@@ -78,7 +106,7 @@ export async function scanSkillsRepository({
   }
 
   const effectiveSubpath = parsed.effectiveSubpath || (typeof defaultSubpath === 'string' && defaultSubpath.trim() ? defaultSubpath.trim() : null);
-  const cloneUrl = identity?.sshKey ? parsed.cloneUrlSsh : parsed.cloneUrlHttps;
+  const cloneUrl = identity?.sshKey ? parsed.cloneUrlSsh! : parsed.cloneUrlHttps!;
 
   const tempBase = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'openchamber-skills-scan-'));
 
@@ -92,13 +120,13 @@ export async function scanSkillsRepository({
       return { ok: false, error: { kind: 'networkError', message: msg || 'Failed to clone repository' } };
     }
 
-    const toFsPath = (posixPath) => path.join(tempBase, ...String(posixPath || '').split('/').filter(Boolean));
+    const toFsPath = (posixPath: string) => path.join(tempBase, ...String(posixPath || '').split('/').filter(Boolean));
 
     const patterns = effectiveSubpath
       ? [`${effectiveSubpath}/SKILL.md`, `${effectiveSubpath}/**/SKILL.md`]
       : ['SKILL.md', '**/SKILL.md'];
 
-    let skillMdPaths = null;
+    let skillMdPaths: string[] | null = null;
 
     // Fast path: sparse checkout only SKILL.md files, then parse from disk.
     // This avoids one `git show` per skill.
@@ -154,17 +182,17 @@ export async function scanSkillsRepository({
       )
     );
 
-    const items = [];
+    const items: ScanItem[] = [];
     const maxParallel = 10;
     let idx = 0;
 
     const worker = async () => {
       while (idx < uniqueSkillDirs.length) {
-        const skillDir = uniqueSkillDirs[idx++];
+        const skillDir = uniqueSkillDirs[idx++]!;
         const skillName = path.posix.basename(skillDir);
         const skillMdPath = path.posix.join(skillDir, 'SKILL.md');
 
-        const warnings = [];
+        const warnings: string[] = [];
         let skillMdContent = '';
 
         // Prefer filesystem reads when sparse checkout succeeded.
