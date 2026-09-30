@@ -13,7 +13,7 @@ describe('quota credential store', () => {
     writeQuotaCredential('exe-dev', { usageToken: 'secret' });
     expect(fs.statSync(path.join(temporaryDirectory, 'quota')).mode & 0o777).toBe(0o700);
     expect(fs.statSync(path.join(temporaryDirectory, 'quota', 'exe-dev.json')).mode & 0o777).toBe(0o600);
-    expect(readQuotaCredential('exe-dev', (value) => value)).toEqual({ usageToken: 'secret' });
+    expect(readQuotaCredential('exe-dev', (value: unknown) => value)).toEqual({ usageToken: 'secret' });
     expect(() => writeQuotaCredential('../escape', {})).toThrow('Unsupported credential provider');
     deleteQuotaCredential('exe-dev');
   });

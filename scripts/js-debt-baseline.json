@@ -338,7 +338,6 @@
   "packages/web/server/lib/projects/project-setup.test.js": 557,
   "packages/web/server/lib/quota/credentials/providers.js": 40,
   "packages/web/server/lib/quota/credentials/store.js": 58,
-  "packages/web/server/lib/quota/credentials/store.test.js": 34,
   "packages/web/server/lib/quota/providers/claude/auth.js": 113,
   "packages/web/server/lib/quota/providers/claude/auth.test.js": 117,
   "packages/web/server/lib/quota/providers/claude/index.js": 151,
