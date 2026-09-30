@@ -19,11 +19,11 @@ const UNSAFE_BROWSER_PORTS = new Set([
 ]);
 
 
-function isUnsafeBrowserPort(port) {
+function isUnsafeBrowserPort(port: number): boolean {
   return Number.isFinite(port) && UNSAFE_BROWSER_PORTS.has(Math.trunc(port));
 }
 
-function resolveConfiguredBindHost(hostOverride) {
+function resolveConfiguredBindHost(hostOverride?: string | null): string {
   const configured = typeof hostOverride === 'string' && hostOverride.trim()
     ? hostOverride.trim()
     : typeof process.env.OPENCHAMBER_HOST === 'string'
@@ -32,11 +32,11 @@ function resolveConfiguredBindHost(hostOverride) {
   return configured || '127.0.0.1';
 }
 
-function resolveServeHost(hostOverride) {
+function resolveServeHost(hostOverride?: string | null): string {
   return resolveConfiguredBindHost(hostOverride);
 }
 
-function resolveApiHost(hostOverride) {
+function resolveApiHost(hostOverride?: string | null): string {
   const configured = resolveConfiguredBindHost(hostOverride);
 
   if (!configured) {
@@ -59,28 +59,28 @@ function resolveApiHost(hostOverride) {
   return configured;
 }
 
-function formatHostForUrl(host) {
+function formatHostForUrl(host: string | null | undefined): string {
   if (typeof host !== 'string') return '127.0.0.1';
   // Bracket IPv6 for URL usage.
   return host.includes(':') ? `[${host}]` : host;
 }
 
-function buildLocalUrl(port, endpoint = '', hostOverride) {
+function buildLocalUrl(port: number, endpoint = '', hostOverride?: string | null): string {
   const host = formatHostForUrl(resolveApiHost(hostOverride));
   const pathPart = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
   return `http://${host}:${port}${pathPart}`;
 }
 
-async function detectLanIPv4Address() {
-  const ip = await new Promise((resolve) => {
+async function detectLanIPv4Address(): Promise<string | null> {
+  const ip = await new Promise<string | null>((resolve) => {
     const socket = dgram.createSocket('udp4');
-    const finish = (value) => {
+    const finish = (value: string | null): void => {
       try { socket.close(); } catch {}
       resolve(value);
     };
     socket.once('error', () => finish(null));
     try {
-      socket.connect(80, '8.8.8.8', (error) => {
+      socket.connect(80, '8.8.8.8', (error?: Error | null) => {
         if (error) return finish(null);
         try {
           const addr = socket.address();
@@ -107,11 +107,11 @@ async function detectLanIPv4Address() {
 }
 
 
-function formatUnsafePortWarning(port) {
+function formatUnsafePortWarning(port: number): string {
   return `Port ${port} is browser-unsafe (ERR_UNSAFE_PORT) and is not supported for OpenChamber UI at ${buildLocalUrl(port, '/')}.`;
 }
 
-function assertSafeBrowserPort(port, { context = 'This action' } = {}) {
+function assertSafeBrowserPort(port: number, { context = 'This action' }: { context?: string } = {}): void {
   if (!isUnsafeBrowserPort(port)) {
     return;
   }
@@ -122,7 +122,7 @@ function assertSafeBrowserPort(port, { context = 'This action' } = {}) {
 }
 
 
-function hasUiPasswordConfigured(password) {
+function hasUiPasswordConfigured(password: string | null | undefined): boolean {
   return typeof password === 'string' && password.trim().length > 0;
 }
 
@@ -130,7 +130,7 @@ function hasUiPasswordConfigured(password) {
 // from a phone or another machine. Mirrors the pre-refactor CLI alphabet.
 const UI_PASSWORD_CHARSET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
 
-function generateUiPassword(length = 16) {
+function generateUiPassword(length = 16): string {
   let password = '';
   for (let i = 0; i < length; i++) {
     password += UI_PASSWORD_CHARSET[randomInt(UI_PASSWORD_CHARSET.length)];
@@ -143,7 +143,7 @@ function generateUiPassword(length = 16) {
 // password so daemon/foreground serves never silently drop the requested
 // protection. The caller must surface `generated` passwords to the user once
 // and persist them in the instance state file the server-side reads.
-function resolveServeUiPassword({ uiPassword, explicitUiPassword }) {
+function resolveServeUiPassword({ uiPassword, explicitUiPassword }: { uiPassword?: string | undefined; explicitUiPassword?: boolean | undefined }) {
   if (hasUiPasswordConfigured(uiPassword)) {
     return { password: uiPassword, generated: false };
   }
@@ -153,7 +153,7 @@ function resolveServeUiPassword({ uiPassword, explicitUiPassword }) {
   return { password: undefined, generated: false };
 }
 
-function assertAuthenticatedNetworkExposure({ host, uiPassword }) {
+function assertAuthenticatedNetworkExposure({ host, uiPassword }: { host?: string | undefined; uiPassword?: string | undefined }): void {
   const bindHost = resolveConfiguredBindHost(host);
   if (hasUiPasswordConfigured(uiPassword)) {
     return;

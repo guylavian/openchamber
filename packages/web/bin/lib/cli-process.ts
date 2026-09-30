@@ -3,15 +3,53 @@ import path from 'path';
 import { spawnSync } from 'child_process';
 import { getRunDir } from './cli-paths.js';
 
-async function getPidFilePath(port) {
+interface ProcessNotice {
+  level: string;
+  code: string;
+  message: string;
+}
+
+type NoticeHandler = (notice: ProcessNotice) => void;
+
+interface StoredInstanceOptions {
+  port?: number | undefined;
+  host?: string | undefined;
+  launchMode?: string | undefined;
+  uiPassword?: string | undefined;
+  hasUiPassword?: boolean | undefined;
+  apiOnly?: boolean | undefined;
+  startedAt?: number | undefined;
+}
+
+interface InstanceOptionsInput {
+  port: number;
+  host?: string | undefined;
+  launchMode?: string | undefined;
+  uiPassword?: string | undefined;
+  apiOnly?: boolean | undefined;
+  startedAt?: number | undefined;
+}
+
+interface ProcessStateOptions {
+  isProcessRunning?: ((pid: number) => boolean) | undefined;
+  readProcessCmdline?: ((pid: number) => string | null) | undefined;
+}
+
+interface ProcessStopOptions {
+  gracefulTimeoutMs?: number | undefined;
+  forceTimeoutMs?: number | undefined;
+  shutdownWaitMs?: number | undefined;
+}
+
+async function getPidFilePath(port: number): Promise<string> {
   return path.join(getRunDir(), `openchamber-${port}.pid`);
 }
 
-async function getInstanceFilePath(port) {
+async function getInstanceFilePath(port: number): Promise<string> {
   return path.join(getRunDir(), `openchamber-${port}.json`);
 }
 
-function readPidFile(pidFilePath) {
+function readPidFile(pidFilePath: string): number | null {
   try {
     const content = fs.readFileSync(pidFilePath, 'utf8').trim();
     const pid = parseInt(content, 10);
@@ -21,11 +59,11 @@ function readPidFile(pidFilePath) {
   }
 }
 
-function writePidFile(pidFilePath, pid, onNotice) {
+function writePidFile(pidFilePath: string, pid: number, onNotice?: NoticeHandler): void {
   try {
     fs.writeFileSync(pidFilePath, String(pid), { mode: 0o600 });
   } catch (error) {
-    const message = `Could not write PID file: ${error.message}`;
+    const message = `Could not write PID file: ${(error as Error).message}`;
     if (typeof onNotice === 'function') {
       onNotice({ level: 'warning', code: 'PID_FILE_WRITE_FAILED', message });
     } else {
@@ -34,7 +72,7 @@ function writePidFile(pidFilePath, pid, onNotice) {
   }
 }
 
-function removePidFile(pidFilePath) {
+function removePidFile(pidFilePath: string): void {
   try {
     if (fs.existsSync(pidFilePath)) {
       fs.unlinkSync(pidFilePath);
@@ -43,15 +81,15 @@ function removePidFile(pidFilePath) {
   }
 }
 
-function readInstanceOptions(instanceFilePath) {
+function readInstanceOptions(instanceFilePath: string): StoredInstanceOptions | null {
   try {
-    return JSON.parse(fs.readFileSync(instanceFilePath, 'utf8'));
+    return JSON.parse(fs.readFileSync(instanceFilePath, 'utf8')) as StoredInstanceOptions;
   } catch {
     return null;
   }
 }
 
-function writeInstanceOptions(instanceFilePath, options, onNotice) {
+function writeInstanceOptions(instanceFilePath: string, options: InstanceOptionsInput, onNotice?: NoticeHandler): void {
   try {
     const toStore = {
       port: options.port,
@@ -64,7 +102,7 @@ function writeInstanceOptions(instanceFilePath, options, onNotice) {
     };
     fs.writeFileSync(instanceFilePath, JSON.stringify(toStore, null, 2), { mode: 0o600 });
   } catch (error) {
-    const message = `Could not write instance file: ${error.message}`;
+    const message = `Could not write instance file: ${(error as Error).message}`;
     if (typeof onNotice === 'function') {
       onNotice({ level: 'warning', code: 'INSTANCE_FILE_WRITE_FAILED', message });
     } else {
@@ -73,7 +111,7 @@ function writeInstanceOptions(instanceFilePath, options, onNotice) {
   }
 }
 
-function removeInstanceFile(instanceFilePath) {
+function removeInstanceFile(instanceFilePath: string): void {
   try {
     if (fs.existsSync(instanceFilePath)) {
       fs.unlinkSync(instanceFilePath);
@@ -87,7 +125,7 @@ function removeInstanceFile(instanceFilePath) {
 // stopping). Do NOT use it to validate a PID read from a pid file: after an
 // ungraceful shutdown the pid file is stale and the kernel may have recycled
 // that PID to an unrelated process — see isOpenchamberProcessRunning.
-function isProcessRunning(pid) {
+function isProcessRunning(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
@@ -100,7 +138,7 @@ function isProcessRunning(pid) {
 // Returns the cmdline string, '' when the process has no readable cmdline, or
 // null when identity can't be determined on this platform (caller falls back to
 // liveness — so behaviour is unchanged where we can't check).
-function readProcessCmdline(pid) {
+function readProcessCmdline(pid: number): string | null {
   try {
     if (process.platform === 'linux') {
       // /proc/<pid>/cmdline is a NUL-delimited argv list.
@@ -123,7 +161,7 @@ function readProcessCmdline(pid) {
   return null;
 }
 
-function isOpenchamberCmdline(cmdline) {
+function isOpenchamberCmdline(cmdline: string | null): boolean {
   if (typeof cmdline !== 'string' || cmdline.length === 0) {
     return false;
   }
@@ -143,12 +181,12 @@ function isOpenchamberCmdline(cmdline) {
 // startup, which loops forever under systemd Restart=always (issue #1721).
 // Where identity can't be determined (Windows, unreadable /proc or ps), we fall
 // back to liveness so there are no false negatives on those platforms.
-function isOpenchamberProcessRunning(pid) {
+function isOpenchamberProcessRunning(pid: number): boolean {
   const state = getOpenchamberProcessState(pid);
   return state === 'matched' || state === 'unknown';
 }
 
-function getOpenchamberProcessState(pid, options = {}) {
+function getOpenchamberProcessState(pid: number, options: ProcessStateOptions = {}): 'dead' | 'unknown' | 'matched' | 'mismatched' {
   const checkProcessRunning = typeof options.isProcessRunning === 'function'
     ? options.isProcessRunning
     : isProcessRunning;
@@ -166,17 +204,17 @@ function getOpenchamberProcessState(pid, options = {}) {
   return isOpenchamberCmdline(cmdline) ? 'matched' : 'mismatched';
 }
 
-function hasOpenchamberRuntimeInfo(info) {
+function hasOpenchamberRuntimeInfo(info: { runtime?: unknown } | null | undefined): boolean {
   return Boolean(info && typeof info.runtime === 'string' && info.runtime.length > 0);
 }
 
-function waitForProcessExit(pid, timeoutMs) {
+function waitForProcessExit(pid: number, timeoutMs: number): Promise<boolean> {
   if (!Number.isFinite(pid) || pid <= 0) {
     return Promise.resolve(true);
   }
 
   const deadline = Date.now() + timeoutMs;
-  return new Promise((resolve) => {
+  return new Promise<boolean>((resolve) => {
     const check = () => {
       if (!isProcessRunning(pid)) {
         resolve(true);
@@ -192,16 +230,16 @@ function waitForProcessExit(pid, timeoutMs) {
   });
 }
 
-async function terminateProcessTree(pid, options = {}) {
+async function terminateProcessTree(pid: number, options: ProcessStopOptions = {}): Promise<boolean> {
   if (!Number.isFinite(pid) || pid <= 0) {
     return true;
   }
 
-  const gracefulTimeoutMs = Number.isFinite(options.gracefulTimeoutMs) && options.gracefulTimeoutMs >= 0
-    ? Math.trunc(options.gracefulTimeoutMs)
+  const gracefulTimeoutMs = Number.isFinite(options.gracefulTimeoutMs) && options.gracefulTimeoutMs! >= 0
+    ? Math.trunc(options.gracefulTimeoutMs!)
     : 2500;
-  const forceTimeoutMs = Number.isFinite(options.forceTimeoutMs) && options.forceTimeoutMs >= 0
-    ? Math.trunc(options.forceTimeoutMs)
+  const forceTimeoutMs = Number.isFinite(options.forceTimeoutMs) && options.forceTimeoutMs! >= 0
+    ? Math.trunc(options.forceTimeoutMs!)
     : 3000;
 
   if (process.platform === 'win32') {
@@ -256,13 +294,13 @@ async function terminateProcessTree(pid, options = {}) {
   return waitForProcessExit(pid, forceTimeoutMs);
 }
 
-async function stopInstanceProcess(pid, options = {}) {
+async function stopInstanceProcess(pid: number, options: ProcessStopOptions = {}): Promise<boolean> {
   if (!Number.isFinite(pid) || pid <= 0) {
     return true;
   }
 
-  const shutdownWaitMs = Number.isFinite(options.shutdownWaitMs) && options.shutdownWaitMs >= 0
-    ? Math.trunc(options.shutdownWaitMs)
+  const shutdownWaitMs = Number.isFinite(options.shutdownWaitMs) && options.shutdownWaitMs! >= 0
+    ? Math.trunc(options.shutdownWaitMs!)
     : 5000;
 
   if (await waitForProcessExit(pid, shutdownWaitMs)) {

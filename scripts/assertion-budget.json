@@ -1,8 +1,41 @@
 {
+  "packages/web/bin/lib/cli-args.ts": {
+    "args[i]!": 1,
+    "dp[0]!": 1,
+    "dp[i - 1]!": 3,
+    "dp[i - 1]![j - 1]!": 2,
+    "dp[i - 1]![j]!": 1,
+    "dp[i]!": 3,
+    "dp[i]![j - 1]!": 1,
+    "dp[m]!": 1,
+    "dp[m]![n]!": 1
+  },
+  "packages/web/bin/lib/cli-process.ts": {
+    "JSON.parse(fs.readFileSync(instanceFilePath, 'utf8')) as StoredInstanceOptions": 1,
+    "error as Error": 2,
+    "options.forceTimeoutMs!": 2,
+    "options.gracefulTimeoutMs!": 2,
+    "options.shutdownWaitMs!": 2
+  },
   "packages/web/bin/lib/cli-settings-accessors.ts": {
     "JSON.parse(await fsPromises.readFile(settingsPath, 'utf8')) as SettingsRecord": 1,
     "error as { code?: unknown }": 4,
     "parsed as SettingsRecord": 1
+  },
+  "packages/web/bin/lib/cli-tunnel-profiles.ts": {
+    "JSON.parse(raw) as { tunnels?: unknown } | null": 1,
+    "entry.createdAt as number": 1,
+    "entry.updatedAt as number": 3,
+    "error as { code?: unknown } | null | undefined": 3,
+    "matches[0]!": 1,
+    "tunnels .map((entry) => { if (!entry || typeof entry !== 'object') return null; const id = typeof entry.id === 'string' && entry.id.trim().length > 0 ? entry.id.trim() : crypto.randomUUID(); const name = normalizeProfileName(entry.name); const hostname = normalizeProfileHostname(entry.hostname); const token = normalizeProfileToken(entry.token); if (!name || !hostname || !token) return null; return { id, name, provider: 'cloudflare', mode: 'managed-remote', hostname, token, createdAt: Number.isFinite(entry.updatedAt) ? entry.updatedAt as number : Date.now(), updatedAt: Number.isFinite(entry.updatedAt) ? entry.updatedAt as number : Date.now(), }; }) .filter(Boolean) as TunnelProfile[]": 1
+  },
+  "packages/web/bin/lib/cli-tunnel-utils.ts": {
+    "match[1]!": 1,
+    "maxMs!": 1,
+    "minMs!": 1,
+    "ms!": 2,
+    "parseHumanDurationToMs(rawValue) as number": 1
   },
   "packages/web/server/lib/agent-memory/actions.ts": {
     "title!": 1
@@ -302,6 +335,10 @@
     "forwarded.split(',')[0]!": 1,
     "second!": 2,
     "ttlMs!": 2
+  },
+  "packages/web/server/lib/package-root.test.ts": {
+    "JSON.parse(fs.readFileSync(PACKAGE_JSON_PATH, 'utf8')) as { name?: unknown }": 1,
+    "files.get(file)!": 1
   },
   "packages/web/server/lib/package-root.ts": {
     "JSON.parse(readFile(path.join(directory, 'package.json'), 'utf8')) as PackageManifest | null": 1

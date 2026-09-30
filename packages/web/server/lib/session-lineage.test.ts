@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createSessionLineage } from './session-lineage.js';
 
-const created = (sessionID, parentID) => ({
+const created = (sessionID: string, parentID?: string) => ({
   type: 'session.created',
   properties: { sessionID, info: parentID ? { id: sessionID, parentID } : { id: sessionID } },
 });

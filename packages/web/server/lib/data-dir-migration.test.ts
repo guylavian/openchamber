@@ -19,7 +19,7 @@ describe('migrateLegacyUserDirs', () => {
   it('copies the user folders once into a custom data dir and leaves the originals', async () => {
     const { legacyRoot, dataDir, cleanup } = await setup();
     try {
-      const warnings = [];
+      const warnings: string[] = [];
       const moved = await migrateLegacyUserDirs({ fsPromises, path, dataDir, legacyRoot, warn: (message) => warnings.push(message) });
       expect(moved).toEqual(['projects', 'themes']);
       expect(warnings).toEqual([]);

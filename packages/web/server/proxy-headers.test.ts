@@ -55,9 +55,9 @@ describe('OpenCode proxy header handling', () => {
   });
 
   it('applies upstream response headers to express response without content-encoding', () => {
-    const applied = [];
+    const applied: [string, string][] = [];
     const response = {
-      setHeader(key, value) {
+      setHeader(key: string, value: string) {
         applied.push([key, value]);
       },
     };

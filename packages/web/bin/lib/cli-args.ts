@@ -1,30 +1,96 @@
 import { TunnelCliError, EXIT_CODE } from './cli-errors.js';
 
+interface CliOptions {
+  port: number;
+  host: string | undefined;
+  uiPassword: string | undefined;
+  json: boolean;
+  all: boolean;
+  follow: boolean;
+  lines: number;
+  limit: number | undefined;
+  provider: string | undefined;
+  mode: string | undefined;
+  profile: string | undefined;
+  name: string | undefined;
+  title: string | undefined;
+  configPath: string | null | undefined;
+  token: string | undefined;
+  tokenFile: string | undefined;
+  tokenStdin: boolean;
+  hostname: string | undefined;
+  server: string | undefined;
+  connectTtl: string | undefined;
+  sessionTtl: string | undefined;
+  qr: boolean;
+  explicitQr: boolean;
+  force: boolean;
+  showSecrets: boolean;
+  dryRun: boolean;
+  plain: boolean;
+  quiet: boolean;
+  explicitPort: boolean;
+  explicitUiPassword: boolean;
+  envSnapshot: boolean;
+  foreground: boolean;
+  lan: boolean;
+  apiOnly: boolean;
+  project: string | undefined;
+  task: string | undefined;
+  session: string | undefined;
+  message: string | undefined;
+  prompt: string | undefined;
+  model: string | undefined;
+  daily: string | undefined;
+  weekly: string | undefined;
+  once: string | undefined;
+  time: string | undefined;
+  cron: string | undefined;
+  timezone: string | undefined;
+  agent: string | undefined;
+  variant: string | undefined;
+  disabled: boolean;
+  goal: boolean;
+  goalTokenBudget: string | undefined;
+  directory: string | undefined;
+  role: string | undefined;
+  last: boolean;
+  wait: boolean;
+  timeout: string | undefined;
+  lastAssistant: boolean;
+  withStatus: boolean;
+  worktree?: string | undefined;
+  branch?: string | undefined;
+  startRef?: string | undefined;
+  setUpstream?: boolean;
+  relay?: boolean;
+}
+
 const DEFAULT_PORT = 3000;
 const DEFAULT_TAIL_LINES = 200;
 
-function levenshteinDistance(a, b) {
+function levenshteinDistance(a: string, b: string): number {
   const m = a.length;
   const n = b.length;
-  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
-  for (let i = 0; i <= m; i++) dp[i][0] = i;
-  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  const dp = Array.from({ length: m + 1 }, () => new Array<number>(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i]![0] = i;
+  for (let j = 0; j <= n; j++) dp[0]![j] = j;
   for (let i = 1; i <= m; i++) {
     for (let j = 1; j <= n; j++) {
-      dp[i][j] = a[i - 1] === b[j - 1]
-        ? dp[i - 1][j - 1]
-        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+      dp[i]![j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1]![j - 1]!
+        : 1 + Math.min(dp[i - 1]![j]!, dp[i]![j - 1]!, dp[i - 1]![j - 1]!);
     }
   }
-  return dp[m][n];
+  return dp[m]![n]!;
 }
 
-function findClosestMatch(input, candidates, maxDistance = 3) {
+function findClosestMatch(input: unknown, candidates: string[], maxDistance = 3): string | null {
   if (typeof input !== 'string' || input.length === 0 || !Array.isArray(candidates)) {
     return null;
   }
   const normalized = input.toLowerCase();
-  let bestCandidate = null;
+  let bestCandidate: string | null = null;
   let bestDistance = maxDistance + 1;
   for (const candidate of candidates) {
     const distance = levenshteinDistance(normalized, candidate.toLowerCase());
@@ -36,7 +102,7 @@ function findClosestMatch(input, candidates, maxDistance = 3) {
   return bestDistance <= maxDistance ? bestCandidate : null;
 }
 
-function splitOptionToken(arg) {
+function splitOptionToken(arg: string) {
   if (!arg.startsWith('-')) return null;
   if (arg.startsWith('--')) {
     const eqIndex = arg.indexOf('=');
@@ -53,9 +119,9 @@ function splitOptionToken(arg) {
   };
 }
 
-function parseArgs(argv = process.argv.slice(2)) {
+function parseArgs(argv: string[] = process.argv.slice(2)) {
   const args = Array.isArray(argv) ? [...argv] : [];
-  const options = {
+  const options: CliOptions = {
     port: DEFAULT_PORT,
     host: undefined,
     uiPassword: process.env.OPENCHAMBER_UI_PASSWORD || undefined,
@@ -116,12 +182,12 @@ function parseArgs(argv = process.argv.slice(2)) {
     withStatus: false,
   };
 
-  const removedFlagErrors = [];
-  const positional = [];
+  const removedFlagErrors: string[] = [];
+  const positional: string[] = [];
   let helpRequested = false;
   let versionRequested = false;
 
-  const consumeValue = (index, inlineValue) => {
+  const consumeValue = (index: number, inlineValue: string | undefined): { value: string | undefined; nextIndex: number } => {
     if (typeof inlineValue === 'string' && inlineValue.length > 0) {
       return { value: inlineValue, nextIndex: index };
     }
@@ -133,7 +199,7 @@ function parseArgs(argv = process.argv.slice(2)) {
   };
 
   for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
+    const arg = args[i]!;
     const parsedToken = splitOptionToken(arg);
     if (!parsedToken) {
       positional.push(arg);
@@ -812,7 +878,7 @@ EXAMPLES:
 `);
 }
 
-function generateCompletionScript(shell) {
+function generateCompletionScript(shell: unknown) {
   const normalized = typeof shell === 'string' ? shell.trim().toLowerCase() : '';
 
   if (normalized === 'bash') {

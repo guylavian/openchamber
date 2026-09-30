@@ -1,6 +1,35 @@
 import { EXIT_CODE, TunnelCliError } from './cli-errors.js';
 import { canPrompt, select as clackSelect, text as clackText, cancel as clackCancel, isCancel as clackIsCancel } from '../cli-output.js';
 
+interface TtlLimits {
+  flagName?: string;
+  minMs?: number;
+  maxMs?: number;
+}
+
+interface TunnelStartReplayInput {
+  port: number;
+  provider?: string | null | undefined;
+  mode?: string | null | undefined;
+  profileName?: string | null | undefined;
+  configPath?: string | null | undefined;
+  hostname?: string | null | undefined;
+  connectTtlMs?: number | undefined;
+  sessionTtlMs?: number | undefined;
+  qr?: boolean | undefined;
+  noQr?: boolean | undefined;
+  includeTokenPlaceholder?: boolean | undefined;
+  tokenViaStdin?: boolean | undefined;
+  tokenFileProvided?: boolean | undefined;
+}
+
+interface TunnelTtlOptions {
+  connectTtl?: string | undefined;
+  sessionTtl?: string | undefined;
+  json?: boolean | undefined;
+  quiet?: boolean | undefined;
+}
+
 const TUNNEL_BOOTSTRAP_TTL_DEFAULT_MS = 30 * 60 * 1000;
 const TUNNEL_BOOTSTRAP_TTL_MIN_MS = 60 * 1000;
 const TUNNEL_BOOTSTRAP_TTL_MAX_MS = 24 * 60 * 60 * 1000;
@@ -25,7 +54,7 @@ const SESSION_TTL_PICKER_OPTIONS = [
   { value: '__custom__', label: 'Custom' },
 ];
 
-function parseHumanDurationToMs(value) {
+function parseHumanDurationToMs(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return Math.round(value);
   }
@@ -46,13 +75,13 @@ function parseHumanDurationToMs(value) {
   const pattern = /(\d+)(ms|s|m|h|d)/g;
   let cursor = 0;
   let total = 0;
-  let match;
+  let match: RegExpExecArray | null;
   while ((match = pattern.exec(normalized)) !== null) {
     if (match.index !== cursor) {
       return null;
     }
     cursor = pattern.lastIndex;
-    const amount = Number.parseInt(match[1], 10);
+    const amount = Number.parseInt(match[1]!, 10);
     const unit = match[2];
     const unitMs = unit === 'ms'
       ? 1
@@ -73,19 +102,19 @@ function parseHumanDurationToMs(value) {
   return total;
 }
 
-function parseTtlMsOrThrow(rawValue, {
+function parseTtlMsOrThrow(rawValue: unknown, {
   flagName,
   minMs,
   maxMs,
-} = {}) {
-  const parsed = parseHumanDurationToMs(rawValue);
+}: TtlLimits = {}): number {
+  const parsed = parseHumanDurationToMs(rawValue) as number;
   if (!Number.isFinite(parsed) || parsed <= 0) {
     throw new TunnelCliError(
       `Invalid value for ${flagName}. Use a positive duration like 30m, 24h, 1d, or milliseconds.`,
       EXIT_CODE.USAGE_ERROR,
     );
   }
-  if (parsed < minMs || parsed > maxMs) {
+  if (parsed < minMs! || parsed > maxMs!) {
     throw new TunnelCliError(
       `${flagName} must be between ${minMs}ms and ${maxMs}ms.`,
       EXIT_CODE.USAGE_ERROR,
@@ -94,11 +123,11 @@ function parseTtlMsOrThrow(rawValue, {
   return parsed;
 }
 
-function formatDurationForCli(ms) {
-  if (!Number.isFinite(ms) || ms <= 0) {
+function formatDurationForCli(ms: number | undefined): string | null {
+  if (!Number.isFinite(ms) || ms! <= 0) {
     return null;
   }
-  const value = Math.round(ms);
+  const value = Math.round(ms!);
   if (value % (24 * 60 * 60 * 1000) === 0) return `${value / (24 * 60 * 60 * 1000)}d`;
   if (value % (60 * 60 * 1000) === 0) return `${value / (60 * 60 * 1000)}h`;
   if (value % (60 * 1000) === 0) return `${value / (60 * 1000)}m`;
@@ -106,7 +135,7 @@ function formatDurationForCli(ms) {
   return `${value}ms`;
 }
 
-function shellQuote(value) {
+function shellQuote(value: string): string {
   const text = String(value);
   if (/^[A-Za-z0-9._\-/:=]+$/.test(text)) {
     return text;
@@ -128,7 +157,7 @@ function buildTunnelStartReplayCommand({
   includeTokenPlaceholder,
   tokenViaStdin,
   tokenFileProvided,
-}) {
+}: TunnelStartReplayInput): string {
   const parts = ['openchamber', 'tunnel', 'start'];
   if (Number.isFinite(port) && port > 0) {
     parts.push('--port', String(port));
@@ -172,7 +201,7 @@ function buildTunnelStartReplayCommand({
   return parts.join(' ');
 }
 
-function buildTunnelProfileAddCommand({ provider, hostname }) {
+function buildTunnelProfileAddCommand({ provider, hostname }: { provider?: string | null | undefined; hostname?: string | null | undefined }): string {
   const parts = [
     'openchamber',
     'tunnel',
@@ -192,7 +221,7 @@ function buildTunnelProfileAddCommand({ provider, hostname }) {
   return parts.join(' ');
 }
 
-async function resolveTunnelTtlOverrides(options) {
+async function resolveTunnelTtlOverrides(options: TunnelTtlOptions): Promise<{ connectTtlMs: number | undefined; sessionTtlMs: number | undefined } | null> {
   let connectTtlRaw = typeof options.connectTtl === 'string' ? options.connectTtl : undefined;
   let sessionTtlRaw = typeof options.sessionTtl === 'string' ? options.sessionTtl : undefined;
 

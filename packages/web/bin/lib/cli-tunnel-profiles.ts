@@ -1,40 +1,87 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import type { Stats } from 'fs';
 import {
   getTunnelProfilesFilePath,
   getLegacyCloudflareManagedRemoteFilePath,
 } from './cli-paths.js';
 
+interface TunnelProfile {
+  id: string;
+  name: string;
+  provider: string;
+  mode: string;
+  hostname: string;
+  token: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+interface TunnelProfilesData {
+  version: number;
+  profiles: TunnelProfile[];
+}
+
+interface RawProfilesData {
+  version?: unknown;
+  profiles?: unknown;
+}
+
+interface RawProfileEntry {
+  id?: unknown;
+  provider?: unknown;
+  mode?: unknown;
+  name?: unknown;
+  hostname?: unknown;
+  token?: unknown;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
+interface PermissionWarnOptions {
+  shouldWarn?: boolean | undefined;
+}
+
+interface TokenSourceOptions {
+  tokenStdin?: boolean | undefined;
+  tokenFile?: string | undefined;
+  token?: string | undefined;
+}
+
+interface TokenHolder {
+  token?: unknown;
+}
+
 const TUNNEL_PROFILES_VERSION = 1;
 const MAX_TOKEN_FILE_BYTES = 8 * 1024;
 
-function normalizeProfileProvider(value) {
+function normalizeProfileProvider(value: unknown): string {
   if (typeof value !== 'string') return '';
   return value.trim().toLowerCase();
 }
 
-function normalizeProfileMode(value) {
+function normalizeProfileMode(value: unknown): string {
   if (typeof value !== 'string') return '';
   return value.trim().toLowerCase();
 }
 
-function normalizeProfileName(value) {
+function normalizeProfileName(value: unknown): string {
   if (typeof value !== 'string') return '';
   return value.trim();
 }
 
-function normalizeProfileHostname(value) {
+function normalizeProfileHostname(value: unknown): string {
   if (typeof value !== 'string') return '';
   return value.trim();
 }
 
-function normalizeProfileToken(value) {
+function normalizeProfileToken(value: unknown): string {
   if (typeof value !== 'string') return '';
   return value.trim();
 }
 
-function suggestProfileNameFromHostname(hostname) {
+function suggestProfileNameFromHostname(hostname: unknown): string {
   const normalizedHost = normalizeProfileHostname(hostname);
   if (!normalizedHost) return 'prod-main';
   const firstLabel = normalizedHost.split('.')[0] || normalizedHost;
@@ -42,7 +89,7 @@ function suggestProfileNameFromHostname(hostname) {
   return sanitized || 'prod-main';
 }
 
-function maskToken(token) {
+function maskToken(token: unknown): string {
   if (typeof token !== 'string' || token.length === 0) {
     return '***';
   }
@@ -52,26 +99,26 @@ function maskToken(token) {
   return `${'*'.repeat(Math.max(4, token.length - 4))}${token.slice(-4)}`;
 }
 
-function readTokenFromFileSafely(tokenFilePath) {
+function readTokenFromFileSafely(tokenFilePath: string): string {
   const absolutePath = path.resolve(tokenFilePath);
-  let realPath;
+  let realPath: string;
   try {
     realPath = fs.realpathSync(absolutePath);
   } catch (error) {
-    if (error?.code === 'ENOENT') {
+    if ((error as { code?: unknown } | null | undefined)?.code === 'ENOENT') {
       throw new Error(`Token file '${absolutePath}' not found.`);
     }
-    if (error?.code === 'EACCES') {
+    if ((error as { code?: unknown } | null | undefined)?.code === 'EACCES') {
       throw new Error(`Token file '${absolutePath}' is not readable. Check file permissions.`);
     }
     throw error;
   }
 
-  let stats;
+  let stats: Stats;
   try {
     stats = fs.statSync(realPath);
   } catch (error) {
-    if (error?.code === 'EACCES') {
+    if ((error as { code?: unknown } | null | undefined)?.code === 'EACCES') {
       throw new Error(`Token file '${absolutePath}' is not readable. Check file permissions.`);
     }
     throw error;
@@ -99,7 +146,7 @@ function readTokenFromFileSafely(tokenFilePath) {
   return value;
 }
 
-function resolveToken(options) {
+function resolveToken(options: TokenSourceOptions): string | undefined {
   const sources = [
     options.tokenStdin ? 'stdin' : null,
     options.tokenFile ? 'file' : null,
@@ -132,7 +179,7 @@ function resolveToken(options) {
   return typeof options.token === 'string' ? options.token.trim() : undefined;
 }
 
-function redactProfileForOutput(profile, showSecrets = false) {
+function redactProfileForOutput<T extends TokenHolder>(profile: T | null | undefined, showSecrets = false) {
   if (!profile || typeof profile !== 'object') {
     return profile;
   }
@@ -142,14 +189,14 @@ function redactProfileForOutput(profile, showSecrets = false) {
   };
 }
 
-function redactProfilesForOutput(profiles, showSecrets = false) {
+function redactProfilesForOutput<T extends TokenHolder>(profiles: T[], showSecrets = false) {
   if (!Array.isArray(profiles)) {
     return profiles;
   }
   return profiles.map((entry) => redactProfileForOutput(entry, showSecrets));
 }
 
-function formatProfileTokenStatus(profile, showSecrets = false) {
+function formatProfileTokenStatus(profile: TokenHolder | null | undefined, showSecrets = false): string {
   const token = typeof profile?.token === 'string' ? profile.token.trim() : '';
   if (!token) {
     return 'token:missing';
@@ -160,11 +207,11 @@ function formatProfileTokenStatus(profile, showSecrets = false) {
   return 'token:present';
 }
 
-function sanitizeTunnelProfilesData(data) {
+function sanitizeTunnelProfilesData(data: RawProfilesData | null | undefined): TunnelProfilesData {
   const parsed = data && typeof data === 'object' ? data : {};
-  const list = Array.isArray(parsed.profiles) ? parsed.profiles : [];
-  const seen = new Set();
-  const profiles = [];
+  const list: RawProfileEntry[] = Array.isArray(parsed.profiles) ? parsed.profiles : [];
+  const seen = new Set<string>();
+  const profiles: TunnelProfile[] = [];
   for (const entry of list) {
     if (!entry || typeof entry !== 'object') continue;
     const id = typeof entry.id === 'string' && entry.id.trim().length > 0 ? entry.id.trim() : crypto.randomUUID();
@@ -184,14 +231,14 @@ function sanitizeTunnelProfilesData(data) {
       mode,
       hostname,
       token,
-      createdAt: Number.isFinite(entry.createdAt) ? entry.createdAt : Date.now(),
-      updatedAt: Number.isFinite(entry.updatedAt) ? entry.updatedAt : Date.now(),
+      createdAt: Number.isFinite(entry.createdAt) ? entry.createdAt as number : Date.now(),
+      updatedAt: Number.isFinite(entry.updatedAt) ? entry.updatedAt as number : Date.now(),
     });
   }
   return { version: TUNNEL_PROFILES_VERSION, profiles };
 }
 
-function warnIfUnsafeFilePermissions(filePath, { shouldWarn = true } = {}) {
+function warnIfUnsafeFilePermissions(filePath: string, { shouldWarn = true }: PermissionWarnOptions = {}): void {
   if (process.platform === 'win32') {
     return;
   }
@@ -213,7 +260,7 @@ function warnIfUnsafeFilePermissions(filePath, { shouldWarn = true } = {}) {
   }
 }
 
-function readTunnelProfilesFromDisk(options = {}) {
+function readTunnelProfilesFromDisk(options: PermissionWarnOptions = {}): TunnelProfilesData {
   const filePath = getTunnelProfilesFilePath();
   try {
     warnIfUnsafeFilePermissions(filePath, options);
@@ -224,13 +271,13 @@ function readTunnelProfilesFromDisk(options = {}) {
   }
 }
 
-function writeTunnelProfilesToDisk(data) {
+function writeTunnelProfilesToDisk(data: RawProfilesData | null | undefined): void {
   const filePath = getTunnelProfilesFilePath();
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, JSON.stringify(sanitizeTunnelProfilesData(data), null, 2), { encoding: 'utf8', mode: 0o600 });
 }
 
-function writeManagedRemotePairsToDiskFromProfiles(profilesData) {
+function writeManagedRemotePairsToDiskFromProfiles(profilesData: RawProfilesData | null | undefined): void {
   const profiles = sanitizeTunnelProfilesData(profilesData).profiles;
   const cloudflareManagedRemote = profiles.filter(
     (entry) => entry.provider === 'cloudflare' && entry.mode === 'managed-remote'
@@ -249,11 +296,11 @@ function writeManagedRemotePairsToDiskFromProfiles(profilesData) {
   fs.writeFileSync(filePath, JSON.stringify({ version: 1, tunnels }, null, 2), { encoding: 'utf8', mode: 0o600 });
 }
 
-function readLegacyManagedRemoteEntries() {
+function readLegacyManagedRemoteEntries(): TunnelProfile[] {
   try {
     const raw = fs.readFileSync(getLegacyCloudflareManagedRemoteFilePath(), 'utf8');
-    const parsed = JSON.parse(raw);
-    const tunnels = Array.isArray(parsed?.tunnels) ? parsed.tunnels : [];
+    const parsed = JSON.parse(raw) as { tunnels?: unknown } | null;
+    const tunnels: RawProfileEntry[] = Array.isArray(parsed?.tunnels) ? parsed.tunnels : [];
     return tunnels
       .map((entry) => {
         if (!entry || typeof entry !== 'object') return null;
@@ -269,17 +316,17 @@ function readLegacyManagedRemoteEntries() {
           mode: 'managed-remote',
           hostname,
           token,
-          createdAt: Number.isFinite(entry.updatedAt) ? entry.updatedAt : Date.now(),
-          updatedAt: Number.isFinite(entry.updatedAt) ? entry.updatedAt : Date.now(),
+          createdAt: Number.isFinite(entry.updatedAt) ? entry.updatedAt as number : Date.now(),
+          updatedAt: Number.isFinite(entry.updatedAt) ? entry.updatedAt as number : Date.now(),
         };
       })
-      .filter(Boolean);
+      .filter(Boolean) as TunnelProfile[];
   } catch {
     return [];
   }
 }
 
-function makeUniqueProfileName(provider, desiredName, existingProfiles) {
+function makeUniqueProfileName(provider: string, desiredName: unknown, existingProfiles: TunnelProfile[]): string {
   const normalizedDesired = normalizeProfileName(desiredName);
   if (!normalizedDesired) {
     return '';
@@ -304,7 +351,7 @@ function makeUniqueProfileName(provider, desiredName, existingProfiles) {
   }
 }
 
-function ensureTunnelProfilesMigrated(options = {}) {
+function ensureTunnelProfilesMigrated(options: PermissionWarnOptions = {}): TunnelProfilesData {
   const current = readTunnelProfilesFromDisk(options);
   if (current.profiles.length > 0) {
     return current;
@@ -315,7 +362,7 @@ function ensureTunnelProfilesMigrated(options = {}) {
     return current;
   }
 
-  const migratedProfiles = [];
+  const migratedProfiles: TunnelProfile[] = [];
   for (const entry of legacyEntries) {
     const name = makeUniqueProfileName(entry.provider, entry.name, migratedProfiles);
     migratedProfiles.push({ ...entry, name });
@@ -327,7 +374,7 @@ function ensureTunnelProfilesMigrated(options = {}) {
   return migrated;
 }
 
-function resolveProfileByName(profiles, profileName, provider) {
+function resolveProfileByName(profiles: TunnelProfile[], profileName: unknown, provider: unknown): { profile: TunnelProfile | null; error: string | null } {
   const normalizedName = normalizeProfileName(profileName).toLowerCase();
   const normalizedProvider = normalizeProfileProvider(provider);
   const matches = profiles.filter((entry) => {
@@ -342,7 +389,7 @@ function resolveProfileByName(profiles, profileName, provider) {
   if (matches.length > 1) {
     return { profile: null, error: `Profile name '${profileName}' exists for multiple providers. Use --provider <id>.` };
   }
-  return { profile: matches[0], error: null };
+  return { profile: matches[0]!, error: null };
 }
 
 
