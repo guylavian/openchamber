@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { clearSuggestionPatch, openByJevPatch, readWork, suggestDonePatch } from './state.js';
 
-const withWork = (work) => ({ openchamber: { goal: { id: 'g' }, work } });
+interface WorkRecord {
+  state?: string;
+  openedAt?: number;
+  openedBy?: string;
+  doneAt?: number | null;
+  suggestDoneAt?: number | null;
+}
+
+const withWork = (work: WorkRecord) => ({ openchamber: { goal: { id: 'g' }, work } });
 
 describe('session work state', () => {
   it('reads a work record, and a missing or malformed one as none', () => {
